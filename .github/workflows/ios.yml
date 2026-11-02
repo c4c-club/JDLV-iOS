@@ -36,8 +36,32 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: swift test (JDLVCore)
-        run: swift test --package-path JDLVCore
+      - name: swift test (JDLVCore, unit only)
+        run: swift test --package-path JDLVCore --skip JDLVCoreIntegrationTests
+
+  core-mysql:
+    runs-on: ubuntu-latest
+    container: swift:6.0-noble
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        options: >-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - name: integration tests (real MySQL 8)
+        env:
+          JDLV_TEST_MYSQL_HOST: mysql
+          JDLV_TEST_MYSQL_PORT: "3306"
+          JDLV_TEST_MYSQL_USER: root
+          JDLV_TEST_MYSQL_PASS: root
+        run: swift test --package-path JDLVCore --filter IntegrationTests
 
   ios:
     needs: [guard, core-linux]

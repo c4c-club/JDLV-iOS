@@ -12,7 +12,7 @@ let package = Package(
     ],
     dependencies: [
         // P2 spike：MySQL 客户端唯一第三方依赖
-        .package(url: "https://github.com/vapor/mysql-nio.git", exactVersion: "1.9.2"),
+        .package(url: "https://github.com/vapor/mysql-nio.git", exact: "1.9.2"),
     ],
     targets: [
         .target(
@@ -22,6 +22,9 @@ let package = Package(
             ]),
         .testTarget(
             name: "JDLVCoreTests",
+            dependencies: ["JDLVCore"]),
+        .testTarget(
+            name: "JDLVCoreIntegrationTests",
             dependencies: ["JDLVCore"]),
     ]
 )

@@ -25,19 +25,19 @@ public struct Row: Equatable {
 
     public var keys: [String] { Array(map.keys) }
 
-    /// 安全字符串取列（Android JRow.s 语义：缺列/NULL → ""）
+    /// 安全字符串取列（Android JRow.s 语义：value?.toString() ?: ""；Boolean → "true"/"false"）
     public func s(_ key: String) -> String {
         switch map[key] {
         case .string(let v): return v
         case .int(let v): return String(v)
         case .double(let v): return String(v)
-        case .bool(let v): return v ? "1" : "0"
+        case .bool(let v): return v ? "true" : "false"
         case .data(let v): return String(data: v, encoding: .utf8) ?? ""
         default: return ""
         }
     }
 
-    /// 整型取列（parse 失败归 0）
+    /// 整型取列（Number→数值，否则字符串解析，兜底 0；parse 失败归 0）
     public func i(_ key: String) -> Int64 {
         switch map[key] {
         case .int(let v): return v
@@ -48,6 +48,12 @@ public struct Row: Equatable {
         }
     }
 
+    /// 长整型取列（与 i 同语义；Kotlin l → Long）
+    public func l(_ key: String) -> Int64 {
+        i(key)
+    }
+
+    /// 浮点取列（Number→数值，否则字符串解析，兜底 0.0）
     public func d(_ key: String) -> Double {
         switch map[key] {
         case .double(let v): return v
@@ -57,10 +63,11 @@ public struct Row: Equatable {
         }
     }
 
+    /// 布尔取列（Boolean 原样；数值判 ==1；字符串判 "1" 或忽略大小写 "true"）
     public func b(_ key: String) -> Bool {
         switch map[key] {
         case .bool(let v): return v
-        case .int(let v): return v != 0
+        case .int(let v): return v == 1
         case .string(let v): return v == "1" || v.lowercased() == "true"
         default: return false
         }
@@ -70,4 +77,13 @@ public struct Row: Equatable {
         let v = map[key]
         return v == nil || v == .null
     }
+}
+
+/// 每页条数归一（Android normalizePer）：合法档位 20/40/60/80/100；
+/// v>0 取最接近档位（并列取第一个较小档），v<=0 用 default。
+public func normalizePer(_ v: Int, default def: Int = 40) -> Int {
+    let opts = [20, 40, 60, 80, 100]
+    if opts.contains(v) { return v }
+    let base = v > 0 ? v : def
+    return opts.min(by: { abs($0 - base) < abs($1 - base) }) ?? def
 }

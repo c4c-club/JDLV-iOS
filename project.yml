@@ -13,6 +13,9 @@ settings:
 packages:
   JDLVCore:
     path: JDLVCore
+  onnxruntime:
+    url: https://github.com/microsoft/onnxruntime-swift-package-manager
+    exactVersion: 1.24.2
 targets:
   JDLV:
     type: application
@@ -29,6 +32,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
     dependencies:
       - package: JDLVCore
+      - package: onnxruntime
+        product: onnxruntime
   JDLVTests:
     type: bundle.unit-test
     platform: iOS

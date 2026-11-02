@@ -1,62 +1,55 @@
 import Foundation
+import MySQLNIO
 
-// P2 依赖 spike：MySQLNIO 编译引用。真实连接/池/超时/取消语义在 P3 实现。
+// 单连接客户端（集成测试 / 探活专用）。生产查询走 MySQLPool。
 
-public struct MySQLClientConfig {
-    public var host: String
-    public var port: Int
-    public var username: String
-    public var password: String
-    public var database: String
-    public var tls: Bool
-    public var connectTimeoutSeconds: Int
-    /// TLS SNI/证书校验用的真实主机名（SOCKS 隧道时 host=127.0.0.1，仍填真实主机）
-    public var serverHostname: String?
-
-    public init(host: String, port: Int, username: String, password: String,
-                database: String, tls: Bool, connectTimeoutSeconds: Int = 5,
-                serverHostname: String? = nil) {
-        self.host = host
-        self.port = port
-        self.username = username
-        self.password = password
-        self.database = database
-        self.tls = tls
-        self.connectTimeoutSeconds = connectTimeoutSeconds
-        self.serverHostname = serverHostname
-    }
-}
-
-public enum MySQLErrorKind {
-    case connection   // 连接级（refused/timeout/closed/handshake）——可重试、置离线
-    case semantic     // 语义级（1064/1146/1054/1044/1045/1049）——不重试
-    case timeout      // 语句超时——作废连接，不重试
-    case noNetwork    // 系统无网——置离线 30s
-}
-
-public struct MySQLError: Error {
-    public let kind: MySQLErrorKind
-    public let message: String
-    public init(kind: MySQLErrorKind, message: String) {
-        self.kind = kind
-        self.message = message
-    }
-}
-
-/// MySQL 客户端（P3 完成实现；本文件仅做依赖 spike 编译引用）。
 public final class MySQLClient {
-    public let config: MySQLClientConfig
+    public let settings: MySQLPoolSettings
+    private let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+    private var conn: MySQLConnection?
 
-    public init(config: MySQLClientConfig) {
-        self.config = config
+    public init(settings: MySQLPoolSettings) {
+        self.settings = settings
     }
 
-    #if canImport(MySQLNIO)
-    // 编译引用（P3 起真实使用 MySQLConnection/MySQLPool）
-    typealias NioConnection = MySQLConnection
-    static let nioAvailable = true
-    #endif
+    public func connect(_ which: String = "jdb") async throws {
+        conn = try await ConnFactory.connect(which, settings, on: group)
+    }
 
-    /// spike 占位：P3 用 MySQLNIO 实现真实握手与查询
-    public func ping() async throws {}
+    public func query(_ sql: String, _ params: [SQLValue?] = [], timeoutSec: Int? = nil)
+        async throws -> [Row] {
+        guard let conn else {
+            throw DbError(kind: .connection, message: "not connected")
+        }
+        let binds: [MySQLData] = params.map { MySQLPool.toMySQLData($0) }
+        let ts = timeoutSec ?? settings.queryTimeout
+        let box = OneShot<[Row]>(on: conn.eventLoop)
+        conn.query(sql, binds).whenComplete { r in
+            switch r {
+            case .success(let rows): box.succeed(rows.map(MySQLPool.normRow))
+            case .failure(let e): box.fail(e)
+            }
+        }
+        _ = conn.eventLoop.scheduleTask(
+            in: .milliseconds(Int64(ts) * 1000)) {
+            box.fail(QueryTimeoutError("statement timeout \(ts)s"))
+        }
+        return try await awaitFuture(box.futureResult)
+    }
+
+    public func simpleQuery(_ sql: String) async throws -> [Row] {
+        guard let conn else {
+            throw DbError(kind: .connection, message: "not connected")
+        }
+        return try await awaitFuture(conn.simpleQuery(sql)).map { MySQLPool.normRow($0) }
+    }
+
+    public func close() async {
+        if let conn {
+            _ = try? await awaitFuture(conn.close())
+        }
+        conn = nil
+    }
+
+    public var isClosed: Bool { conn?.isClosed ?? true }
 }

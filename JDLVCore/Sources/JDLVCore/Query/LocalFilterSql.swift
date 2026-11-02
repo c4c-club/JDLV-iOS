@@ -29,15 +29,15 @@ public struct LocalCaps: Equatable {
 }
 
 public struct LocalQuery: Equatable {
-    public var where: String
+    public var `where`: String
     public var params: [String]
     public var unsupported: [String]
     public var empty: Bool
     public var reason: String
 
-    public init(where: String, params: [String], unsupported: [String] = [],
+    public init(where value: String, params: [String], unsupported: [String] = [],
                 empty: Bool = false, reason: String = "") {
-        self.where = where
+        self.`where` = value
         self.params = params
         self.unsupported = unsupported
         self.empty = empty
