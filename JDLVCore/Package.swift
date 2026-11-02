@@ -10,8 +10,18 @@ let package = Package(
     products: [
         .library(name: "JDLVCore", targets: ["JDLVCore"]),
     ],
+    dependencies: [
+        // P2 spike：MySQL 客户端唯一第三方依赖
+        .package(url: "https://github.com/vapor/mysql-nio.git", exactVersion: "1.9.2"),
+    ],
     targets: [
-        .target(name: "JDLVCore"),
-        .testTarget(name: "JDLVCoreTests", dependencies: ["JDLVCore"]),
+        .target(
+            name: "JDLVCore",
+            dependencies: [
+                .product(name: "MySQLNIO", package: "mysql-nio"),
+            ]),
+        .testTarget(
+            name: "JDLVCoreTests",
+            dependencies: ["JDLVCore"]),
     ]
 )

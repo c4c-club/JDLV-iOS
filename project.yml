@@ -34,6 +34,9 @@ targets:
     platform: iOS
     sources:
       - path: JDLVTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
     dependencies:
       - target: JDLV
   JDLVUITests:
@@ -41,6 +44,9 @@ targets:
     platform: iOS
     sources:
       - path: JDLVUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
     dependencies:
       - target: JDLV
 schemes:
