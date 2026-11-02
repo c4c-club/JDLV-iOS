@@ -1,0 +1,58 @@
+name: JDLV
+options:
+  bundleIdPrefix: com.jdlv
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: 1.6.0
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+packages:
+  JDLVCore:
+    path: JDLVCore
+targets:
+  JDLV:
+    type: application
+    platform: iOS
+    sources:
+      - path: JDLV
+        excludes:
+          - "Resources/Info.plist"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jdlv.ios
+        INFOPLIST_FILE: JDLV/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - package: JDLVCore
+  JDLVTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: JDLVTests
+    dependencies:
+      - target: JDLV
+  JDLVUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: JDLVUITests
+    dependencies:
+      - target: JDLV
+schemes:
+  JDLV:
+    build:
+      targets:
+        JDLV: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - JDLVTests
+        - JDLVUITests
