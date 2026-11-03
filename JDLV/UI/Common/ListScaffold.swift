@@ -40,6 +40,13 @@ struct BottomRoundedCorners: Shape {
     }
 }
 
+enum LS {
+    static let space = "ls_space"
+    static let topAnchor = "ls_top"
+    /// 回顶 FAB 显隐阈值（≈滚过 3 行）
+    static let scrollTopOffset: CGFloat = -360
+}
+
 struct ListScaffold<Content: View>: View {
     var refreshing: Bool
     var onRefresh: () -> Void = {}
@@ -67,10 +74,6 @@ struct ListScaffold<Content: View>: View {
     @State private var scrollY: CGFloat = 0
     @State private var armed = false
 
-    private static let space = "ls_space"
-    private static let topAnchor = "ls_top"
-    /// 回顶 FAB 显隐阈值（≈滚过 3 行）
-    private static let scrollTopOffset: CGFloat = -360
 
     private var pullOffset: CGFloat { max(0, scrollY) }
     private var distanceFraction: CGFloat {
@@ -95,7 +98,7 @@ struct ListScaffold<Content: View>: View {
                 if showNavTools {
                     ListNavTools(loaded: pageLoaded, total: pageTotal, per: pagePer,
                                  goPage: goPage,
-                                 showScrollTop: scrollY < Self.scrollTopOffset) {
+                                 showScrollTop: scrollY < Self.LS.scrollTopOffset) {
                         withAnimation { proxy.scrollTo(Self.topAnchor, anchor: .top) }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -111,7 +114,7 @@ struct ListScaffold<Content: View>: View {
             offsetReader
             stateBody
         }
-        .coordinateSpace(name: Self.space)
+        .coordinateSpace(name: Self.LS.space)
         .onPreferenceChange(ScrollOffsetKey.self) { handleOffset($0) }
     }
 
@@ -122,9 +125,9 @@ struct ListScaffold<Content: View>: View {
             .background(GeometryReader { geo in
                 Color.clear.preference(
                     key: ScrollOffsetKey.self,
-                    value: geo.frame(in: .named(Self.space)).minY)
+                    value: geo.frame(in: .named(Self.LS.space)).minY)
             })
-            .id(Self.topAnchor)
+            .id(Self.LS.topAnchor)
     }
 
     // MARK: 四态内容（优先级：骨架 → 错 → 空 → 正文）

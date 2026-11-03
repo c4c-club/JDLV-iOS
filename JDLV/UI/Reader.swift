@@ -84,7 +84,7 @@ struct ReaderStyle: Equatable {
     var paragraphGapPt: CGFloat { CGFloat(rdParagraph * rdFontPt * 1.333) }
 
     /// 字体映射（serif→Serif、mono→Monospace、sans→默认系统、其他/空→Default）
-    var uiFontDesign: UIFont.Design {
+    var uiFontDesign: Font.Design {
         switch rdFontFamily {
         case "serif": return .serif
         case "mono": return .monospaced
@@ -197,7 +197,7 @@ struct ReaderBody: View {
 // MARK: - UIFont.Design → SwiftUI Font.Design 桥（保持模型层无 UIKit 依赖外泄）
 
 private extension Font.Design {
-    init(_ d: UIFont.Design) {
+    init(_ d: Font.Design) {
         switch d {
         case .serif: self = .serif
         case .monospaced: self = .monospace

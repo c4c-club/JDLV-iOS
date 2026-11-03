@@ -19,6 +19,10 @@ import SwiftUI
 
 // MARK: - FilterDropdown（B22：顶部下拉弹层容器）
 
+enum FD {
+    static let keyPrefix = "jdlv_collapse_"
+}
+
 struct FilterDropdown<Content: View>: View {
     var expanded: Bool
     var onDismiss: () -> Void
@@ -73,7 +77,6 @@ struct CollapsibleSection<Content: View>: View {
     @State private var expanded = false
     @State private var hydrated = false
 
-    private static let keyPrefix = "jdlv_collapse_"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -109,11 +112,11 @@ struct CollapsibleSection<Content: View>: View {
 
     private func savedValue() -> Bool? {
         guard let key = storageKey else { return nil }
-        return UserDefaults.standard.object(forKey: Self.keyPrefix + key) as? Bool
+        return UserDefaults.standard.object(forKey: Self.FD.keyPrefix + key) as? Bool
     }
 
     private func persist() {
         guard let key = storageKey else { return }
-        UserDefaults.standard.set(expanded, forKey: Self.keyPrefix + key)
+        UserDefaults.standard.set(expanded, forKey: Self.FD.keyPrefix + key)
     }
 }
