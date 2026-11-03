@@ -622,20 +622,20 @@ final class MovieDetailVM: ObservableObject {
 
     // MARK: [String: Any] ↔ Row / SQLValue 转换（Q.jrow 为 internal，此处等价实现）
 
-    static func rowOf(_ r: Row) -> [String: Any] {
+    nonisolated static func rowOf(_ r: Row) -> [String: Any] {
         var out: [String: Any] = [:]
         for (k, v) in r.map { out[k] = anyOf(v) }
         return out
     }
 
-    static func rowOf(_ d: [String: Any]) -> Row {
+    nonisolated static func rowOf(_ d: [String: Any]) -> Row {
         var r = Row()
         for (k, v) in d { r[k] = sqlValueOf(v) }
         return r
     }
 
     /// SQLValue → Any（null → NSNull）
-    static func anyOf(_ v: SQLValue) -> Any {
+    nonisolated static func anyOf(_ v: SQLValue) -> Any {
         switch v {
         case .null: return NSNull()
         case .int(let i): return i

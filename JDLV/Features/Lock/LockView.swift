@@ -70,7 +70,7 @@ enum LockSecrets {
                     let passPtr: UnsafePointer<Int8>? = pwBuf.baseAddress.map {
                         UnsafeRawPointer($0).assumingMemoryBound(to: Int8.self)
                     }
-                    let saltPtr = sal.baseAddress?.assumeMemoryBound(to: UInt8.self)
+                    let saltPtr = sal.baseAddress?.assumingMemoryBound(to: UInt8.self)
                     return CCKeyDerivationPBKDF(
                         CCPBKDFAlgorithm(kCCPBKDF2),
                         passPtr, passLen,

@@ -194,8 +194,8 @@ struct MovieDetailView: View {
                 } label: {
                     HStack(spacing: 0) {
                         AppText(link.label, lvl: .meta)
-                        AppText(link.value, lvl: .meta, color: theme.accent, underline: true,
-                                maxLines: 1)
+                        AppText(link.value, lvl: .meta, color: theme.accent, maxLines: 1,
+                                underline: true)
                         Spacer(minLength: 0)
                     }
                     .frame(minHeight: ComponentMetrics.buttonMin)
@@ -225,8 +225,8 @@ struct MovieDetailView: View {
                         Button {
                             router.push(.lookup(tag.payload))
                         } label: {
-                            AppText(tag.name, lvl: .meta, color: theme.accent, underline: true,
-                                    maxLines: 1)
+                            AppText(tag.name, lvl: .meta, color: theme.accent, maxLines: 1,
+                                    underline: true)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)

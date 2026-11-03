@@ -354,8 +354,9 @@ final class SearchVM: ObservableObject {
             applyHome(fresh)
             if fromRefresh { refreshResult.emit(.done(fresh.totalCount)) }
         } catch {
+            let err = error
             guard rid == reqId else { return }
-            if !auto { error = ErrText.of(error) }
+            if !auto { self.error = ErrText.of(err) }
             if fromRefresh { refreshResult.emit(.fail("首页查询失败")) }
         }
     }
@@ -460,8 +461,9 @@ final class SearchVM: ObservableObject {
                     applyResult(stale.items, page: p, derived: stale.derived, served: stale.served,
                                 note: SearchCopy.offlineSearchNote)
                 } else {
-                    error = ErrText.of(error)
-                    if fromRefresh { refreshResult.emit(.fail(ErrText.of(error))) }
+                    let err = error
+                    self.error = ErrText.of(err)
+                    if fromRefresh { refreshResult.emit(.fail(ErrText.of(err))) }
                 }
             }
         }

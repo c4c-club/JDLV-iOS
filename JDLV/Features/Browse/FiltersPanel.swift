@@ -213,7 +213,7 @@ struct FiltersPanel: View {
 
     @ViewBuilder
     private func section<Content: View>(
-        key: String, autoOpen: Bool, @ViewBuilder content: () -> Content
+        key: String, autoOpen: Bool, @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         CollapsibleSection(
             title: Self.titles[key] ?? key,

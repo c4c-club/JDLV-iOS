@@ -86,7 +86,7 @@ struct FavsView: View {
                 Spacer(minLength: 0)
                 AppText(FavsCopy.tabLabel(label, vm.count(kind)), lvl: .bodyS,
                         color: selected ? theme.accent : theme.text2,
-                        fontWeight: selected ? .semibold : .regular, maxLines: 1)
+                        maxLines: 1, fontWeight: selected ? .semibold : .regular)
                 Spacer(minLength: 0)
                 Rectangle()
                     .fill(selected ? theme.accent : Color.clear)

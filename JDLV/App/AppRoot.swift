@@ -45,24 +45,16 @@ struct AppGate: View {
     }
 }
 
-// MARK: - 首启引导（setup 分支占位；完整设置页留 P12）
+// MARK: - 首启引导（P12：「去设置」直接进完整设置页）
 
 /// 顶部横幅逐字「首次使用 · 请配置数据源」+ 极简说明卡 + 「去设置」按钮；
-/// 「去设置」展开最小数据源表单（P6 占位），保存后 setupRequired 转 false → 门禁直接进
-/// 主页（≤3s，无需重启进程）。
+/// P12 起「去设置」进入完整设置页（SettingsView firstRun 路径，① 数据源自动展开），
+/// 保存后 setupRequired 转 false → 门禁直接进主页（≤3s，无需重启进程）。
 struct FirstRunSetupView: View {
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
 
-    @State private var showForm = false
-    @State private var dbSrc = "remote"
-    @State private var host = ""
-    @State private var port = ""
-    @State private var user = ""
-    @State private var pass = ""
-    @State private var showPlain = false       // 密码遮罩切换（尾缀文字 明文/隐藏）
-    @State private var saving = false
-    @State private var errText = ""
+    @State private var showSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -73,17 +65,19 @@ struct FirstRunSetupView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(theme.accent.opacity(0.20))
-            ScrollView {
-                VStack(spacing: 16) {
-                    if showForm { quickForm } else { explanationCard }
+            if showSettings {
+                SettingsView(firstRun: true)
+            } else {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        explanationCard
+                    }
+                    .padding(16)
                 }
-                .padding(16)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.bg0.ignoresSafeArea())
-        .onAppear { loadDraft() }
-        .onChange(of: dbSrc) { _ in loadDraft() }
     }
 
     // MARK: 说明卡 + 去设置
@@ -98,7 +92,7 @@ struct FirstRunSetupView: View {
                 .foregroundColor(theme.text2)
                 .multilineTextAlignment(.center)
             Button {
-                showForm = true
+                showSettings = true
             } label: {
                 Text("去设置")
                     .font(.system(size: Tx.body.size, weight: .medium))
@@ -107,140 +101,11 @@ struct FirstRunSetupView: View {
                     .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("first_run_go_settings")
         }
         .padding(16)
         .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 12).fill(theme.bg1))
-    }
-
-    // MARK: 最小数据源表单（P6 占位）
-
-    private var quickForm: some View {
-        VStack(spacing: 12) {
-            Picker("当前数据源", selection: $dbSrc) {
-                Text("本地库").tag("local")
-                Text("远程库").tag("remote")
-            }
-            .pickerStyle(.segmented)
-            fieldRow("主机", placeholder: "IP / 主机名", text: $host, keyboard: .default)
-            fieldRow("端口", placeholder: dbSrc == "local" ? "3306" : "3307", text: $port, keyboard: .numberPad)
-            fieldRow("用户", placeholder: "用户名", text: $user, keyboard: .default)
-            passwordRow
-            if !errText.isEmpty {
-                Text(errText)
-                    .font(.system(size: Tx.meta.size))
-                    .foregroundColor(theme.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Button {
-                save()
-            } label: {
-                Text(saving ? "保存中…" : "保存")
-                    .font(.system(size: Tx.body.size, weight: .medium))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent))
-            }
-            .buttonStyle(.plain)
-            .disabled(saving)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 12).fill(theme.bg1))
-    }
-
-    private var passwordRow: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text("密码")
-                .font(.system(size: 13))
-                .foregroundColor(theme.text2)
-                .frame(width: 96, alignment: .leading)
-            Group {
-                if showPlain {
-                    TextField("密码", text: $pass)
-                } else {
-                    SecureField("密码", text: $pass)
-                }
-            }
-            .font(.system(size: 13))
-            .foregroundColor(theme.text)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .padding(.horizontal, 10)
-            .frame(minHeight: 38)
-            .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3.opacity(0.35)))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(theme.line, lineWidth: 1))
-            Button {
-                showPlain.toggle()
-            } label: {
-                Text(showPlain ? "隐藏" : "明文")
-                    .font(.system(size: 12))
-                    .foregroundColor(theme.text2)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func fieldRow(_ label: String, placeholder: String,
-                          text: Binding<String>, keyboard: UIKeyboardType) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text(label)
-                .font(.system(size: 13))
-                .foregroundColor(theme.text2)
-                .frame(width: 96, alignment: .leading)
-            TextField(placeholder, text: text)
-                .keyboardType(keyboard)
-                .font(.system(size: 13))
-                .foregroundColor(theme.text)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(.horizontal, 10)
-                .frame(minHeight: 38)
-                .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3.opacity(0.35)))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(theme.line, lineWidth: 1))
-        }
-    }
-
-    // MARK: 草稿与保存
-
-    private func loadDraft() {
-        let s = store.settings
-        dbSrc = s.dbSrc == "local" ? "local" : "remote"
-        host = s.host
-        port = s.port
-        user = s.user
-        pass = s.pass
-    }
-
-    private func save() {
-        let src = dbSrc
-        let h = host.trimmingCharacters(in: .whitespaces)
-        let p = port.trimmingCharacters(in: .whitespaces)
-        let u = user
-        let pw = pass
-        // P6 占位校验（对齐 setupRequired 判定；完整校验/测试连接在 P12）
-        let missing = src == "remote" ? (u.isEmpty || pw.isEmpty) : u.isEmpty
-        if missing {
-            errText = src == "remote" ? "请填写用户与密码" : "请填写用户名"
-            return
-        }
-        saving = true
-        errText = ""
-        Task {
-            let r = await store.updateSettingsNow { s in
-                s.dbSrc = src
-                if src == "local" {
-                    s.localHost = h; s.localPort = p; s.localUser = u; s.localPass = pw
-                } else {
-                    s.remoteHost = h; s.remotePort = p; s.remoteUser = u; s.remotePass = pw
-                }
-            }
-            saving = false
-            if r == .failed {
-                errText = "保存失败 (重试或检查存储)"   // 11_settings 0.1 逐字
-            }
-            // SAVED：setupRequired 转 false → AppGate 直接进主页，无需重启进程
-        }
     }
 }
 
@@ -325,6 +190,8 @@ struct AppRoot: View {
             ShtView()   // P9d：98t 列表（Features/Sht/ShtView.swift；自持 ShtVM）
         case "favs":
             FavsView()   // P9e：收藏三 tab（Features/Favs/FavsView.swift；自持 FavsVM）
+        case "settings":
+            SettingsView()   // P12：设置页全量（Features/Settings；11 分组卡 + 诊断）
         default:
             TabPlaceholderRoot(tab: tabName, label: label)
         }
