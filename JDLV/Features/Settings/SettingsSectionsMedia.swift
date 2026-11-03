@@ -47,7 +47,7 @@ struct JdbImageCard: View {
         ) {
             SettingsSegmented(label: SettingsCopy.jdbImgHostLabel,
                               options: [
-                                        DropdownOption(label: SettingsCopy.jdbImgApp, value: "app"), DropdownOption(label: SettingsCopy.jdbImgWeb, value: "web"), DropdownOption(label: SettingsCopy.jdbImgCustom, value: "custom")]
+                                        DropdownOption(label: SettingsCopy.jdbImgApp, value: "app"), DropdownOption(label: SettingsCopy.jdbImgWeb, value: "web"), DropdownOption(label: SettingsCopy.jdbImgCustom, value: "custom")],
                               current: chipValue) { v in
                 editNow { $0.jdbImgHost = v }
             }
@@ -242,7 +242,7 @@ struct ThemeCard: View {
         ) {
             SettingsSegmented(label: SettingsCopy.themeLabel,
                               options: [
-                                        DropdownOption(label: SettingsCopy.themeSystem, value: "system"), DropdownOption(label: SettingsCopy.themeDark, value: "dark"), DropdownOption(label: SettingsCopy.themeLight, value: "light"), DropdownOption(label: SettingsCopy.themeSepia, value: "sepia")]
+                                        DropdownOption(label: SettingsCopy.themeSystem, value: "system"), DropdownOption(label: SettingsCopy.themeDark, value: "dark"), DropdownOption(label: SettingsCopy.themeLight, value: "light"), DropdownOption(label: SettingsCopy.themeSepia, value: "sepia")],
                               current: s.themeName) { v in
                 editNow { $0.themeName = v }
             }
@@ -291,7 +291,7 @@ struct LockCard: View {
         ) {
             SettingsSegmented(label: SettingsCopy.lockTypeLabel,
                               options: [
-                                        DropdownOption(label: SettingsCopy.lockNone, value: "none"), DropdownOption(label: SettingsCopy.lockPin, value: "pin"), DropdownOption(label: SettingsCopy.lockPattern, value: "pattern"), DropdownOption(label: SettingsCopy.lockBiometric, value: "biometric")]
+                                        DropdownOption(label: SettingsCopy.lockNone, value: "none"), DropdownOption(label: SettingsCopy.lockPin, value: "pin"), DropdownOption(label: SettingsCopy.lockPattern, value: "pattern"), DropdownOption(label: SettingsCopy.lockBiometric, value: "biometric")],
                               current: currentChip) { v in
                 select(v)
             }

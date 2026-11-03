@@ -119,7 +119,7 @@ struct OfflineIndexCard: View {
             }
             SettingsDropdownRow(label: SettingsCopy.shadowModeLabel,
                                 options: [
-                                        DropdownOption(label: SettingsCopy.shadowMode1, value: "1"), DropdownOption(label: SettingsCopy.shadowMode0, value: "0")]
+                                        DropdownOption(label: SettingsCopy.shadowMode1, value: "1"), DropdownOption(label: SettingsCopy.shadowMode0, value: "0")],
                                 current: "\(s.shadowMode)") { v in
                 editNow { $0.shadowMode = Int(v) ?? 1 }
             }

@@ -34,19 +34,19 @@ struct BrowseSearchCard: View {
         ) {
             SettingsDropdownRow(label: SettingsCopy.viewModeLabel,
                                 options: [
-                                        DropdownOption(label: SettingsCopy.viewMode0, value: "0"), DropdownOption(label: SettingsCopy.viewMode1, value: "1"), DropdownOption(label: SettingsCopy.viewMode2, value: "2")]
+                                        DropdownOption(label: SettingsCopy.viewMode0, value: "0"), DropdownOption(label: SettingsCopy.viewMode1, value: "1"), DropdownOption(label: SettingsCopy.viewMode2, value: "2")],
                                 current: "\(s.viewMode)") { v in
                 selectInt(v) { $0.viewMode = $1 }
             }
             SettingsDropdownRow(label: SettingsCopy.coverHalfLabel,
                                 options: [
-                                        DropdownOption(label: SettingsCopy.coverHalf0, value: "0"), DropdownOption(label: SettingsCopy.coverHalf1, value: "1"), DropdownOption(label: SettingsCopy.coverHalf2, value: "2")]
+                                        DropdownOption(label: SettingsCopy.coverHalf0, value: "0"), DropdownOption(label: SettingsCopy.coverHalf1, value: "1"), DropdownOption(label: SettingsCopy.coverHalf2, value: "2")],
                                 current: "\(s.coverHalf)") { v in
                 selectInt(v) { $0.coverHalf = $1 }
             }
             SettingsDropdownRow(label: SettingsCopy.lookupScopeLabel,
                                 options: [
-                                        DropdownOption(label: SettingsCopy.lookupScope0, value: "0"), DropdownOption(label: SettingsCopy.lookupScope1, value: "1")]
+                                        DropdownOption(label: SettingsCopy.lookupScope0, value: "0"), DropdownOption(label: SettingsCopy.lookupScope1, value: "1")],
                                 current: "\(s.lookupScope)") { v in
                 selectInt(v) { $0.lookupScope = $1 }
             }
@@ -57,14 +57,14 @@ struct BrowseSearchCard: View {
             }
             SettingsDropdownRow(label: SettingsCopy.searchModeLabel,
                                 options: [
-                                        DropdownOption(label: SettingsCopy.searchMode0, value: "0"), DropdownOption(label: SettingsCopy.searchMode1, value: "1")]
+                                        DropdownOption(label: SettingsCopy.searchMode0, value: "0"), DropdownOption(label: SettingsCopy.searchMode1, value: "1")],
                                 current: "\(s.searchMode)") { v in
                 selectInt(v) { $0.searchMode = $1 }
             }
             // jdb_sort + jdb_sort_asc（S11-P2：asc 不纳入 dbChanged）
             SettingsDropdownRow(label: SettingsCopy.jdbSortLabel,
                                 options: [
-                                        DropdownOption(label: "发布日期", value: "release_date"), DropdownOption(label: "评分", value: "score"), DropdownOption(label: "年份", value: "year")]
+                                        DropdownOption(label: "发布日期", value: "release_date"), DropdownOption(label: "评分", value: "score"), DropdownOption(label: "年份", value: "year")],
                                 current: s.jdbSort) { v in
                 editNow { $0.jdbSort = v }
             }
@@ -76,13 +76,13 @@ struct BrowseSearchCard: View {
             // actor_sort / actor_gender
             SettingsDropdownRow(label: SettingsCopy.actorSortLabel,
                                 options: [
-                                        DropdownOption(label: "出演数", value: "videos"), DropdownOption(label: "人气", value: "popularity"), DropdownOption(label: "均分", value: "avg_score_all")]
+                                        DropdownOption(label: "出演数", value: "videos"), DropdownOption(label: "人气", value: "popularity"), DropdownOption(label: "均分", value: "avg_score_all")],
                                 current: s.actorSort) { v in
                 editNow { $0.actorSort = v }
             }
             SettingsDropdownRow(label: SettingsCopy.actorGenderLabel,
                                 options: [
-                                        DropdownOption(label: "女", value: "f"), DropdownOption(label: "男", value: "m"), DropdownOption(label: "全部", value: "a")]
+                                        DropdownOption(label: "女", value: "f"), DropdownOption(label: "男", value: "m"), DropdownOption(label: "全部", value: "a")],
                                 current: s.actorGender) { v in
                 editNow { $0.actorGender = v }
             }
@@ -239,7 +239,7 @@ struct SemanticModelCard: View {
                 // sem_threshold：updateSettings 轻量通道（不触发副作用）
                 SettingsDropdownRow(label: SettingsCopy.semThresholdLabel,
                                     options: [
-                                        DropdownOption(label: SettingsCopy.semThreshold5, value: "5"), DropdownOption(label: SettingsCopy.semThreshold10, value: "10"), DropdownOption(label: SettingsCopy.semThreshold20, value: "20")]
+                                        DropdownOption(label: SettingsCopy.semThreshold5, value: "5"), DropdownOption(label: SettingsCopy.semThreshold10, value: "10"), DropdownOption(label: SettingsCopy.semThreshold20, value: "20")],
                                     current: "\(s.semThreshold)") { v in
                     if let n = Int(v) {
                         bus.markSaving()
@@ -249,7 +249,7 @@ struct SemanticModelCard: View {
                 // emb_cache_mb：autoSave 通道 + 立即更新 EmbStore（S15-14）
                 SettingsDropdownRow(label: SettingsCopy.embCacheLabel,
                                     options: [
-                                        DropdownOption(label: "50 MB", value: "50"), DropdownOption(label: "100 MB", value: "100"), DropdownOption(label: "200 MB", value: "200"), DropdownOption(label: "不限", value: "0")]
+                                        DropdownOption(label: "50 MB", value: "50"), DropdownOption(label: "100 MB", value: "100"), DropdownOption(label: "200 MB", value: "200"), DropdownOption(label: "不限", value: "0")],
                                     current: "\(s.embCacheMb)") { v in
                     if let n = Int(v) {
                         bus.markSaving()
@@ -393,13 +393,13 @@ struct CacheCard: View {
             }
             SettingsDropdownRow(label: SettingsCopy.imageCacheMbLabel,
                                 options: [
-                                        DropdownOption(label: "128 MB", value: "128"), DropdownOption(label: "256 MB", value: "256"), DropdownOption(label: "512 MB", value: "512"), DropdownOption(label: "1 GB", value: "1024"), DropdownOption(label: "2 GB", value: "2048")]
+                                        DropdownOption(label: "128 MB", value: "128"), DropdownOption(label: "256 MB", value: "256"), DropdownOption(label: "512 MB", value: "512"), DropdownOption(label: "1 GB", value: "1024"), DropdownOption(label: "2 GB", value: "2048")],
                                 current: "\(s.imageCacheMb)") { v in
                 selectInt(v) { $0.imageCacheMb = $1 }
             }
             SettingsDropdownRow(label: SettingsCopy.imageCacheDaysLabel,
                                 options: [
-                                        DropdownOption(label: SettingsCopy.imageCacheNever, value: "0"), DropdownOption(label: "7 天", value: "7"), DropdownOption(label: "15 天", value: "15"), DropdownOption(label: "30 天", value: "30"), DropdownOption(label: "60 天", value: "60")]
+                                        DropdownOption(label: SettingsCopy.imageCacheNever, value: "0"), DropdownOption(label: "7 天", value: "7"), DropdownOption(label: "15 天", value: "15"), DropdownOption(label: "30 天", value: "30"), DropdownOption(label: "60 天", value: "60")],
                                 current: "\(s.imageCacheDays)") { v in
                 selectInt(v) { $0.imageCacheDays = $1 }
             }
