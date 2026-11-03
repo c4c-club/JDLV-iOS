@@ -85,8 +85,8 @@ final class SemanticMathTests: XCTestCase {
     func testInt8DecodeRoundTrip() {
         // 抓取端 v → int8: round(v*127)；还原 ≈ v（误差 ≤ 1/254）
         let original: [Float] = [0.5, -0.5, 0.0, 0.999, -0.999, 0.123]
-        let bytes = original.map { b -> UInt8 in
-            let q = ($0 * 127.0).rounded()
+        let bytes = original.map { v -> UInt8 in
+            let q = (v * 127.0).rounded()
             return UInt8(bitPattern: Int8(clamping: Int(q)))
         }
         let back = SemanticMath.int8Decode(Data(bytes))

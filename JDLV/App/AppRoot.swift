@@ -316,97 +316,16 @@ struct AppRoot: View {
     private func tabRoot(_ tabName: String, label: String) -> some View {
         switch tabName {
         case "search":
-            HomeTabRoot()
+            HomeView()   // P9a：首页三段态 + 搜索态（Features/Search/HomeView.swift）
+        case "browse":
+            BrowseView()   // P9b：浏览页（自持 BrowseVM；toolbar/筛选/网格/翻页）
         default:
             TabPlaceholderRoot(tab: tabName, label: label)
         }
     }
 }
 
-// MARK: - 首页占位（可 push movie/actor 占位详情验证压栈）
-
-private struct HomeTabRoot: View {
-    @EnvironmentObject private var router: Router
-    @Environment(\.appTheme) private var theme
-    @State private var recent: [Row] = []
-    @State private var demoLoaded = false
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                searchBar
-                demoSection
-            }
-            .padding(12)
-        }
-        .background(theme.bg0.ignoresSafeArea())
-        .onAppear(perform: loadDemo)
-    }
-
-    /// 搜索条占位（P9 接 SearchVm；placeholder 逐字 07 C2「番号 / 标题 / 女优 / 标签…」）
-    private var searchBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 18))
-                .foregroundColor(theme.text2)
-            AppText("番号 / 标题 / 女优 / 标签…", lvl: .meta)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: ComponentMetrics.searchBarHeight)
-        .background(RoundedRectangle(cornerRadius: ComponentMetrics.searchBarRadius)
-            .fill(theme.bg3))
-        .accessibilityIdentifier("home_searchbar")
-    }
-
-    @ViewBuilder
-    private var demoSection: some View {
-        #if DEBUG
-        if DemoDataSource.enabled() {
-            if recent.isEmpty {
-                AppText("演示数据加载中…", lvl: .meta)
-            } else {
-                // 段头逐字（07 C4：🆕 最近更新）
-                AppText("🆕 最近更新", lvl: .titleM)
-                ForEach(recent.indices, id: \.self) { i in
-                    let m = recent[i]
-                    MovieCard(m: m, viewMode: 2, onClick: { router.push(.movie(m.s("id"))) })
-                        .accessibilityIdentifier(i == 0 ? "home_push_movie" : "home_movie_\(i)")
-                }
-            }
-        } else {
-            fallbackPushButtons
-        }
-        #else
-        fallbackPushButtons
-        #endif
-    }
-
-    private var fallbackPushButtons: some View {
-        VStack(spacing: 12) {
-            pushButton("打开影片详情（压栈验证）") { router.push(.movie("100001")) }
-            pushButton("打开女优详情（压栈验证）") { router.push(.actor("200001")) }
-        }
-    }
-
-    private func pushButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            AppText(title, lvl: .bodyS, color: theme.accent, fontWeight: .medium)
-                .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
-                .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent.opacity(0.15)))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func loadDemo() {
-        #if DEBUG
-        guard !demoLoaded, DemoDataSource.enabled() else { return }
-        demoLoaded = true
-        recent = DemoStore.shared.homeSections(per: 12)["recent"] ?? []
-        #endif
-    }
-}
+// MARK: - （P9a：首页占位 HomeTabRoot 已由 Features/Search/HomeView.swift 接管）
 
 // MARK: - 其余 Tab 根占位（P9 各列表页接入）
 
@@ -450,7 +369,7 @@ private struct RouteDestination: View {
             case .top250:
                 SecondaryPlaceholder(title: "🏆 TOP250", subtitle: "TOP250 完整页 P9 实现")
             case .lookup(let payload):
-                LookupPlaceholder(payload: payload)
+                LookupView(payload: payload)   // P9b：反查结果页（独立 VM + skipBind）
             }
         }
         .toolbar(.hidden, for: .tabBar)   // 二级页隐藏底栏（07 A3）

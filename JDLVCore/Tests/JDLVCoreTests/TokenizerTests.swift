@@ -82,7 +82,7 @@ final class TokenizerTests: XCTestCase {
     func testTruncationCap128() throws {
         let tok = try loadTokenizer()
         // 长文本: 先截 126（128 - 2 个模板 special）再加 <s>/</s> → 恰 128
-        let r = tok.encode(String(repeating: "word ", count: 60))
+        let r = tok.encode(String(repeating: "word ", count: 200))   // >126 词触发截断
         XCTAssertEqual(r.ids.count, 128)
         XCTAssertEqual(r.ids.first, 0)
         XCTAssertEqual(r.ids.last, 2)
