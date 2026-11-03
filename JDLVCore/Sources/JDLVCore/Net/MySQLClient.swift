@@ -52,4 +52,11 @@ public final class MySQLClient {
     }
 
     public var isClosed: Bool { conn?.isClosed ?? true }
+
+    deinit {
+        if let conn, !conn.isClosed {
+            _ = try? conn.close().wait()
+        }
+        // 不做 group.syncShutdownGracefully（可能强关在途命令 channel → MySQLNIO 断言）
+    }
 }

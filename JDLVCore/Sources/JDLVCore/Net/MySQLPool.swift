@@ -265,6 +265,33 @@ public final class MySQLPool {
         }
     }
 
+    deinit {
+        // 只关闭空闲连接。禁止在这里 syncShutdownGracefully：
+        // 它会强关在途命令的 channel → MySQLNIO "Statement not closed" 断言 → SIGILL。
+        // 在途连接由 deferred close 负责（见 execQuery），进程退出前未落定的由 pinned 钉住防 deinit 断言。
+        lock.lock()
+        let all = idle.values.flatMap { $0 }
+        idle = ["jdb": [], "sht": []]
+        lock.unlock()
+        for slot in all where !slot.conn.isClosed {
+            _ = try? slot.conn.close().wait()
+        }
+    }
+
+    /// 在途连接钉住池：防止 future 未落定前连接 dealloc 触发 MySQLNIO deinit 断言
+    static let pinned = PinnedConns()
+
+    public final class PinnedConns: @unchecked Sendable {
+        private let lk = NSLock()
+        private var items: [MySQLConnection] = []
+        func add(_ c: MySQLConnection) {
+            lk.lock(); items.append(c); lk.unlock()
+        }
+        func remove(_ c: MySQLConnection) {
+            lk.lock(); items.removeAll { $0 === c }; lk.unlock()
+        }
+    }
+
     // MARK: 借出 / 归还 / 作废
 
     private func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
@@ -364,10 +391,15 @@ public final class MySQLPool {
                 let rows = try await execQuery(slot!, sql, params, timeoutSec: ts)
                 recycle(which, slot!)
                 OfflineGate.clear(which)
+                sem.release()
                 return rows
             } catch {
                 if let slot {
-                    await closeConn(slot)
+                    // 超时/取消：底层查询仍在途，连接由 execQuery 的 deferred close 关闭
+                    let inflight = error is QueryTimeoutError || error is CancellationError
+                    if !inflight {
+                        await closeConn(slot)
+                    }
                     lock.lock()
                     created[which] = max(0, (created[which] ?? 1) - 1)
                     lock.unlock()
@@ -399,7 +431,8 @@ public final class MySQLPool {
         let el = conn.eventLoop
         let box = OneShot<[Row]>(on: el)
         let binds: [MySQLData] = params.map { Self.toMySQLData($0) }
-        conn.query(sql, binds).whenComplete { r in
+        let fut = conn.query(sql, binds)
+        fut.whenComplete { r in
             switch r {
             case .success(let rows): box.succeed(rows.map(Self.normRow))
             case .failure(let e): box.fail(e)
@@ -415,6 +448,17 @@ public final class MySQLPool {
                 box.fail(CancellationError())
             })
         } catch {
+            // 超时/取消时查询仍在服务器端执行：连接必须在底层 future 落定后再关
+            // （MySQLNIO 在命令在途时发 COM_QUIT 会触发断言 → SIGILL）。
+            if error is QueryTimeoutError || error is CancellationError {
+                MySQLPool.pinned.add(conn)
+                fut.whenComplete { [conn] _ in
+                    Task {
+                        _ = try? await awaitFuture(conn.close())
+                        MySQLPool.pinned.remove(conn)
+                    }
+                }
+            }
             if Task.isCancelled { throw CancellationError() }
             throw error
         }
@@ -481,11 +525,17 @@ public final class MySQLPool {
         }
     }
 
-    /// 行规范化（列名用 label；同名列后写覆盖 —— LinkedHashMap 语义）
+    /// 行规范化（列名用 label；同名列后写覆盖 —— Android LinkedHashMap 语义，
+    /// row.column() 只返回首个匹配，必须按位置取值）
     static func normRow(_ row: MySQLRow) -> Row {
         var map: [String: SQLValue] = [:]
-        for col in row.columnDefinitions {
-            map[col.name] = normValue(row.column(col.name))
+        for (i, col) in row.columnDefinitions.enumerated() {
+            let data = row.values[i].map {
+                MySQLData(
+                    type: col.columnType, format: row.format, buffer: $0,
+                    isUnsigned: col.flags.contains(.COLUMN_UNSIGNED))
+            }
+            map[col.name] = normValue(data)
         }
         return Row(map)
     }
@@ -501,7 +551,18 @@ public final class MySQLPool {
         case .decimal, .newdecimal, .float, .double:
             return .double(d.double ?? 0.0)
         case .date, .time, .datetime, .timestamp, .newdate, .timestamp2, .datetime2, .time2:
-            return .string(d.string ?? "")
+            // 二进制协议下 string 可能取不到（MySQLTime 表示）——按 Android Timestamp.toString 语义格式化
+            if let s = d.string, !s.isEmpty { return .string(s) }
+            if let mt = d.time {
+                var s = String(format: "%04d-%02d-%02d %02d:%02d:%02d",
+                               mt.year ?? 0, mt.month ?? 1, mt.day ?? 1,
+                               mt.hour ?? 0, mt.minute ?? 0, mt.second ?? 0)
+                if (mt.microsecond ?? 0) > 0 {
+                    s += String(format: ".%06d", mt.microsecond ?? 0)
+                }
+                return .string(s)
+            }
+            return .string("")
         case .bit:
             return .bool(d.bool ?? false)
         case .blob, .tinyBlob, .mediumBlob, .longBlob, .geometry, .json:

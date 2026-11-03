@@ -14,12 +14,21 @@ final class MySQLIntegrationTests: XCTestCase {
     static let pass = ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_PASS"] ?? "root"
     static let dbName = "jdlv_it"
 
-    static var group: EventLoopGroup!
+    static var group: EventLoopGroup?
     static var bootConn: MySQLConnection!
 
     override class func setUp() {
         super.setUp()
         group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
+    }
+
+    override class func tearDown() {
+        if let c = bootConn, !c.isClosed {
+            _ = try? c.close().wait()
+        }
+        bootConn = nil
+        // 不 syncShutdownGracefully：强关在途命令 channel 会触发 MySQLNIO 断言
+        super.tearDown()
     }
 
     /// 装载 fixture（逐条语句，不用多语句）
@@ -31,7 +40,7 @@ final class MySQLIntegrationTests: XCTestCase {
                 MySQLConnection.connect(
                     to: addr, username: Self.user, database: "",
                     password: Self.pass, tlsConfiguration: nil, serverHostname: nil,
-                    on: Self.group.next()))
+                    on: Self.group!.next()))
         }
         let conn = MySQLIntegrationTests.bootConn!
         _ = try await awaitFuture(conn.simpleQuery("DROP DATABASE IF EXISTS \(Self.dbName)"))
@@ -50,12 +59,14 @@ final class MySQLIntegrationTests: XCTestCase {
 
     override func setUpWithError() throws {
         OfflineGate.reset(now: 0)
-        SqlPolicy.enforce = true
+        // 基建测试的任意 SQL 不在 106 生产模板内 → 关闭 enforce（Q 层测试保持 enforce=true）
+        SqlPolicy.enforce = false
         pool = MySQLPool()
     }
 
     override func tearDownWithError() throws {
         OfflineGate.reset(now: 0)
+        SqlPolicy.enforce = true
         pool = nil
     }
 
@@ -206,9 +217,10 @@ final class MySQLIntegrationTests: XCTestCase {
     func test_11_largeInList() async throws {
         try await bootstrapFixture()
         installPool(makePoolSettings())
-        let ids = (0..<500).map { String(format: "'m%03d'", $0) }.joined(separator: ",")
+        var ids = ["'m01'", "'m02'", "'m03'"]
+        ids += (0..<497).map { String(format: "'x%03d'", $0) }
         let rows = try await pool.query(
-            which: "jdb", sql: "SELECT id FROM movies WHERE id IN (\(ids))")
+            which: "jdb", sql: "SELECT id FROM movies WHERE id IN (\(ids.joined(separator: ",")))")
         XCTAssertEqual(rows.count, 3)
     }
 
@@ -258,10 +270,13 @@ final class MySQLIntegrationTests: XCTestCase {
             MySQLConnection.connect(
                 to: addr, username: Self.user, database: "",
                 password: Self.pass, tlsConfiguration: nil, serverHostname: nil,
-                on: Self.group.next()))
+                on: Self.group!.next()))
+        // 只杀空闲（Sleep）连接：在途 SLEEP 连接被杀会触发 MySQLNIO 命令未收尾断言
         let procs = try await awaitFuture(
-            killer.query("SELECT id FROM information_schema.processlist WHERE db = ?",
-                         [MySQLData(string: Self.dbName)]))
+            killer.query(
+                "SELECT id FROM information_schema.processlist " +
+                    "WHERE db = ? AND command = 'Sleep' AND id != CONNECTION_ID()",
+                [MySQLData(string: Self.dbName)]))
         for p in procs {
             if let pid = p.column("id")?.int {
                 _ = try? await awaitFuture(killer.query("KILL \(pid)"))
@@ -352,6 +367,7 @@ final class MySQLIntegrationTests: XCTestCase {
     func test_22_sqlPolicyRejectsUnregistered() async throws {
         try await bootstrapFixture()
         installPool(makePoolSettings())
+        SqlPolicy.enforce = true   // 本用例验证准入（setUp 里对基建测试关闭了 enforce）
         do {
             _ = try await pool.query(which: "jdb", sql: "DELETE FROM movies")
             XCTFail("expected SqlPolicyViolation")
@@ -379,11 +395,11 @@ final class MySQLIntegrationTests: XCTestCase {
     func test_24_bothPoolsIndependent() async throws {
         try await bootstrapFixture()
         installPool(makePoolSettings())
-        async let a = pool.query(which: "jdb", sql: "SELECT 'jdb'")
-        async let b = pool.query(which: "sht", sql: "SELECT 'sht'")
+        async let a = pool.query(which: "jdb", sql: "SELECT 'jdb' AS tag")
+        async let b = pool.query(which: "sht", sql: "SELECT 'sht' AS tag")
         let (ra, rb) = try await (a, b)
-        XCTAssertEqual(ra.first?.s("'jdb'") ?? ra.first?.s("jdb"), "jdb")
-        XCTAssertEqual(rb.first?.s("sht"), "sht")
+        XCTAssertEqual(ra.first?.s("tag"), "jdb")
+        XCTAssertEqual(rb.first?.s("tag"), "sht")
     }
 
     // MARK: Db 门面
