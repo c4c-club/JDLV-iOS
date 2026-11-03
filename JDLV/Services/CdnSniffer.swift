@@ -87,7 +87,7 @@ final class CdnSniffer {
         lock.unlock()
         cb?(snapshot)
         Perf.mark("cdn.sniff.start", "kind=\(kind) host=\(Self.hostOf(url))")
-        let j = Task { [weak self] in
+        let j = Task<Void, Never> { [weak self] in
             await self?.runSniffJob(kind: kind, url: url, startedAt: t0)
         }
         lock.lock()
