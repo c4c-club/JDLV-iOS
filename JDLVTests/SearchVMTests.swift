@@ -311,7 +311,7 @@ final class SearchVMTests: XCTestCase {
     func test_localZeroHit_offline_emptyResultServedLocal() async throws {
         let data = FakeSearchData()
         let idx = FakeIdx()
-        let vm = makeVM(data: data, idx: idx, isOnline: { false })
+        let vm = makeVM(data: data, isOnline: { false }, idx: idx)
         defer { releaseIdx() }
         vm.query = "abc"
         await vm.search()

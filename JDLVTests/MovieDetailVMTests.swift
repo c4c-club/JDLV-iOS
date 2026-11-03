@@ -249,12 +249,14 @@ final class MovieDetailVMTests: XCTestCase {
         await vm.bind(mid: "100001")
         // 进入详情即记已读（B.10）→ read=true
         XCTAssertTrue(vm.read)
-        XCTAssertTrue(await store.historyIs(kind: "movie", itemId: "100001"))
+        let __h = await store.historyIs(kind: "movie", itemId: "100001")
+        XCTAssertTrue(__h)
         XCTAssertFalse(vm.fav)
         // toggleFav → 写入 + Toast「已收藏」
         await vm.toggleFav()
         XCTAssertTrue(vm.fav)
-        XCTAssertTrue(await store.favIs(kind: "movie", itemId: "100001"))
+        let __f = await store.favIs(kind: "movie", itemId: "100001")
+        XCTAssertTrue(__f)
         XCTAssertEqual(toasts.list.last, "已收藏")
         await vm.toggleFav()
         XCTAssertFalse(vm.fav)
