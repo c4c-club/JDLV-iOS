@@ -506,8 +506,8 @@ final class ExtraVMTests: XCTestCase {
     func testFavsExportTextVerbatim() {
         let nowMs: Int64 = 1_770_000_000_000   // 2026-02-12 08:40:00 UTC（本地时区随环境）
         let movies = [
-            favRow(kind: "movie", id: "1", title: "演示影片 001", ts: 1_760_000_000),
-            favRow(kind: "movie", id: "2", title: "", ts: 0),
+            Self.favRow(kind: "movie", id: "1", title: "演示影片 001", ts: 1_760_000_000),
+            Self.favRow(kind: "movie", id: "2", title: "", ts: 0),
         ]
         let text = FavsVM.exportText(
             movie: movies, sht: [Self.favRow(kind: "sht", id: "3", title: "帖子", ts: 1_760_000_000)],
