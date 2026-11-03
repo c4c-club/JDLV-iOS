@@ -118,7 +118,7 @@ struct ShtDetailView: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             AppText(data.title.isEmpty ? " " : data.title, lvl: .titleM,
-                    fontWeight: .bold, textAlign: .leading)
+                    textAlign: .leading, fontWeight: .bold)
             if !data.metaLine.isEmpty {
                 AppText(data.metaLine, lvl: .meta)
             }
@@ -143,7 +143,7 @@ struct ShtDetailView: View {
                         PosterImage(url: b.i ?? "", aspect: 1.5)
                     } else if b.isText {
                         AppText(b.t ?? " ", lvl: .bodyS,
-                                fontWeight: b.isBold ? .bold : nil, textAlign: .leading)
+                                textAlign: .leading, fontWeight: b.isBold ? .bold : nil)
                     }
                 }
             }

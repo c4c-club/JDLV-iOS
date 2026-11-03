@@ -364,8 +364,8 @@ private struct ShtFilterSheet: View {
         Button {
             dismiss()
         } label: {
-            AppText("完成", lvl: .bodyS, color: theme.accent, fontWeight: .medium,
-                    textAlign: .center)
+            AppText("完成", lvl: .bodyS, color: theme.accent, textAlign: .center,
+                    fontWeight: .medium)
                 .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
                 .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent.opacity(0.15)))
                 .contentShape(Rectangle())

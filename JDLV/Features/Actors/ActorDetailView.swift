@@ -270,7 +270,7 @@ struct ActorDetailView: View {
                         showTagPanel = false
                     } label: {
                         AppText(ActorDetailCopy.done, lvl: .bodyS, color: .white,
-                                fontWeight: .medium, textAlign: .center)
+                                textAlign: .center, fontWeight: .medium)
                             .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
                             .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent))
                             .contentShape(Rectangle())

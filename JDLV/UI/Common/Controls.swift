@@ -34,8 +34,8 @@ struct AppToggleChip: View {
             HStack(spacing: 0) {
                 AppText(selected ? "✓ \(label)" : label, lvl: .meta,
                         color: selected ? theme.accent : theme.text,
-                        fontWeight: selected ? .bold : .regular,
-                        maxLines: 1)
+                        maxLines: 1,
+                        fontWeight: selected ? .bold : .regular)
             }
             .padding(.horizontal, 12)
             .frame(height: ComponentMetrics.chipHeight)   // 精确 36pt
