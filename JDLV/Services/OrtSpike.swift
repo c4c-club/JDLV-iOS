@@ -9,7 +9,7 @@ import OnnxRuntimeBindings
 enum OrtSpike {
     /// 返回 true 表示 ORT ObjC 绑定可链接（不加载模型）
     static func envAvailable() -> Bool {
-        (try? ORTEnv(withLoggingLevel: .warning)) != nil
+        (try? ORTEnv(loggingLevel: .warning)) != nil
     }
 }
 #else
