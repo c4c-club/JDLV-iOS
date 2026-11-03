@@ -22,6 +22,7 @@
 //  刻意差异：Android「宿主 Activity 不支持」文案无 iOS 对应物（无 FragmentActivity 概念），省略。
 //
 
+import JDLVCore
 import SwiftUI
 import Combine
 import LocalAuthentication

@@ -5,12 +5,19 @@ import SwiftUI
 
 public extension Color {
     init(hex: UInt32) {
+        // 6 位 hex（无 alpha 位）视为不透明；8 位 ARGB 才读 alpha
+        let alpha: Double
+        if hex > 0xFFFFFF {
+            alpha = Double((hex >> 24) & 0xFF) / 255.0
+        } else {
+            alpha = 1.0
+        }
         self.init(
             .sRGB,
             red: Double((hex >> 16) & 0xFF) / 255.0,
             green: Double((hex >> 8) & 0xFF) / 255.0,
             blue: Double(hex & 0xFF) / 255.0,
-            opacity: Double((hex >> 24) & 0xFF) / 255.0
+            opacity: alpha
         )
     }
 }
