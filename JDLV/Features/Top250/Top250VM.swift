@@ -65,7 +65,6 @@ struct DemoTop250DataSource: Top250DataSource {
 // MARK: - 逐字文案（10 §5）
 
 enum Top250Copy {
-    private init() {}
 
     /// 顶栏标题
     static let title = "🏆 TOP250"

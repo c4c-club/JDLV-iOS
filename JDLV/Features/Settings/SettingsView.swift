@@ -26,7 +26,6 @@ import JDLVCore
 // MARK: - 逐字文案集中点（11_settings.md 全部；含全角/半角标点差异）
 
 enum SettingsCopy {
-    private init() {}
 
     // MARK: 0.1 保存三态（文案逐字；kind: 0=保存中 1=SAVED 2=NO_CHANGE 3=FAILED）
 

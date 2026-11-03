@@ -48,7 +48,6 @@ struct DemoFavsStore: FavsStore {
 // MARK: - 逐字文案（10 §7）
 
 enum FavsCopy {
-    private init() {}
 
     /// 三 tab（文案带数量；半角括号）
     static let tabs: [(label: String, kind: String)] = [

@@ -144,7 +144,6 @@ struct DemoActorDetailDataSource: ActorDetailDataSource {
 // MARK: - 逐字文案（09 B 节）
 
 enum ActorDetailCopy {
-    private init() {}
 
     static let navTitleFallback = "女优详情"
     static let favAccessibility = "收藏"

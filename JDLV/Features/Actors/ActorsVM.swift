@@ -62,7 +62,6 @@ struct DemoActorsDataSource: ActorsDataSource {
 // MARK: - 逐字文案（09 A 节）
 
 enum ActorsCopy {
-    private init() {}
 
     /// SearchBarCompact placeholder（逐字）
     static let searchPlaceholder = "搜索女优姓名 / 别名…"

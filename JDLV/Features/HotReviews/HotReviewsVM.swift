@@ -87,7 +87,6 @@ struct DemoHotReviewsDataSource: HotReviewsDataSource {
 // MARK: - 逐字文案（10 §4）
 
 enum HotReviewsCopy {
-    private init() {}
 
     /// 时间段 chips（逐字，顺序固定）
     static let periods: [(label: String, value: String)] = [

@@ -31,7 +31,6 @@ import JDLVCore
 
 enum SettingsDiagnostics {
 
-    private init() {}
 
     // MARK: demo 模式
 
@@ -322,7 +321,6 @@ final class SettingsIndexHub {
     private var _emb: EmbStore?
     private var embFailed = false
 
-    private init() {}
 
     /// Application Support 目录（含尾分隔符的 path, 与 JDLVCore filePath 拼接规则一致）
     static var supportDir: String {

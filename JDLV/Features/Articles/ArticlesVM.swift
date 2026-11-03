@@ -175,7 +175,6 @@ struct DemoArticlesDataSource: ArticlesDataSource {
 // MARK: - 逐字文案（10 §2）
 
 enum ArticlesCopy {
-    private init() {}
 
     /// SearchBarCompact placeholder（逐字）
     static let searchPlaceholder = "搜索资讯标题 / 正文…"

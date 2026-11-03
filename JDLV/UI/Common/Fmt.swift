@@ -10,7 +10,6 @@ import Foundation
 //  - ActorCard 均分固定 "%.2f"（07 B15，见 AppCopy.actorMetaLine）。
 //
 enum Fmt {
-    private init() {}
 
     static func fmtSize(_ v: String) -> String {
         let t = v.trimmingCharacters(in: .whitespaces)

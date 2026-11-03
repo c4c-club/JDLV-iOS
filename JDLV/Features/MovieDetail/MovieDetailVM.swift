@@ -224,7 +224,6 @@ enum MovieImg {
 // MARK: - 逐字文案（08 B 节；含全/半角标点差异，勿规范化）
 
 enum MovieDetailCopy {
-    private init() {}
 
     static let navTitleFallback = "影片详情"
     /// B.0 右侧收藏按钮（FavButton accessibilityLabel）

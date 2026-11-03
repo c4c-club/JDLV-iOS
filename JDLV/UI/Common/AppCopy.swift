@@ -11,7 +11,6 @@ import Foundation
 //  - `跳页过深（最多约 {p} 页），请用滚动加载` 全角括号+全角逗号。
 //
 enum AppCopy {
-    private init() {}
 
     // MARK: 下拉刷新指示（ListScaffold 四态文案，07 B10 / 08 A.1）
 
