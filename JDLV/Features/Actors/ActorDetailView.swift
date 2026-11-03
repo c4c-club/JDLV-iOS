@@ -304,8 +304,8 @@ struct ActorMovieCell: View {
             VStack(alignment: .leading, spacing: 0) {
                 PosterImage(url: MovieImg.movieCover(mv.s("cover_url"), mv.s("id")),
                             half: true, aspect: 400.0 / 520.0, radius: 10)
-                AppText(number, lvl: .meta, color: theme.accent, fontWeight: .medium,
-                        maxLines: 1)
+                AppText(number, lvl: .meta, color: theme.accent, maxLines: 1,
+                        fontWeight: .medium)
                     .padding(.top, 4)
                 AppText(displayTitle.isEmpty ? " " : displayTitle, lvl: .meta, maxLines: 1)
                     .padding(.top, 1)

@@ -55,20 +55,20 @@ enum CdnSelfTest {
     static func run() async -> [SelfTestResult] {
         var out: [SelfTestResult] = []
         let appUrl = await sampleAppCover()
-        out.append(probe("app", appUrl, decode: true))
+        out.append(await probe("app", appUrl, decode: true))
         // web: 同路径换 web host (c0 实测本机不可达 → 预期 Reset/超时, err 给具体原因)
         let path = CdnRewrite.imgPathOf(appUrl)
-        out.append(probe("web", path != nil ? CdnRewrite.WEB_CDN + path! : "", decode: true))
+        out.append(await probe("web", path != nil ? CdnRewrite.WEB_CDN + path! : "", decode: true))
         let shtUrl = await sampleShtImage()
         if let shtUrl {
-            out.append(probe("sht", shtUrl, decode: false))
+            out.append(await probe("sht", shtUrl, decode: false))
         } else {
             out.append(SelfTestResult(kind: "sht", url: "", code: 0, bytes: 0,
                                       decoded: false, ms: 0, err: "库内暂无样例"))
         }
         let extUrl = await sampleExternal()
         if let extUrl {
-            out.append(probe("ext", extUrl, decode: false))
+            out.append(await probe("ext", extUrl, decode: false))
         } else {
             out.append(SelfTestResult(kind: "ext", url: "", code: 0, bytes: 0,
                                       decoded: false, ms: 0, err: "库内暂无样例"))

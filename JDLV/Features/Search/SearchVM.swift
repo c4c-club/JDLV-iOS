@@ -736,7 +736,7 @@ final class DemoIdxSearchable: IdxSearchable {
     private func allMovies() -> [Row] {
         lock.lock(); defer { lock.unlock() }
         if let c = cachedMovies { return c }
-        let items = store.browse(f: Filters(), page: 1, per: 200)["items"] as? [Row] ?? []
+        let items = store.browse(f: Filters(), page: 1, per: 200, sort: "release_date", asc: false)["items"] as? [Row] ?? []
         cachedMovies = items
         return items
     }
@@ -815,7 +815,7 @@ final class DemoSearchData: SearchData {
     // MARK: demo 远程口径（广过滤：番号前缀/标题/标签/系列/片商；女优经 actors → 关联影片）
 
     private func allMovies() -> [Row] {
-        store.browse(f: Filters(), page: 1, per: 200)["items"] as? [Row] ?? []
+        store.browse(f: Filters(), page: 1, per: 200, sort: "release_date", asc: false)["items"] as? [Row] ?? []
     }
 
     private func demoRemoteAll(q raw: String, scope: String) -> [Row] {

@@ -100,7 +100,7 @@ struct MovieCard: View {
             }
         }
         .padding(6)
-        .frame(minHeight: 72, maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
     }
 
     // MARK: 网格模式（viewMode 0 小图 400:520 右半 / 1 大图 800:520 整张）：Column(padding 8)

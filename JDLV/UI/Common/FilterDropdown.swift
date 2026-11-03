@@ -112,11 +112,11 @@ struct CollapsibleSection<Content: View>: View {
 
     private func savedValue() -> Bool? {
         guard let key = storageKey else { return nil }
-        return UserDefaults.standard.object(forKey: Self.FD.keyPrefix + key) as? Bool
+        return UserDefaults.standard.object(forKey: FD.keyPrefix + key) as? Bool
     }
 
     private func persist() {
         guard let key = storageKey else { return }
-        UserDefaults.standard.set(expanded, forKey: Self.FD.keyPrefix + key)
+        UserDefaults.standard.set(expanded, forKey: FD.keyPrefix + key)
     }
 }

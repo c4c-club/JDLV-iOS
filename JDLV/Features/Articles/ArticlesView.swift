@@ -156,7 +156,7 @@ struct ArticleCard: View {
                 Spacer(minLength: 0)
             }
             .padding(10)
-            .frame(minHeight: 104, maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

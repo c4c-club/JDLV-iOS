@@ -173,7 +173,7 @@ public final class OnnxEmbedder: SemEmbedder {
                 throw NSError(domain: "OnnxEmbedder", code: 3,
                               userInfo: [NSLocalizedDescriptionKey: "输出为空"])
             }
-            let data = try outValue.tensorData()
+            let data = try outValue.tensorData() as Data
             let flat = data.withUnsafeBytes { raw -> [Float] in
                 let p = raw.bindMemory(to: Float.self)
                 return Array(p)

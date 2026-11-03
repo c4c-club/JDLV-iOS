@@ -559,7 +559,7 @@ final class BrowseVM: ObservableObject {
             refreshing = false
             loadingMore = false
             let msg = ErrText.of(error)
-            error = msg
+            self.error = msg
             if fromRefresh { refreshChannel.emit(.fail(msg)) }
         }
     }

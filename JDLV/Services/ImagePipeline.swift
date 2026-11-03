@@ -64,7 +64,14 @@ final class ImagePipeline: ImageLoading {
     private final class Inflight {
         let task: Task<Data, Error>
         var refs = 0
-        init(task: Task<Data, Error>) { self.task = task }
+        var done = false
+        init(task: Task<Data, Error>) {
+            self.task = task
+            Task { [weak self] in
+                _ = try? await task.value
+                self?.done = true
+            }
+        }
     }
 
     private let inflightLock = NSLock()
@@ -156,7 +163,7 @@ final class ImagePipeline: ImageLoading {
     private func finishInflight(_ key: String, _ entry: Inflight) {
         inflightLock.lock()
         entry.refs -= 1
-        if let cur = inflight[key], cur === entry, entry.task.isFinished {
+        if let cur = inflight[key], cur === entry, entry.done {
             inflight.removeValue(forKey: key)
         }
         inflightLock.unlock()

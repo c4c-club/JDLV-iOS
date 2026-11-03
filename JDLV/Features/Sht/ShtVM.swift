@@ -725,7 +725,7 @@ final class ShtVM: ObservableObject {
                     rows.append(contentsOf: chunk)
                 }
         } catch {
-            let name = String(describing: type(of: error))
+            let name = String(describing: Swift.type(of: error))
             let msg = (error as? CustomStringConvertible)?.description ?? ""
             let shown = msg.isEmpty ? name : String(msg.prefix(80))
             onToast("导出失败: \(shown)")   // 半角冒号
@@ -748,7 +748,7 @@ final class ShtVM: ObservableObject {
         do {
             try text.data(using: .utf8)?.write(to: file)
         } catch {
-            onToast("导出失败: \(String(describing: type(of: error)))")
+            onToast("导出失败: \(String(describing: Swift.type(of: error)))")
             return nil
         }
         let n = rows.count

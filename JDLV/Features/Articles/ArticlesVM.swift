@@ -115,8 +115,8 @@ struct DemoArticlesDataSource: ArticlesDataSource {
         guard var r = DemoStore.shared.article(aid: aid) else { return nil }
         if r.s("author_name").isEmpty { r["author_name"] = .string(r.s("author")) }
         if r.s("content_html").isEmpty {
-            let num1 = Self.demoNumber(seed: fnv1a(aid))
-            let num2 = Self.demoNumber(seed: fnv1a(aid) &+ 0x9E37_79B9)
+            let num1 = Self.demoNumber(seed: Self.fnv1a(aid))
+            let num2 = Self.demoNumber(seed: Self.fnv1a(aid) &+ 0x9E37_79B9)
             r["content_html"] = .string(
                 "<p>演示资讯正文（合成数据）。本文用于验证资讯详情的分块渲染链路。</p>" +
                     "<p>本期推荐作品 <b>\(num1)</b>，评测与访谈全文见本期杂志。</p>" +
@@ -131,7 +131,7 @@ struct DemoArticlesDataSource: ArticlesDataSource {
     func articleMovies(aid: String) async -> [Row] {
         var rows: [Row] = []
         for k in 0..<2 {
-            let h = fnv1a(aid) &+ UInt64(k) &* 9_973
+            let h = Self.fnv1a(aid) &+ UInt64(k) &* 9_973
             let idx = Int(h % UInt64(DemoStore.movieCount))
             guard let m = DemoStore.shared.movie(mid: String(100_000 + idx)) else { continue }
             rows.append(Row([

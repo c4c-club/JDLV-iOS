@@ -630,7 +630,7 @@ final class MovieDetailVM: ObservableObject {
 
     nonisolated static func rowOf(_ d: [String: Any]) -> Row {
         var r = Row()
-        for (k, v) in d { r[k] = sqlValueOf(v) }
+        for (k, v) in d { r[k] = Self.sqlValueOf(v) }
         return r
     }
 
@@ -647,7 +647,7 @@ final class MovieDetailVM: ObservableObject {
     }
 
     /// Any → SQLValue（Any? 桥接：NSNull/nil → .null；数值/字符串/布尔逐一尝试）
-    static func sqlValueOf(_ v: Any) -> SQLValue {
+    nonisolated static func sqlValueOf(_ v: Any) -> SQLValue {
         switch v {
         case is NSNull:
             return .null

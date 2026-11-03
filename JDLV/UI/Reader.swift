@@ -248,9 +248,9 @@ struct ReaderParagraph: UIViewRepresentable {
         let font: UIFont
         switch design {
         case .serif:
-            font = UIFont(descriptor: base.fontDescriptor.withDesign(.serif), size: fontPt)
+            font = UIFont(descriptor: base.fontDescriptor.withDesign(.serif) ?? base.fontDescriptor, size: fontPt)
         case .monospaced:
-            font = UIFont(descriptor: base.fontDescriptor.withDesign(.monospaced), size: fontPt)
+            font = UIFont(descriptor: base.fontDescriptor.withDesign(.monospaced) ?? base.fontDescriptor, size: fontPt)
         default:
             font = base
         }
@@ -282,18 +282,18 @@ enum ReaderProgress {
     /// 存顶层可见段索引（外层 onDisappear 调）
     static func save(tid: String, blockIndex: Int) {
         guard !tid.isEmpty else { return }
-        UserDefaults.standard.set(blockIndex, forKey: key(tid))
+        UserDefaults.standard.set(blockIndex, forKey: key(tid: tid))
     }
 
     /// 读锚点段索引（外层 onAppear 后 scrollTo("rd_blk_{n}", anchor: .top)）
     static func load(tid: String) -> Int? {
         guard !tid.isEmpty else { return nil }
-        return UserDefaults.standard.object(forKey: key(tid)) as? Int
+        return UserDefaults.standard.object(forKey: key(tid: tid)) as? Int
     }
 
     static func clear(tid: String) {
         guard !tid.isEmpty else { return }
-        UserDefaults.standard.removeObject(forKey: key(tid))
+        UserDefaults.standard.removeObject(forKey: key(tid: tid))
     }
 }
 

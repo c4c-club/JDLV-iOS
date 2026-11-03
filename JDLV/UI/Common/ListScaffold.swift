@@ -98,8 +98,8 @@ struct ListScaffold<Content: View>: View {
                 if showNavTools {
                     ListNavTools(loaded: pageLoaded, total: pageTotal, per: pagePer,
                                  goPage: goPage,
-                                 showScrollTop: scrollY < Self.LS.scrollTopOffset) {
-                        withAnimation { proxy.scrollTo(Self.topAnchor, anchor: .top) }
+                                 showScrollTop: scrollY < LS.scrollTopOffset) {
+                        withAnimation { proxy.scrollTo(LS.topAnchor, anchor: .top) }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 }
@@ -114,7 +114,7 @@ struct ListScaffold<Content: View>: View {
             offsetReader
             stateBody
         }
-        .coordinateSpace(name: Self.LS.space)
+        .coordinateSpace(name: LS.space)
         .onPreferenceChange(ScrollOffsetKey.self) { handleOffset($0) }
     }
 
@@ -125,9 +125,9 @@ struct ListScaffold<Content: View>: View {
             .background(GeometryReader { geo in
                 Color.clear.preference(
                     key: ScrollOffsetKey.self,
-                    value: geo.frame(in: .named(Self.LS.space)).minY)
+                    value: geo.frame(in: .named(LS.space)).minY)
             })
-            .id(Self.LS.topAnchor)
+            .id(LS.topAnchor)
     }
 
     // MARK: 四态内容（优先级：骨架 → 错 → 空 → 正文）

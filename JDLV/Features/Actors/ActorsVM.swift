@@ -213,6 +213,7 @@ final class ActorsVM: ObservableObject {
                 await fetchCount(rid: rid)
             }
         } catch {
+            let err = error
             guard rid == reqId else { return }
             // 失败 → stale（无视 TTL 旧缓存）→ SWR 回退；无 stale → ErrText + fromRefresh 时 Fail
             if let stale = cache.stale(key) {
@@ -224,7 +225,7 @@ final class ActorsVM: ObservableObject {
             refreshing = false
             loadingMore = false
             let msg = ErrText.of(error)
-            error = msg
+            self.error = msg
             if fromRefresh { refreshChannel.emit(.fail(msg)) }
         }
     }

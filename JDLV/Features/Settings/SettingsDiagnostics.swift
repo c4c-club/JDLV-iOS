@@ -214,7 +214,7 @@ enum SettingsDiagnostics {
 
 private actor ConnTestGate {
 
-    func run(_ s: AppSettings) -> String {
+    func run(_ s: AppSettings) async -> String {
         let t0 = Perf.nowMs()
         var failed: String? = nil
         // 两库各建连一次（SELECT VERSION() 的 Db.check 语义 —— 生产走 MySQLPool.ping）。
@@ -387,21 +387,20 @@ final class SettingsIndexHub {
 
     /// (条数, 字节)；未就绪 → nil（显示 "…"）
     func embStats() -> (count: Int, bytes: Int64)? {
-        guard let emb else { return nil }
-        guard let c = try? emb.count(), let b = try? emb.usageBytes() else { return nil }
+        guard let e = emb(), let c = try? e.count(), let b = try? e.usageBytes() else { return nil }
         return (Int(c), b)
     }
 
     /// 容量热更新（S15-14：立即更新 maxBytes 并 trim 至 90%；0 = 不限）
     func applyEmbBudget(mb: Int) {
-        guard let emb else { return }
-        emb.maxBytes = mb <= 0 ? 0 : Int64(mb) * 1_048_576
-        try? emb.prune()
+        guard let e = emb() else { return }
+        e.maxBytes = mb <= 0 ? 0 : Int64(mb) * 1_048_576
+        try? e.prune()
     }
 
     /// 清空向量缓存
     func clearEmbs() {
-        guard let emb else { return }
-        try? emb.clear()
+        guard let e = emb() else { return }
+        try? e.clear()
     }
 }

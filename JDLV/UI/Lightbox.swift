@@ -144,7 +144,7 @@ private struct LightboxPage: View {
                 .gesture(SpatialTapGesture().onEnded { value in
                     guard !isZoomed else { return }   // 放大态点按不翻页
                     let w = max(geo.size.width, 1)
-                    let x = value.location.width / w
+                    let x = value.location.x / w
                     if x < LightboxMetrics.prevTapZone {
                         onPrev()
                     } else if x > LightboxMetrics.nextTapZone {

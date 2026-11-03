@@ -784,7 +784,7 @@ struct SettingsActionButton: View {
     var body: some View {
         Button(action: action) {
             AppText(busy ? (busyTitle ?? title) : title, lvl: .bodyS,
-                    color: fg, fontWeight: .medium, maxLines: 1)
+                    color: fg, maxLines: 1, fontWeight: .medium)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: minHeight)
                 .background(RoundedRectangle(cornerRadius: 8)

@@ -240,7 +240,7 @@ struct ArticleBodyView: View {
         var attr = AttributedString(text)
         for cand in ArticleHtml.numberCandidates(in: text) {
             // AttributedString(text) 与原串共享 String.Index → NSRange 直接换算
-            guard let r = Range(cand.range, in: text) else { continue }
+            guard let r = Range(cand.range, in: attr) else { continue }
             if attr[r].link == nil {   // 同区间只套一个 span
                 attr[r].foregroundColor = theme.accent
                 attr[r].font = .system(size: Self.bodyFontSize, weight: .bold)
