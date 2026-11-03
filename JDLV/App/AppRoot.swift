@@ -319,13 +319,17 @@ struct AppRoot: View {
             HomeView()   // P9a：首页三段态 + 搜索态（Features/Search/HomeView.swift）
         case "browse":
             BrowseView()   // P9b：浏览页（自持 BrowseVM；toolbar/筛选/网格/翻页）
+        case "actors":
+            ActorsView()   // P9c：女优列表（自持 ActorsVM；3 列 1:1 / 搜索 / 排序）
+        case "sht":
+            ShtView()   // P9d：98t 列表（Features/Sht/ShtView.swift；自持 ShtVM）
         default:
             TabPlaceholderRoot(tab: tabName, label: label)
         }
     }
 }
 
-// MARK: - （P9a：首页占位 HomeTabRoot 已由 Features/Search/HomeView.swift 接管）
+// MARK: - 影片/女优详情占位（P8）已由 Features/MovieDetail / Features/Actors 接管（P9c）
 
 // MARK: - 其余 Tab 根占位（P9 各列表页接入）
 
@@ -355,11 +359,11 @@ private struct RouteDestination: View {
         Group {
             switch route {
             case .movie(let mid):
-                MovieDetailPlaceholder(mid: mid)
+                MovieDetailView(mid: mid)   // P9c：影片详情（Features/MovieDetail）
             case .actor(let aid):
-                ActorDetailPlaceholder(aid: aid)
+                ActorDetailView(aid: aid)   // P9c：女优详情（Features/Actors）
             case .shtThread(let tid):
-                SecondaryPlaceholder(title: "帖子详情", subtitle: "tid=\(tid)")
+                ShtDetailView(tid: tid)   // P9d：帖子详情（Features/Sht；Reader/灯箱/复制收藏）
             case .articles:
                 SecondaryPlaceholder(title: "资讯", subtitle: "资讯列表 P9 实现")
             case .article(let aid):
@@ -373,94 +377,6 @@ private struct RouteDestination: View {
             }
         }
         .toolbar(.hidden, for: .tabBar)   // 二级页隐藏底栏（07 A3）
-    }
-}
-
-// MARK: - 影片详情占位（demo 模式回显番号；可再压 actor 验证多层栈）
-
-private struct MovieDetailPlaceholder: View {
-    @EnvironmentObject private var router: Router
-    @Environment(\.appTheme) private var theme
-    let mid: String
-    @State private var number = ""
-
-    var body: some View {
-        ZStack {
-            theme.bg0.ignoresSafeArea()
-            VStack(spacing: 8) {
-                AppText(number.isEmpty ? "影片详情" : number, lvl: .titleM)
-                AppText("mid=\(mid)", lvl: .meta)
-                AppText(AppCopy.p9Placeholder, lvl: .meta)
-                Button {
-                    router.push(.actor("200001"))
-                } label: {
-                    AppText("查看演员（压栈验证）", lvl: .bodyS, color: theme.accent,
-                            fontWeight: .medium)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: ComponentMetrics.buttonMin)
-                        .background(RoundedRectangle(cornerRadius: 12)
-                            .fill(theme.accent.opacity(0.15)))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .navigationTitle(number.isEmpty ? "影片详情" : number)
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: load)
-        .accessibilityIdentifier("secondary_page")
-    }
-
-    private func load() {
-        #if DEBUG
-        guard number.isEmpty, DemoDataSource.enabled(),
-              let m = DemoStore.shared.movie(mid: mid) else { return }
-        number = m.s("number")
-        #endif
-    }
-}
-
-// MARK: - 女优详情占位
-
-private struct ActorDetailPlaceholder: View {
-    @EnvironmentObject private var router: Router
-    @Environment(\.appTheme) private var theme
-    let aid: String
-    @State private var name = ""
-
-    var body: some View {
-        ZStack {
-            theme.bg0.ignoresSafeArea()
-            VStack(spacing: 8) {
-                AppText(name.isEmpty ? "女优详情" : name, lvl: .titleM)
-                AppText("aid=\(aid)", lvl: .meta)
-                AppText(AppCopy.p9Placeholder, lvl: .meta)
-                Button {
-                    router.push(.movie("100001"))
-                } label: {
-                    AppText("查看影片（压栈验证）", lvl: .bodyS, color: theme.accent,
-                            fontWeight: .medium)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: ComponentMetrics.buttonMin)
-                        .background(RoundedRectangle(cornerRadius: 12)
-                            .fill(theme.accent.opacity(0.15)))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .navigationTitle(name.isEmpty ? "女优详情" : name)
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: load)
-        .accessibilityIdentifier("secondary_page")
-    }
-
-    private func load() {
-        #if DEBUG
-        guard name.isEmpty, DemoDataSource.enabled(),
-              let a = DemoStore.shared.actor(aid: aid) else { return }
-        name = a.s("name")
-        #endif
     }
 }
 

@@ -87,7 +87,7 @@ private struct CompactFilterField: View {
 
 // MARK: - 骨架条（索引未到位：3 根 24pt 高圆角灰条）
 
-private struct SkeletonBars: View {
+private struct FilterSkeletonBars: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -278,7 +278,7 @@ struct FiltersPanel: View {
             VStack(alignment: .leading, spacing: 8) {
                 CompactFilterField(placeholder: "输入字头过滤, 如 abp", text: $codeQuery)
                 if vm.codes.isEmpty {
-                    SkeletonBars()
+                    FilterSkeletonBars()
                 } else {
                     commonAllChips(all: codesAll) { codesAll.toggle() }
                     FlowLayout(spacing: 8) {
@@ -323,7 +323,7 @@ struct FiltersPanel: View {
             VStack(alignment: .leading, spacing: 8) {
                 CompactFilterField(placeholder: "输入片商名过滤", text: $makerQuery)
                 if vm.makers.isEmpty {
-                    SkeletonBars()
+                    FilterSkeletonBars()
                 } else {
                     commonAllChips(all: makersAll) { makersAll.toggle() }
                     FlowLayout(spacing: 8) {
