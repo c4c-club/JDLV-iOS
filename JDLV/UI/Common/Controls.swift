@@ -75,7 +75,7 @@ struct ViewToggleButton: View {
                 Image(systemName: icon)
                     .font(.system(size: 16))
                     .foregroundColor(theme.accent)
-                AppText(label, lvl: .meta, color: theme.accent, fontWeight: .medium, maxLines: 1)
+                AppText(label, lvl: .meta, color: theme.accent, maxLines: 1, fontWeight: .medium)
             }
             .padding(.horizontal, 10)
             .frame(minHeight: ComponentMetrics.chipHeight)
@@ -128,7 +128,7 @@ struct AppSwitchRow: View {
     private var badge: some View {
         AppText(checked ? AppCopy.switchOnBadge : AppCopy.switchOffBadge,
                 lvl: .meta, color: checked ? .white : theme.text2,
-                fontWeight: .medium, maxLines: 1)
+                maxLines: 1, fontWeight: .medium)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 12)

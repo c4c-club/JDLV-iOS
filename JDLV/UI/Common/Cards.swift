@@ -86,7 +86,7 @@ struct MovieCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
                     if read { ReadDot() }
-                    AppText(number, lvl: .bodyS, color: theme.accent, fontWeight: .bold, maxLines: 1)
+                    AppText(number, lvl: .bodyS, color: theme.accent, maxLines: 1, fontWeight: .bold)
                     Spacer(minLength: 4)
                     if score > 0 {
                         AppText("★ \(Fmt.score(score))", lvl: .meta, color: theme.accent2)
@@ -114,7 +114,7 @@ struct MovieCard: View {
                 HStack(spacing: 4) {
                     if read { ReadDot() }
                     AppText(number, lvl: viewMode == 1 ? .body : .bodyS,
-                            color: theme.accent, fontWeight: .bold, maxLines: 1)
+                            color: theme.accent, maxLines: 1, fontWeight: .bold)
                     Spacer(minLength: 4)
                     if score > 0 {
                         AppText("★ \(Fmt.score(score))", lvl: .meta, color: theme.accent2)
@@ -231,7 +231,7 @@ struct ActorCard: View {
                     .padding(ComponentMetrics.cardPadding)
                 VStack(alignment: .leading, spacing: 2) {
                     AppText(a.s("name").isEmpty ? " " : a.s("name"), lvl: .meta,
-                            fontWeight: .medium, maxLines: 1)
+                            maxLines: 1, fontWeight: .medium)
                     AppText(AppCopy.actorMetaLine(
                         videosCount: a.i("videos_count"),
                         avgScoreAll: a.d("avg_score_all")), lvl: .meta, maxLines: 1)

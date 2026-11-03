@@ -268,15 +268,15 @@ final class ActorDetailVM: ObservableObject {
     // MARK: merged_into 解析（B8：详情解析/标签聚合入口；测试共用纯函数）
 
     /// mainId = merged_into.ifEmpty { aid }（影片 count/items/tags 均按主号查）
-    static func mainIdOf(aid: String, row: Row?) -> String {
+    nonisolated static func mainIdOf(aid: String, row: Row?) -> String {
         let merged = row?.s("merged_into") ?? ""
         return merged.isEmpty ? aid : merged
     }
 
     // MARK: [String: Any] ↔ Row / SQLValue（MovieDetailVM 转换复用）
 
-    static func rowOf(_ r: Row) -> [String: Any] { MovieDetailVM.rowOf(r) }
-    static func rowOf(_ d: [String: Any]) -> Row { MovieDetailVM.rowOf(d) }
+    nonisolated static func rowOf(_ r: Row) -> [String: Any] { MovieDetailVM.rowOf(r) }
+    nonisolated static func rowOf(_ d: [String: Any]) -> Row { MovieDetailVM.rowOf(d) }
 
     // MARK: 加载（B7/B9）
 

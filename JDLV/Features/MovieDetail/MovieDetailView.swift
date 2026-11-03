@@ -244,7 +244,7 @@ struct MovieDetailView: View {
             Task { await vm.onReadButtonPressed() }
         } label: {
             AppText(vm.read ? MovieDetailCopy.readButtonRead : MovieDetailCopy.readButtonUnread,
-                    lvl: .bodyS, color: theme.accent, fontWeight: .medium, maxLines: 1)
+                    lvl: .bodyS, color: theme.accent, maxLines: 1, fontWeight: .medium)
                 .padding(.horizontal, 16)
                 .frame(minHeight: ComponentMetrics.buttonMin)
                 .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent.opacity(0.15)))
@@ -283,7 +283,7 @@ struct MovieDetailView: View {
             if !aid.isEmpty { router.push(.actor(aid)) }
         } label: {
             AppText((male ? MovieDetailCopy.maleSign : MovieDetailCopy.femaleSign) + name,
-                    lvl: .meta, color: color, fontWeight: .medium, maxLines: 1)
+                    lvl: .meta, color: color, maxLines: 1, fontWeight: .medium)
                 .padding(.horizontal, 10)
                 .frame(minHeight: 32)
                 .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.15)))

@@ -92,7 +92,7 @@ struct ActorDetailView: View {
                         aspect: 1, radius: 10)
                 .frame(width: 96, height: 96)
             VStack(alignment: .leading, spacing: 2) {
-                AppText(name.isEmpty ? " " : name, lvl: .titleM, fontWeight: .bold, maxLines: 2)
+                AppText(name.isEmpty ? " " : name, lvl: .titleM, maxLines: 2, fontWeight: .bold)
                 let zht = vm.actor?.s("name_zht") ?? ""
                 if !zht.isEmpty {
                     AppText(zht, lvl: .meta)   // 次级灰（Meta 默认 onSurfaceVariant）

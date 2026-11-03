@@ -323,6 +323,8 @@ struct AppRoot: View {
             ActorsView()   // P9c：女优列表（自持 ActorsVM；3 列 1:1 / 搜索 / 排序）
         case "sht":
             ShtView()   // P9d：98t 列表（Features/Sht/ShtView.swift；自持 ShtVM）
+        case "favs":
+            FavsView()   // P9e：收藏三 tab（Features/Favs/FavsView.swift；自持 FavsVM）
         default:
             TabPlaceholderRoot(tab: tabName, label: label)
         }
@@ -365,13 +367,13 @@ private struct RouteDestination: View {
             case .shtThread(let tid):
                 ShtDetailView(tid: tid)   // P9d：帖子详情（Features/Sht；Reader/灯箱/复制收藏）
             case .articles:
-                SecondaryPlaceholder(title: "资讯", subtitle: "资讯列表 P9 实现")
+                ArticlesView()   // P9e：资讯列表（Features/Articles；分类 chips + 搜索 + 行卡）
             case .article(let aid):
-                SecondaryPlaceholder(title: "资讯详情", subtitle: "aid=\(aid)")
+                ArticleDetailView(aid: aid)   // P9e：资讯详情（16:9 封面 + 分块正文 + 番号可点）
             case .hotreviews:
-                SecondaryPlaceholder(title: "热评", subtitle: "热评页 P9 实现")
+                HotReviewsView()   // P9e：热评（周期/批次 chips + 行卡 + 弹层）
             case .top250:
-                SecondaryPlaceholder(title: "🏆 TOP250", subtitle: "TOP250 完整页 P9 实现")
+                Top250View()   // P9e：TOP250（自绘顶栏 + 年份 chips + MovieCard 网格）
             case .lookup(let payload):
                 LookupView(payload: payload)   // P9b：反查结果页（独立 VM + skipBind）
             }

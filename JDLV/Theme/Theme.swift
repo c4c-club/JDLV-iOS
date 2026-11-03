@@ -130,6 +130,7 @@ public struct AppTheme {
     public var green: Color { Color(hex: pal.green) }
     public var red: Color { Color(hex: pal.red) }
     public var yellow: Color { Color(hex: pal.yellow) }
+    public var accent2: Color { Color(hex: pal.accent2) }
 
     public init(pal: PalTokens, accentHex: UInt32) {
         self.pal = pal
