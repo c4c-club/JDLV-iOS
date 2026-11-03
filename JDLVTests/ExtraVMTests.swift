@@ -496,7 +496,7 @@ final class ExtraVMTests: XCTestCase {
         // 双口径归一：秒（<1e12）与毫秒（>1e12）同一显示
         let ms = favRow(kind: "movie", id: "1", title: "t", ts: 1_770_123_456_000)
         XCTAssertEqual(FavsVM.rowTime(ok), FavsVM.rowTime(ms))
-        XCTAssertEqual(FavsVM.rowTitle(favRow(kind: "movie", id: "1", title: "", ts: 1)),
+        XCTAssertEqual(FavsVM.rowTitle(Self.favRow(kind: "movie", id: "1", title: "", ts: 1)),
                        "(无标题)")
     }
 
@@ -510,7 +510,7 @@ final class ExtraVMTests: XCTestCase {
             favRow(kind: "movie", id: "2", title: "", ts: 0),
         ]
         let text = FavsVM.exportText(
-            movie: movies, sht: [favRow(kind: "sht", id: "3", title: "帖子", ts: 1_760_000_000)],
+            movie: movies, sht: [Self.favRow(kind: "sht", id: "3", title: "帖子", ts: 1_760_000_000)],
             actor: [], nowMs: nowMs)
         XCTAssertTrue(text.hasPrefix("JDLV 收藏导出 20"))
         XCTAssertTrue(text.contains("\n\n== 影片 (2) ==\n"))

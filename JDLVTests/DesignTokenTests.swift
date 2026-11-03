@@ -1,3 +1,4 @@
+import JDLVCore
 import XCTest
 @testable import JDLV
 
