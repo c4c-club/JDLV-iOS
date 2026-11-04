@@ -24,7 +24,7 @@ final class ExtraVMTests: XCTestCase {
 
     private final class ToastBox { var list: [String] = [] }
 
-    private static func Self.artRow(_ id: String, title: String = "演示资讯", cat: String = "业界",
+    private static func artRow(_ id: String, title: String = "演示资讯", cat: String = "业界",
                                released: String = "2026-10-31 10:00:00", words: Int64 = 1859)
         -> Row {
         Row([
@@ -36,7 +36,7 @@ final class ExtraVMTests: XCTestCase {
         ])
     }
 
-    private static func Self.hotRow(rid: String, rank: Int64, title: String = "演示影片",
+    private static func hotRow(rid: String, rank: Int64, title: String = "演示影片",
                                score: String = "4.3", likes: String = "12",
                                user: String = "网友", content: String = "评论内容") -> Row {
         Row([
@@ -49,7 +49,7 @@ final class ExtraVMTests: XCTestCase {
         ])
     }
 
-    private static func Self.movieRow(_ id: String, year: String = "2024") -> Row {
+    private static func movieRow(_ id: String, year: String = "2024") -> Row {
         Row([
             "id": .string(id), "number": .string("IPX-\(id)"), "title": .string("演示影片 \(id)"),
             "release_date": .string("2024-06-01"), "year": .string(year), "score": .double(4.2),
