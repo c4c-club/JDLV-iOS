@@ -136,7 +136,10 @@ struct AppRoot: View {
     ]
 
     var body: some View {
-        TabView(selection: $router.tab) {
+        // 自定义底栏（对齐 Android TOP_DESTS）：UITabBarController 在 >5 个 tab 时
+        // 折叠成「更多」，Android 6 Tab 1:1 需要自绘；二级页隐藏底栏（导航不变量）。
+        ZStack(alignment: .bottom) {
+            // 内容层：6 个 NavigationStack 常驻（Tab 切换保留状态、单实例栈）
             ForEach(Self.tabs, id: \.route) { t in
                 NavigationStack(path: pathBinding(t.route)) {
                     tabRoot(t.route, label: t.label)
@@ -144,15 +147,11 @@ struct AppRoot: View {
                             RouteDestination(route: route)
                         }
                 }
-                .tabItem { Label(t.label, systemImage: t.icon) }
-                .tag(t.route)
-                .accessibilityIdentifier("tab_\(t.route)")
+                .opacity(router.tab == t.route ? 1 : 0)
+                .allowsHitTesting(router.tab == t.route)
+                .accessibilityHidden(router.tab != t.route)
             }
-        }
-        .environmentObject(router)
-        .environmentObject(services)
-        // 顶部横幅（内容之上、Tab 内容顶部；离线按库粒度 + 恢复 6s 自消）
-        .overlay(alignment: .top) {
+            // 顶部横幅（内容之上、Tab 内容顶部；离线按库粒度 + 恢复 6s 自消）
             VStack(spacing: 0) {
                 OfflineBanner(offlineJdb: services.offlineJdb, offlineSht: services.offlineSht)
                 if services.restored {
@@ -161,10 +160,62 @@ struct AppRoot: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: services.restored)
+            .frame(maxHeight: .infinity, alignment: .top)
         }
-        // 全局 Toast（SnackbarHost 对位；services 显式传入，overlay 兄弟层不吃 TabView 的 environmentObject）
+        .safeAreaInset(edge: .bottom) {
+            if !anyPathActive {
+                RootTabBar(theme: theme, tabs: Self.tabs,
+                           selected: router.tab,
+                           onSelect: { router.tab = $0 })
+                    .transition(.move(edge: .bottom))
+            }
+        }
+        .environmentObject(router)
+        .environmentObject(services)
+        // 全局 Toast（SnackbarHost 对位）
         .overlay { ToastHost(services: services) }
         .tint(theme.accent)
+        .animation(.easeInOut(duration: 0.15), value: anyPathActive)
+    }
+
+    /// 任一 Tab 的导航栈非空 = 二级页压栈中 → 隐藏底栏（导航不变量）
+    private var anyPathActive: Bool {
+        !router.searchPath.isEmpty || !router.browsePath.isEmpty ||
+        !router.actorsPath.isEmpty || !router.shtPath.isEmpty ||
+        !router.favsPath.isEmpty || !router.settingsPath.isEmpty
+    }
+
+    /// 自绘底栏（Android TopDest 对位；最小触控 48pt；选中 = accent）
+    private struct RootTabBar: View {
+        let theme: AppTheme
+        let tabs: [TabDef]
+        let selected: String
+        let onSelect: (String) -> Void
+
+        var body: some View {
+            HStack(spacing: 0) {
+                ForEach(tabs, id: \.route) { t in
+                    Button {
+                        onSelect(t.route)
+                    } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: t.icon)
+                                .font(.system(size: 20, weight: selected == t.route ? .semibold : .regular))
+                            Text(t.label)
+                                .font(.system(size: 10, weight: selected == t.route ? .semibold : .regular))
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .foregroundColor(selected == t.route ? theme.accent : theme.text2)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("tab_\(t.route)")
+                    .accessibilityLabel(t.label)
+                }
+            }
+            .background(theme.bg1.ignoresSafeArea(edges: .bottom))
+            .overlay(alignment: .top) { Rectangle().fill(theme.line).frame(height: 0.5) }
+        }
     }
 
     // MARK: 每 Tab 独立 path（Tab 切换保留状态；单实例栈）
@@ -248,7 +299,7 @@ private struct RouteDestination: View {
                 LookupView(payload: payload)   // P9b：反查结果页（独立 VM + skipBind）
             }
         }
-        .toolbar(.hidden, for: .tabBar)   // 二级页隐藏底栏（07 A3）
+        // 二级页隐藏底栏：由 AppRoot.anyPathActive 控制（自绘底栏）
     }
 }
 

@@ -21,9 +21,6 @@ final class LaunchUITests: XCTestCase {
     func testSixTabsPresentAndSwitchable() throws {
         let app = launchDemo()
 
-        let tabBar = app.tabBars.firstMatch
-        XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "tab bar not found")
-
         for (label, route) in tabs {
             if !tabExists(tabBar, label, route) {
                 let n = tabBar.buttons.count
@@ -39,17 +36,16 @@ final class LaunchUITests: XCTestCase {
 
         // 逐个切换（含回到首页），全程不崩溃
         for (label, route) in tabs {
-            tabLabeled(tabBar, label, route).tap()
+            tabLabeled(app, label, route).tap()
             XCTAssertEqual(app.state, .runningForeground, "app crashed after tapping tab \(label)")
         }
-        tabLabeled(tabBar, "搜索", "search").tap()
+        tabLabeled(app, "搜索", "search").tap()
     }
 
     func testHomePushMovieDetailAndBack() throws {
         let app = launchDemo()
 
-        let tabBar = app.tabBars.firstMatch
-        XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "tab bar not found")
+        XCTAssertTrue(tabExists(app, "搜索", "search"), "tab bar not found")
 
         // 首页（搜索 Tab）压栈一个二级详情页（demo 模式 = 第一张影片卡）
         let push = app.descendants(matching: .any)["home_push_movie"].firstMatch
