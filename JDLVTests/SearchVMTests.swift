@@ -370,6 +370,7 @@ final class SearchVMTests: XCTestCase {
         data.countResult = 57
         data.countDelays = [250_000_000]   // 计数延迟 250ms（无 gate 竞态）
         let vm = makeVM(data: data)
+        vm.query = "abc"
         await vm.search()
         XCTAssertEqual(vm.total, -1, "计数未到 → total 未知")
         let arrived = await waitUntil(4) { vm.total == 57 }

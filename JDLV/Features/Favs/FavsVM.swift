@@ -149,12 +149,10 @@ final class FavsVM: ObservableObject {
 
     func reload() async {
         loading = true
-        async let m = store.favList(kind: "movie")
-        async let t = store.favList(kind: "sht")
-        async let a = store.favList(kind: "actor")
-        movie = await m
-        sht = await t
-        actor = await a
+        // Android A.5：三类按 movie → sht → actor 顺序拉取（seen 顺序确定）
+        movie = await store.favList(kind: "movie")
+        sht = await store.favList(kind: "sht")
+        actor = await store.favList(kind: "actor")
         loading = false
     }
 

@@ -359,7 +359,10 @@ final class ShtVMTests: XCTestCase {
             semantic: true, sort: "date", per: 20, page: 1)
         cache.put(key, page(["stale"]))
         let vm = makeVM(src, cache)
-        await vm.toggleSemantic()
+        // toggleSemantic 有"未安装模型"门禁（NA-06）；此处直测 fetch 的语义分支防御
+        vm.semantic = true
+        vm.fuzzy = false
+        await vm.refetch()
         XCTAssertEqual(vm.error, "语义模型未导入或加载失败 — 请到 设置 → 语义搜索模型 导入")
         XCTAssertNil(vm.items)   // stale 可用但不应用
         // 默认兜底文案

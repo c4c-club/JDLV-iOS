@@ -11,6 +11,9 @@ import JDLVCore
 // MARK: - 门禁（lock → ready → setup → 主界面）
 
 struct AppGate: View {
+    // DEBUG 演示模式：自带合成数据源，首启门禁无意义 → 直接进主页（UI 测试/截图依赖）
+    static let isDemoMode = ProcessInfo.processInfo.arguments.contains("-JDLV_DEMO")
+
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.colorScheme) private var colorScheme
 
@@ -34,7 +37,7 @@ struct AppGate: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(theme.bg0.ignoresSafeArea())
-            } else if store.setupRequired {
+            } else if !isDemoMode && store.setupRequired {
                 FirstRunSetupView()
             } else {
                 AppRoot()
