@@ -69,7 +69,9 @@ jobs:
 
   ios:
     needs: [guard, core-linux]
-    runs-on: macos-26
+    # macos-26 在 2026-11-04 起持续 "not acquired by Runner"（容量）→ 按规划 §2 兜底退 macos-15。
+    # destination 由 simctl 动态解析（任意可用 iPhone），不写死机型。
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
