@@ -24,7 +24,7 @@ final class ExtraVMTests: XCTestCase {
 
     private final class ToastBox { var list: [String] = [] }
 
-    private static func artRow(_ id: String, title: String = "演示资讯", cat: String = "业界",
+    private static func Self.artRow(_ id: String, title: String = "演示资讯", cat: String = "业界",
                                released: String = "2026-10-31 10:00:00", words: Int64 = 1859)
         -> Row {
         Row([
@@ -36,7 +36,7 @@ final class ExtraVMTests: XCTestCase {
         ])
     }
 
-    private static func hotRow(rid: String, rank: Int64, title: String = "演示影片",
+    private static func Self.hotRow(rid: String, rank: Int64, title: String = "演示影片",
                                score: String = "4.3", likes: String = "12",
                                user: String = "网友", content: String = "评论内容") -> Row {
         Row([
@@ -49,7 +49,7 @@ final class ExtraVMTests: XCTestCase {
         ])
     }
 
-    private static func movieRow(_ id: String, year: String = "2024") -> Row {
+    private static func Self.movieRow(_ id: String, year: String = "2024") -> Row {
         Row([
             "id": .string(id), "number": .string("IPX-\(id)"), "title": .string("演示影片 \(id)"),
             "release_date": .string("2024-06-01"), "year": .string(year), "score": .double(4.2),
@@ -109,7 +109,7 @@ final class ExtraVMTests: XCTestCase {
     @MainActor
     func testArticlesGoPageClampsByLocalCeil() async {
         let src = MockArticlesSource()
-        src.responses = [articlesPayload(items: (1...24).map { artRow("\($0)") }, total: 50)]
+        src.responses = [articlesPayload(items: (1...24).map { Self.artRow("\($0)") }, total: 50)]
         let vm = makeArticlesVM(src)
         await vm.bind()
         XCTAssertEqual(vm.total, 50)
@@ -122,7 +122,7 @@ final class ExtraVMTests: XCTestCase {
     @MainActor
     func testArticlesGoPageSamePageIgnoredWhenHasItems() async {
         let src = MockArticlesSource()
-        src.responses = [articlesPayload(items: (1...24).map { artRow("\($0)") }, total: 50)]
+        src.responses = [articlesPayload(items: (1...24).map { Self.artRow("\($0)") }, total: 50)]
         let vm = makeArticlesVM(src)
         await vm.bind()
         let before = src.calls
@@ -136,8 +136,8 @@ final class ExtraVMTests: XCTestCase {
     func testArticlesLoadNextStopsEarlyByTotal() async {
         let src = MockArticlesSource()
         src.responses = [
-            articlesPayload(items: (1...24).map { artRow("\($0)") }, total: 48),
-            articlesPayload(items: (25...48).map { artRow("\($0)") }, total: 48),
+            articlesPayload(items: (1...24).map { Self.artRow("\($0)") }, total: 48),
+            articlesPayload(items: (25...48).map { Self.artRow("\($0)") }, total: 48),
         ]
         let vm = makeArticlesVM(src)
         await vm.bind()
@@ -155,7 +155,7 @@ final class ExtraVMTests: XCTestCase {
         let src = MockArticlesSource()
         src.categories = [Row(["category_id": .int(1), "category_name": .string("业界"),
                                "n": .int(12)])]
-        src.responses = [articlesPayload(items: [artRow("1")], total: 1)]
+        src.responses = [articlesPayload(items: [Self.artRow("1")], total: 1)]
         let vm = makeArticlesVM(src)
         await vm.bind()
         XCTAssertEqual(src.categoryCalls, 1)
@@ -170,7 +170,7 @@ final class ExtraVMTests: XCTestCase {
         let src = MockArticlesSource()
         let cache = MemoryBrowseCache()
         let key = ArticlesVM.cacheKey(categoryId: nil, q: "", page: 1)
-        cache.put(key, articlesPayload(items: [artRow("9")], total: 1))
+        cache.put(key, articlesPayload(items: [Self.artRow("9")], total: 1))
         src.errors = [TestError()]
         let vm = ArticlesVM(source: src, cache: cache, onToast: { _ in })
         await vm.bind()
@@ -183,7 +183,7 @@ final class ExtraVMTests: XCTestCase {
     @MainActor
     func testArticlesRefreshChannelDoneAndFail() async {
         let src = MockArticlesSource()
-        src.responses = [articlesPayload(items: [artRow("1")], total: 1)]
+        src.responses = [articlesPayload(items: [Self.artRow("1")], total: 1)]
         src.errors = [nil, TestError()]       // 第一次成功、第二次失败
         let toasts = ToastBox()
         let vm = makeArticlesVM(src, toasts)
@@ -207,10 +207,10 @@ final class ExtraVMTests: XCTestCase {
 
     @MainActor
     func testArticlesCardMetaParts() {
-        let r = artRow("1", cat: "业界", released: "2026-10-31 10:00:00", words: 1859)
+        let r = Self.artRow("1", cat: "业界", released: "2026-10-31 10:00:00", words: 1859)
         XCTAssertEqual(ArticlesVM.cardMetaParts(r).joined(separator: " · "),
                        "业界 · 某作者 · 2026-10-31 · 1859 字")
-        let noWords = artRow("2", words: 0)
+        let noWords = Self.artRow("2", words: 0)
         XCTAssertFalse(ArticlesVM.cardMetaParts(noWords).contains { $0.contains("字") })
     }
 
@@ -266,7 +266,7 @@ final class ExtraVMTests: XCTestCase {
     func testHotReviewsKeyBackfilledFromResponse() async {
         let src = MockHotSource()
         src.responses = [hotPayload(
-            items: [hotRow(rid: "1", rank: 1)], keys: ["2026-W02", "2026-W01"],
+            items: [Self.hotRow(rid: "1", rank: 1)], keys: ["2026-W02", "2026-W01"],
             key: "2026-W02", hasData: true)]
         let vm = HotReviewsVM(source: src, onToast: { _ in })
         await vm.bind()
@@ -280,10 +280,10 @@ final class ExtraVMTests: XCTestCase {
     @MainActor
     func testHotReviewsSetPeriodClearsKeyAndKeys() async {
         let src = MockHotSource()
-        src.responses = [hotPayload(items: [hotRow(rid: "1", rank: 1)],
+        src.responses = [hotPayload(items: [Self.hotRow(rid: "1", rank: 1)],
                                     keys: ["2026-W02", "2026-W01"], key: "2026-W02",
                                     hasData: true),
-                         hotPayload(items: [hotRow(rid: "2", rank: 1)], keys: ["2026-02"],
+                         hotPayload(items: [Self.hotRow(rid: "2", rank: 1)], keys: ["2026-02"],
                                     key: "2026-02", hasData: true)]
         let vm = HotReviewsVM(source: src, onToast: { _ in })
         await vm.bind()
@@ -337,9 +337,9 @@ final class ExtraVMTests: XCTestCase {
         let src = MockHotSource()
         src.delays = [120, 0]
         src.responses = [
-            hotPayload(items: [hotRow(rid: "old", rank: 99)], keys: ["k-old"],
+            hotPayload(items: [Self.hotRow(rid: "old", rank: 99)], keys: ["k-old"],
                        key: "k-old", hasData: true),
-            hotPayload(items: [hotRow(rid: "new", rank: 1)], keys: ["k-new"],
+            hotPayload(items: [Self.hotRow(rid: "new", rank: 1)], keys: ["k-new"],
                        key: "k-new", hasData: true),
         ]
         let vm = HotReviewsVM(source: src, onToast: { _ in })

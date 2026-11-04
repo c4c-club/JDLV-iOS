@@ -143,7 +143,8 @@ final class DesignTokenTests: XCTestCase {
                                               magnets: 2, fav: true).joined(separator: " · "),
                        "2024-01-15 · 想看 3 · 磁 2 · ★已收藏")
         XCTAssertEqual(AppCopy.shtMetaParts(postDate: "2026-01-01", boardName: "有码中文字幕",
-                                            magnetCount: 0, fav: false),
+                                            magnetCount: 0, fav: false)
+                           .joined(separator: " · "),
                        "2026-01-01 · 有码中文字幕")
         // ActorCard（「N 部」+ ·★均分 %.2f）
         XCTAssertEqual(AppCopy.actorMetaLine(videosCount: 12, avgScoreAll: 4.5), "12 部 · ★4.50")
