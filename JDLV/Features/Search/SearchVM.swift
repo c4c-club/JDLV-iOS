@@ -136,7 +136,11 @@ extension SettingsStore: SearchSettingsReading {
     var searchPerPage: Int { settings.perPage }
     var searchModeRaw: Int { settings.searchMode }
     var searchViewMode: Int { settings.viewMode }
-    var searchSetupRequired: Bool { settings.setupRequired }
+    var searchSetupRequired: Bool {
+        // DEBUG 演示模式自带合成数据源，首启引导无意义（与 AppGate 门禁跳过一致）
+        if ProcessInfo.processInfo.arguments.contains("-JDLV_DEMO") { return false }
+        return settings.setupRequired
+    }
 }
 
 // MARK: - 逐字文案集中点（07 C 节；全角/半角标点照抄）

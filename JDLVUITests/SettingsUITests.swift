@@ -30,7 +30,9 @@ final class SettingsUITests: XCTestCase {
         } else {
             let tabBar = app.tabBars.firstMatch
             XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "tab bar not found")
-            tabBar.buttons["设置"].tap()
+            let btn = tabBar.buttons["设置"]
+            XCTAssertTrue(btn.waitForExistence(timeout: 5), "设置 tab not found")
+            btn.tap()
         }
         let page = app.descendants(matching: .any)["settings_page"].firstMatch
         XCTAssertTrue(page.waitForExistence(timeout: 10), "settings page not found")

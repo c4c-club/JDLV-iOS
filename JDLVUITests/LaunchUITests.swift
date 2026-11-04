@@ -23,7 +23,8 @@ final class LaunchUITests: XCTestCase {
         let labels = ["搜索", "浏览", "女优", "98t", "收藏", "设置"]
         for label in labels {
             let button = tabBar.buttons[label]
-            XCTAssertTrue(button.exists, "missing tab: \(label)")
+            let ok = button.waitForExistence(timeout: 5)
+            XCTAssertTrue(ok, "missing tab: \(label)")
         }
 
         // 逐个切换（含回到首页），全程不崩溃
