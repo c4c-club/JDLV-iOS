@@ -25,7 +25,16 @@ final class LaunchUITests: XCTestCase {
         XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "tab bar not found")
 
         for (label, route) in tabs {
-            XCTAssertTrue(tabExists(tabBar, label, route), "missing tab: \(label)")
+            if !tabExists(tabBar, label, route) {
+                let n = tabBar.buttons.count
+                var dump = "tab bar buttons (" + String(n) + "): "
+                for i in 0..<max(n, 1) {
+                    let b = tabBar.buttons.element(boundBy: i)
+                    dump += "[" + String(i) + "] label='" + b.label + "' id='" + b.identifier + "'; "
+                }
+                dump += " tabbar label='" + tabBar.label + "'"
+                XCTFail("missing tab: " + label + " :: " + dump)
+            }
         }
 
         // 逐个切换（含回到首页），全程不崩溃
