@@ -7,6 +7,10 @@ final class LaunchUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    private let tabs: [(String, String)] = [
+        ("搜索", "search"), ("浏览", "browse"), ("女优", "actors"),
+        ("98t", "sht"), ("收藏", "favs"), ("设置", "settings")]
+
     private func launchDemo() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-JDLV_DEMO", "1"]
@@ -20,17 +24,16 @@ final class LaunchUITests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "tab bar not found")
 
-        let labels = ["搜索", "浏览", "女优", "98t", "收藏", "设置"]
-        for label in labels {
-            XCTAssertTrue(tabExists(tabBar, label), "missing tab: \(label)")
+        for (label, route) in tabs {
+            XCTAssertTrue(tabExists(tabBar, label, route), "missing tab: \(label)")
         }
 
         // 逐个切换（含回到首页），全程不崩溃
-        for label in labels {
-            tabLabeled(tabBar, label).tap()
+        for (label, route) in tabs {
+            tabLabeled(tabBar, label, route).tap()
             XCTAssertEqual(app.state, .runningForeground, "app crashed after tapping tab \(label)")
         }
-        tabLabeled(tabBar, "搜索").tap()
+        tabLabeled(tabBar, "搜索", "search").tap()
     }
 
     func testHomePushMovieDetailAndBack() throws {
@@ -57,20 +60,21 @@ final class LaunchUITests: XCTestCase {
     }
 
     // iOS 18.5 模拟器 tab 按钮的 label/identifier 偶发不等于标题 → label 直查 + 全量索引扫描双路
-    private func tabLabeled(_ tabBar: XCUIElement, _ label: String) -> XCUIElement {
+    private func tabLabeled(_ tabBar: XCUIElement, _ label: String, _ route: String) -> XCUIElement {
         let byLabel = tabBar.buttons[label]
         if byLabel.exists { return byLabel }
         let n = tabBar.buttons.count
         for i in 0..<n {
             let b = tabBar.buttons.element(boundBy: i)
-            if b.label.contains(label) || b.identifier.contains(label) { return b }
+            if b.label.contains(label) || b.identifier.contains(label) || b.identifier.contains("tab_" + route) { return b }
         }
         return byLabel
     }
 
-    private func tabExists(_ tabBar: XCUIElement, _ label: String, timeout: TimeInterval = 5) -> Bool {
+    private func tabExists(_ tabBar: XCUIElement, _ label: String, _ route: String, timeout: TimeInterval = 5) -> Bool {
         let byLabel = tabBar.buttons[label]
         if byLabel.waitForExistence(timeout: timeout) { return true }
+        if tabBar.buttons["tab_" + route].waitForExistence(timeout: 2) { return true }
         for _ in 0..<6 {
             let n = tabBar.buttons.count
             for i in 0..<n {

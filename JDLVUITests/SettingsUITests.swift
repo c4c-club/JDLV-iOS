@@ -30,8 +30,8 @@ final class SettingsUITests: XCTestCase {
         } else {
             let tabBar = app.tabBars.firstMatch
             XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "tab bar not found")
-            XCTAssertTrue(tabExists(tabBar, "设置"), "设置 tab not found")
-            tabLabeled(tabBar, "设置").tap()
+            XCTAssertTrue(tabExists(tabBar, "设置", "settings"), "设置 tab not found")
+            tabLabeled(tabBar, "设置", "settings").tap()
         }
         let page = app.descendants(matching: .any)["settings_page"].firstMatch
         XCTAssertTrue(page.waitForExistence(timeout: 10), "settings page not found")
@@ -139,6 +139,35 @@ final class SettingsUITests: XCTestCase {
             for i in 0..<n {
                 let b = tabBar.buttons.element(boundBy: i)
                 if b.label.contains(label) || b.identifier.contains(label) { return true }
+            }
+            usleep(500_000)
+        }
+        return false
+    }
+
+    // iOS 18.5 tab 按钮 a11y 可能以 identifier（tab_settings 等）而非中文标题暴露 → 双路匹配
+    private func tabLabeled(_ tabBar: XCUIElement, _ label: String, _ route: String) -> XCUIElement {
+        let byLabel = tabBar.buttons[label]
+        if byLabel.exists { return byLabel }
+        if tabBar.buttons["tab_" + route].exists { return tabBar.buttons["tab_" + route] }
+        let n = tabBar.buttons.count
+        for i in 0..<n {
+            let b = tabBar.buttons.element(boundBy: i)
+            if b.label.contains(label) || b.identifier.contains("tab_" + route) { return b }
+        }
+        return byLabel
+    }
+
+    private func tabExists(_ tabBar: XCUIElement, _ label: String, _ route: String,
+                           timeout: TimeInterval = 8) -> Bool {
+        let byLabel = tabBar.buttons[label]
+        if byLabel.waitForExistence(timeout: timeout) { return true }
+        if tabBar.buttons["tab_" + route].waitForExistence(timeout: 2) { return true }
+        for _ in 0..<6 {
+            let n = tabBar.buttons.count
+            for i in 0..<n {
+                let b = tabBar.buttons.element(boundBy: i)
+                if b.label.contains(label) || b.identifier.contains("tab_" + route) { return true }
             }
             usleep(500_000)
         }

@@ -130,11 +130,24 @@ final class ScreenshotsUITests: XCTestCase {
     }
 
     /// 切 tab（仅在 tab 根页面调用；label 容错：存在才点）
-    private func openTab(_ app: XCUIApplication, _ label: String) {
+    private func openTab(_ app: XCUIApplication, _ label: String, _ route: String) {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 10) else { return }
-        let btn = tabLabeled(tabBar, label)
+        let btn = tabLabeled(tabBar, label, route)
         _ = tapIfExist(btn, 8)
+    }
+
+    // iOS 18.5 tab 按钮 a11y 可能以 identifier（tab_settings 等）而非中文标题暴露 → 双路匹配
+    private func tabLabeled(_ tabBar: XCUIElement, _ label: String, _ route: String) -> XCUIElement {
+        let byLabel = tabBar.buttons[label]
+        if byLabel.exists { return byLabel }
+        if tabBar.buttons["tab_" + route].exists { return tabBar.buttons["tab_" + route] }
+        let n = tabBar.buttons.count
+        for i in 0..<n {
+            let b = tabBar.buttons.element(boundBy: i)
+            if b.label.contains(label) || b.identifier.contains("tab_" + route) { return b }
+        }
+        return byLabel
     }
 
     /// 展开设置分组卡：内容探针已存在 = 已展开（折叠记忆跨启动持久，两种状态都要能走）
@@ -165,7 +178,7 @@ final class ScreenshotsUITests: XCTestCase {
         XCTAssertTrue(tabBar.waitForExistence(timeout: 20), "tab bar not found (gate not passed)")
 
         // 1) 进设置 → ⑧ 关于 → 开启「测试图片模式（调试）」→ ★ 铁律断言
-        openTab(app, "设置")
+        openTab(app, "设置", "settings")
         let settingsPage = app.descendants(matching: .any)["settings_page"].firstMatch
         XCTAssertTrue(settingsPage.waitForExistence(timeout: 10), "settings page not found")
 
@@ -190,7 +203,7 @@ final class ScreenshotsUITests: XCTestCase {
 
         // 01_首页（搜索 tab 首页三段态：🆕最近更新 / 🔥最多想看 / 🏆TOP250 + 资讯/热评入口）
         // 锚点只放内容元素（tab bar 恒存在，会短路骨架等待）；超时兜底照常截图
-        openTab(app, "搜索")
+        openTab(app, "搜索", "search")
         snapPage(app, "01_首页", [homePush, entryArticles], timeout: 15)
 
         // 02_搜索结果（搜索框输入"演示"，demo 广口径全命中；入口行消失 = 结果态到位）
@@ -207,7 +220,7 @@ final class ScreenshotsUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 20), "relaunch: no tab bar")
 
         // 03_浏览（浏览 tab 网格）
-        openTab(app, "浏览")
+        openTab(app, "浏览", "browse")
         let browseGrid = app.descendants(matching: .any)["browse_grid"].firstMatch
         snapPage(app, "03_浏览", [browseGrid])
 
@@ -224,7 +237,7 @@ final class ScreenshotsUITests: XCTestCase {
         }
 
         // 05_影片详情（首页第一张影片卡 push → secondary_page）
-        openTab(app, "搜索")
+        openTab(app, "搜索", "search")
         _ = popUntil(app, homePush, maxPops: 2)
         if tapIfExist(homePush, 8) {
             let secondary = app.descendants(matching: .any)["secondary_page"].firstMatch
@@ -234,7 +247,7 @@ final class ScreenshotsUITests: XCTestCase {
         }
 
         // 06_女优列表（女优 tab；demo 数据名 "演示女优 NNN" / "演示男优 NNN"）
-        openTab(app, "女优")
+        openTab(app, "女优", "actors")
         let actorsBar = app.descendants(matching: .any)["actors_searchbar"].firstMatch
         let actorCard = app.buttons.matching(
             NSPredicate(format: "label CONTAINS %@", "演示")).firstMatch
@@ -248,7 +261,7 @@ final class ScreenshotsUITests: XCTestCase {
         }
 
         // 08_98t 列表（98t tab 网格）
-        openTab(app, "98t")
+        openTab(app, "98t", "sht")
         let shtGrid = app.descendants(matching: .any)["sht_grid"].firstMatch
         snapPage(app, "08_98t列表", [shtGrid])
 
@@ -263,7 +276,7 @@ final class ScreenshotsUITests: XCTestCase {
         }
 
         // 10_资讯（首页顶部"资讯"入口 push → 列表）
-        openTab(app, "搜索")
+        openTab(app, "搜索", "search")
         _ = popUntil(app, entryArticles)
         if tapIfExist(entryArticles, 6) {
             let articlesPage = app.descendants(matching: .any)["articles_page"].firstMatch
@@ -280,7 +293,7 @@ final class ScreenshotsUITests: XCTestCase {
         }
 
         // 12_TOP250（首页 TOP250 段头"查看全部" push；段头在第三段 → 先下滑到可见）
-        openTab(app, "搜索")
+        openTab(app, "搜索", "search")
         _ = popUntil(app, entryArticles)
         let viewAllTop = app.descendants(matching: .any)["viewall_top"].firstMatch
         scrollUntilVisible(app, viewAllTop)
@@ -291,12 +304,12 @@ final class ScreenshotsUITests: XCTestCase {
         }
 
         // 13_收藏（收藏 tab；demo 收藏空 → 空态亦为有效截图）
-        openTab(app, "收藏")
+        openTab(app, "收藏", "favs")
         let favsPage = app.descendants(matching: .any)["tab_root_favs"].firstMatch
         snapPage(app, "13_收藏", [favsPage])
 
         // 14_设置数据源（设置 tab ① 数据源卡展开；折叠记忆持久 → 先探针后点卡头）
-        openTab(app, "设置")
+        openTab(app, "设置", "settings")
         _ = settingsPage.waitForExistence(timeout: 10)
         expandSettingsCard(app, "db", app.buttons["测试连接"])
         Thread.sleep(forTimeInterval: 1.5)
