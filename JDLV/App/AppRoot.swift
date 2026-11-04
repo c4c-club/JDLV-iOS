@@ -37,7 +37,7 @@ struct AppGate: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(theme.bg0.ignoresSafeArea())
-            } else if !isDemoMode && store.setupRequired {
+            } else if !Self.isDemoMode && store.setupRequired {
                 FirstRunSetupView()
             } else {
                 AppRoot()
