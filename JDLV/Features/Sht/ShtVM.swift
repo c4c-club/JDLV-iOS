@@ -677,7 +677,7 @@ final class ShtVM: ObservableObject {
     }
 
     /// setter 先写 state 再 refetch，不从 prefs 回读（S11-P2 模式，避免异步落盘旧值）
-    private func refetch() async {
+    func refetch() async {
         await reload()
     }
 
