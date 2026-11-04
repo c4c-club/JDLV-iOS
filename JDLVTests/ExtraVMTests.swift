@@ -193,6 +193,7 @@ final class ExtraVMTests: XCTestCase {
         }
         XCTAssertEqual(n, 1)
         XCTAssertEqual(vm.refreshChannel.value?.toastText, "✓ 刷新完成 · 共 1 条")
+        vm.q = "changed"   // 换查询键 → 无 stale 兜底（A.0 三级回落）→ 走 Fail
         await vm.refresh()
         guard case .fail(let msg)? = vm.refreshChannel.value else {
             return XCTFail("expected fail")
@@ -292,7 +293,7 @@ final class ExtraVMTests: XCTestCase {
         XCTAssertEqual(vm.key, "2026-02")      // 新响应回填
         XCTAssertEqual(vm.keys, ["2026-02"])
         XCTAssertEqual(src.seenPeriods.last, "monthly")
-        XCTAssertEqual(src.seenKeys.last, "2026-02")
+        XCTAssertNil(src.seenKeys.last, "setPeriod 清 key → 请求 periodKey=nil")
     }
 
     // MARK: HotReviews：文案逐字（10 §4.5/§4.6：赞 0 不显示 / 评论 N★ / #N 双空格）
@@ -327,7 +328,7 @@ final class ExtraVMTests: XCTestCase {
         XCTAssertEqual(HotReviewsVM.clampGoPage(99, total: 48, per: 24), 2)
         XCTAssertEqual(HotReviewsVM.clampGoPage(0, total: 48, per: 24), 1)
         XCTAssertEqual(HotReviewsVM.clampGoPage(9, total: 0, per: 24), 9)   // total 未知不钳
-        XCTAssertEqual(HotReviewsVM.clampGoPage(9, total: 10, per: 0), 1)   // per<=0 按 1
+        XCTAssertEqual(HotReviewsVM.clampGoPage(9, total: 10, per: 0), 9)   // per<=0 按 1 → maxPage=10
     }
 
     // MARK: HotReviews：rid 竞态丢弃旧响应（A.0）

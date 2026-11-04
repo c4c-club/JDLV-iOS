@@ -71,6 +71,8 @@ private final class FakeSearchData: SearchData {
         return resultsByPage[page] ?? searchResult
     }
 
+    var countGated: Bool { countGate != nil }
+
     func searchCount(q: String, scope: String) async -> Int64 {
         countCalls += 1
         if gateFirstCount {
@@ -368,6 +370,7 @@ final class SearchVMTests: XCTestCase {
         let vm = makeVM(data: data)
         await vm.search()
         XCTAssertEqual(vm.total, -1, "计数未到 → total 未知")
+        _ = await waitUntil { data.countGated }
         data.releaseCount()
         let arrived = await waitUntil { vm.total == 57 }
         XCTAssertTrue(arrived, "计数异步补齐")
@@ -393,7 +396,8 @@ final class SearchVMTests: XCTestCase {
         let vm = makeVM(data: data)
         vm.query = "a"
         await vm.search()
-        XCTAssertEqual(data.countCalls, 1)
+        let c1 = await waitUntil { data.countCalls == 1 }
+        XCTAssertTrue(c1)
 
         data.countResult = 222
         data.gateFirstCount = false
@@ -402,6 +406,7 @@ final class SearchVMTests: XCTestCase {
         let bArrived = await waitUntil { vm.total == 222 }
         XCTAssertTrue(bArrived)
 
+        _ = await waitUntil { data.countGated }   // 旧计数已挂起
         data.releaseCount()   // 旧搜索的迟到计数
         try? await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertEqual(vm.total, 222, "迟到计数（rid/countSeq 双保险）不得覆盖新结果")

@@ -537,7 +537,7 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(TestImages.enabled(), "testImgMode 经 settingsProvider 生效")
         #endif
         // jdb 图床 URL 重建走 provider 的自定义镜像
-        let url = CdnRewrite.jdbImgUrl("covers/z4/z49rR4.jpg")
+        let url = CdnRewrite.jdbImgUrl("/covers/z4/z49rR4.jpg")   // Img.movieCover 回退形态（前导 /）
         XCTAssertTrue(url.contains("mirror.example.com"), "自定义镜像经 provider 注入生效: \(url)")
 
         // applyHostOnly：嗅探 host → 内存 shtHost

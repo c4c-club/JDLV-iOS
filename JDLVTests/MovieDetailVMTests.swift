@@ -184,9 +184,11 @@ final class MovieDetailVMTests: XCTestCase {
         src.responses = [d]
         let vm = makeVM(src)
         await vm.bind(mid: "100001")
-        XCTAssertEqual(vm.gallery, [MovieImg.preview("p1")])
-        XCTAssertFalse(vm.coverTappable)
-        XCTAssertEqual(vm.galleryIndexOfPreview(0), 0)
+        // Img.movieCover 语义：cover 空 → /covers/{id 前 2 位}/{id}.jpg 回退（07 取证口径）
+        XCTAssertEqual(vm.gallery.first, MovieImg.movieCover("", "100001"))
+        XCTAssertEqual(vm.gallery.count, 2)
+        XCTAssertTrue(vm.coverTappable)
+        XCTAssertEqual(vm.galleryIndexOfPreview(0), 1)
     }
 
     // MARK: 反查行 payload 编码往返（LookupCodec；label 全角冒号逐字）
@@ -277,10 +279,9 @@ final class MovieDetailVMTests: XCTestCase {
         // 已读态（进入即已读）→ Toast「已复制」
         await vm.onReadButtonPressed()
         XCTAssertEqual(toasts.list.last, "已复制")
-        // 未读态 → Toast「已标记已读」并写已读
+        // 未读态（不 bind —— bind 即 historyMark，见 B.10）→ Toast「已标记已读」并写已读
         let vm2 = makeVM(src, MemoryFavStore(), toasts)
-        src.responses.append(moviePayload(id: "100001"))
-        await vm2.bind(mid: "100002")
+        XCTAssertFalse(vm2.read)
         await vm2.onReadButtonPressed()
         XCTAssertEqual(toasts.list.last, "已标记已读")
         XCTAssertTrue(vm2.read)

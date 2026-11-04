@@ -17,7 +17,7 @@ final class LockPBKDF2Tests: XCTestCase {
 
     // MARK: - PBKDF2 已知向量（RFC 风格标准向量）
 
-    /// PBKDF2-HMAC-SHA256 标准向量：P="secret", S="salt"
+    /// PBKDF2-HMAC-SHA256 标准向量：P="password", S="salt"（RFC 7914 §11.2 同款）
     /// c=1 → 120fb6cf...；c=2 → ae4d0c95...；c=4096 → c5e478d5...
     func test_pbkdf2KnownVectors() {
         let salt = Data("salt".utf8)
@@ -26,13 +26,13 @@ final class LockPBKDF2Tests: XCTestCase {
                 .map { String(format: "%02x", $0) }.joined()
         }
         XCTAssertEqual(
-            hexOf("secret", 1),
+            hexOf("password", 1),
             "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b")
         XCTAssertEqual(
-            hexOf("secret", 2),
+            hexOf("password", 2),
             "ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43")
         XCTAssertEqual(
-            hexOf("secret", 4096),
+            hexOf("password", 4096),
             "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a")
     }
 
@@ -91,10 +91,10 @@ final class LockPBKDF2Tests: XCTestCase {
         XCTAssertFalse(LockSecrets.verifySecret("secret", stored: "pbkdf2:120000:zz:zz"))
     }
 
-    /// 更旧：64 位裸 sha256 hex（sha256("secret") 已知值）
+    /// 更旧：64 位裸 sha256 hex（sha256("password") 已知值）
     func test_verifyBareSha256Legacy() {
         let stored = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
-        XCTAssertTrue(LockSecrets.verifySecret("secret", stored: stored))
+        XCTAssertTrue(LockSecrets.verifySecret("password", stored: stored))
         XCTAssertFalse(LockSecrets.verifySecret("wrong", stored: stored))
         XCTAssertEqual(LockSecrets.secretLength(stored), 0)
         // 非 hex / 长度不符 → false

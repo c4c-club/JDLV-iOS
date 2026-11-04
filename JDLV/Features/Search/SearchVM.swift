@@ -437,7 +437,8 @@ final class SearchVM: ObservableObject {
         let cacheTtl = force ? 0 : 10
         if cacheTtl > 0, let c: SearchPageResult = cache.get(SearchPageResult.self, key: base, ttlMinutes: cacheTtl) {
             lastSource = "remote"
-            applyResult(c.items, page: p, derived: c.derived, served: c.served)
+            applyResult(c.items, page: p, derived: c.derived, served: c.served,
+                        note: c.derived.isEmpty ? SearchCopy.remoteNote : c.derived)
             lastAutoFailAt = 0
             fetchCount(q: q, scope: s, preferLocal: false)
             return
