@@ -451,11 +451,11 @@ final class ExtraVMTests: XCTestCase {
         let now: Int64 = 1_770_000_000_000
         st.data = [
             "movie": [
-                favRow(kind: "movie", id: "100002", title: "新收藏", ts: now),
-                favRow(kind: "movie", id: "100001", title: "旧收藏", ts: now - 86_400_000),
+                Self.favRow(kind: "movie", id: "100002", title: "新收藏", ts: now),
+                Self.favRow(kind: "movie", id: "100001", title: "旧收藏", ts: now - 86_400_000),
             ],
-            "sht": [favRow(kind: "sht", id: "300001", title: "帖子", ts: now)],
-            "actor": [favRow(kind: "actor", id: "200001", title: "女优", ts: now)],
+            "sht": [Self.favRow(kind: "sht", id: "300001", title: "帖子", ts: now)],
+            "actor": [Self.favRow(kind: "actor", id: "200001", title: "女优", ts: now)],
         ]
         let vm = FavsVM(store: st)
         await vm.reload()
@@ -485,16 +485,16 @@ final class ExtraVMTests: XCTestCase {
 
     @MainActor
     func testFavsUnknownTimeAndFormat() {
-        let bad = favRow(kind: "movie", id: "1", title: "t", ts: 0)
+        let bad = Self.favRow(kind: "movie", id: "1", title: "t", ts: 0)
         XCTAssertNil(FavsVM.rowTime(bad))                            // → 时间未知
         // 秒口径（LocalStore REAL 秒）：格式 yyyy-MM-dd HH:mm（16 字符，本地时区日期不定）
-        let ok = favRow(kind: "movie", id: "1", title: "t", ts: 1_770_123_456)
+        let ok = Self.favRow(kind: "movie", id: "1", title: "t", ts: 1_770_123_456)
         let time = FavsVM.rowTime(ok)
         XCTAssertEqual(time?.count, 16)
-        XCTAssertEqual(time.map { Array($0) }?[4], "-")
-        XCTAssertEqual(time.map { Array($0) }?[13], ":")
+        XCTAssertEqual(time?.map { $0 }[4], "-")
+        XCTAssertEqual(time?.map { $0 }[13], ":")
         // 双口径归一：秒（<1e12）与毫秒（>1e12）同一显示
-        let ms = favRow(kind: "movie", id: "1", title: "t", ts: 1_770_123_456_000)
+        let ms = Self.favRow(kind: "movie", id: "1", title: "t", ts: 1_770_123_456_000)
         XCTAssertEqual(FavsVM.rowTime(ok), FavsVM.rowTime(ms))
         XCTAssertEqual(FavsVM.rowTitle(Self.favRow(kind: "movie", id: "1", title: "", ts: 1)),
                        "(无标题)")
