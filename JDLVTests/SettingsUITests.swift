@@ -27,9 +27,15 @@ final class SettingsUITests: XCTestCase {
 
     // MARK: - 工具（隔离 UserDefaults suite）
 
+    private static var wipedTags: Set<String> = []
+
     private func freshDefaults(_ tag: String) -> UserDefaults {
         let name = "test_settings_\(tag)"
-        UserDefaults().removePersistentDomain(forName: name)
+        // 仅首个使用者清域（同 suite 二次获取要保留刚写入的数据 —— roundtrip 用例依赖）
+        if !Self.wipedTags.contains(tag) {
+            UserDefaults().removePersistentDomain(forName: name)
+            Self.wipedTags.insert(tag)
+        }
         return UserDefaults(suiteName: name)!
     }
 

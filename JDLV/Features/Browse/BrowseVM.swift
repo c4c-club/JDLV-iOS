@@ -249,7 +249,7 @@ final class MemoryBrowseCache: BrowseCacheStore {
     func get(_ key: String, ttlMinutes: Int) -> [String: Any]? {
         lock.lock(); defer { lock.unlock() }
         guard let e = dict[key] else { return nil }
-        if Self.nowMs() - e.ts > Int64(ttlMinutes) * 60_000 { return nil }   // ttl=0 → 立即过期（force 绕过）
+        if Self.nowMs() - e.ts >= Int64(ttlMinutes) * 60_000 { return nil }   // ttl=0 → 立即过期（force 绕过；同毫秒也算过期）
         return e.payload
     }
 

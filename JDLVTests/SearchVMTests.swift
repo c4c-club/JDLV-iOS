@@ -73,11 +73,13 @@ private final class FakeSearchData: SearchData {
 
     var countGated: Bool { countGate != nil }
 
+    var countDelays: [UInt64] = []
+
     func searchCount(q: String, scope: String) async -> Int64 {
+        let idx = countCalls
         countCalls += 1
-        if gateFirstCount {
-            gateFirstCount = false
-            await withCheckedContinuation { countGate = $0 }
+        if countDelays.count > idx, countDelays[idx] > 0 {
+            try? await Task.sleep(nanoseconds: countDelays[idx])
         }
         return countResult
     }
@@ -366,13 +368,11 @@ final class SearchVMTests: XCTestCase {
         let data = FakeSearchData()
         data.searchResult = SearchPageResult(items: rows(1...3), derived: "", served: "remote")
         data.countResult = 57
-        data.gateFirstCount = true
+        data.countDelays = [250_000_000]   // 计数延迟 250ms（无 gate 竞态）
         let vm = makeVM(data: data)
         await vm.search()
         XCTAssertEqual(vm.total, -1, "计数未到 → total 未知")
-        _ = await waitUntil { data.countGated }
-        data.releaseCount()
-        let arrived = await waitUntil { vm.total == 57 }
+        let arrived = await waitUntil(4) { vm.total == 57 }
         XCTAssertTrue(arrived, "计数异步补齐")
     }
 
@@ -394,21 +394,20 @@ final class SearchVMTests: XCTestCase {
         data.countResult = 111
         data.gateFirstCount = true
         let vm = makeVM(data: data)
+        data.countDelays = [400_000_000]   // 首个计数延迟 400ms
         vm.query = "a"
         await vm.search()
         let c1 = await waitUntil { data.countCalls == 1 }
         XCTAssertTrue(c1)
 
+        data.countDelays = [0]
         data.countResult = 222
-        data.gateFirstCount = false
         vm.query = "b"
         await vm.search()
         let bArrived = await waitUntil { vm.total == 222 }
         XCTAssertTrue(bArrived)
 
-        _ = await waitUntil { data.countGated }   // 旧计数已挂起
-        data.releaseCount()   // 旧搜索的迟到计数
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        try? await Task.sleep(nanoseconds: 700_000_000)   // 旧计数（111）迟到到达
         XCTAssertEqual(vm.total, 222, "迟到计数（rid/countSeq 双保险）不得覆盖新结果")
     }
 

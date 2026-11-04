@@ -293,7 +293,7 @@ final class ExtraVMTests: XCTestCase {
         XCTAssertEqual(vm.key, "2026-02")      // 新响应回填
         XCTAssertEqual(vm.keys, ["2026-02"])
         XCTAssertEqual(src.seenPeriods.last, "monthly")
-        XCTAssertNil(src.seenKeys.last, "setPeriod 清 key → 请求 periodKey=nil")
+        XCTAssertTrue(src.seenKeys.last == .some(nil), "setPeriod 清 key → 请求 periodKey=nil")
     }
 
     // MARK: HotReviews：文案逐字（10 §4.5/§4.6：赞 0 不显示 / 评论 N★ / #N 双空格）
