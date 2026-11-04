@@ -22,17 +22,15 @@ final class LaunchUITests: XCTestCase {
 
         let labels = ["搜索", "浏览", "女优", "98t", "收藏", "设置"]
         for label in labels {
-            let button = tabBar.buttons[label]
-            let ok = button.waitForExistence(timeout: 5)
-            XCTAssertTrue(ok, "missing tab: \(label)")
+            XCTAssertTrue(tabExists(tabBar, label), "missing tab: \(label)")
         }
 
         // 逐个切换（含回到首页），全程不崩溃
         for label in labels {
-            tabBar.buttons[label].tap()
+            tabLabeled(tabBar, label).tap()
             XCTAssertEqual(app.state, .runningForeground, "app crashed after tapping tab \(label)")
         }
-        tabBar.buttons["搜索"].tap()
+        tabLabeled(tabBar, "搜索").tap()
     }
 
     func testHomePushMovieDetailAndBack() throws {
@@ -56,5 +54,31 @@ final class LaunchUITests: XCTestCase {
 
         XCTAssertTrue(push.waitForExistence(timeout: 10), "home not restored after back")
         XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // iOS 18.5 模拟器 tab 按钮的 label/identifier 偶发不等于标题 → label 直查 + 全量索引扫描双路
+    private func tabLabeled(_ tabBar: XCUIElement, _ label: String) -> XCUIElement {
+        let byLabel = tabBar.buttons[label]
+        if byLabel.exists { return byLabel }
+        let n = tabBar.buttons.count
+        for i in 0..<n {
+            let b = tabBar.buttons.element(boundBy: i)
+            if b.label.contains(label) || b.identifier.contains(label) { return b }
+        }
+        return byLabel
+    }
+
+    private func tabExists(_ tabBar: XCUIElement, _ label: String, timeout: TimeInterval = 5) -> Bool {
+        let byLabel = tabBar.buttons[label]
+        if byLabel.waitForExistence(timeout: timeout) { return true }
+        for _ in 0..<6 {
+            let n = tabBar.buttons.count
+            for i in 0..<n {
+                let b = tabBar.buttons.element(boundBy: i)
+                if b.label.contains(label) || b.identifier.contains(label) { return true }
+            }
+            usleep(500_000)
+        }
+        return false
     }
 }

@@ -131,7 +131,10 @@ final class ScreenshotsUITests: XCTestCase {
 
     /// 切 tab（仅在 tab 根页面调用；label 容错：存在才点）
     private func openTab(_ app: XCUIApplication, _ label: String) {
-        _ = tapIfExist(app.tabBars.buttons[label], 8)
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 10) else { return }
+        let btn = tabLabeled(tabBar, label)
+        _ = tapIfExist(btn, 8)
     }
 
     /// 展开设置分组卡：内容探针已存在 = 已展开（折叠记忆跨启动持久，两种状态都要能走）
@@ -301,5 +304,31 @@ final class ScreenshotsUITests: XCTestCase {
 
         // 每页截图必须有 attachment：14 页至少产出 12 张（铁律外的最小化断言）
         XCTAssertGreaterThanOrEqual(snapCount, 12, "screenshot set incomplete: \(snapCount)")
+    }
+
+    // iOS 18.5 模拟器 tab 按钮的 label/identifier 偶发不等于标题 → label 直查 + 全量索引扫描双路
+    private func tabLabeled(_ tabBar: XCUIElement, _ label: String) -> XCUIElement {
+        let byLabel = tabBar.buttons[label]
+        if byLabel.exists { return byLabel }
+        let n = tabBar.buttons.count
+        for i in 0..<n {
+            let b = tabBar.buttons.element(boundBy: i)
+            if b.label.contains(label) || b.identifier.contains(label) { return b }
+        }
+        return byLabel
+    }
+
+    private func tabExists(_ tabBar: XCUIElement, _ label: String, timeout: TimeInterval = 5) -> Bool {
+        let byLabel = tabBar.buttons[label]
+        if byLabel.waitForExistence(timeout: timeout) { return true }
+        for _ in 0..<6 {
+            let n = tabBar.buttons.count
+            for i in 0..<n {
+                let b = tabBar.buttons.element(boundBy: i)
+                if b.label.contains(label) || b.identifier.contains(label) { return true }
+            }
+            usleep(500_000)
+        }
+        return false
     }
 }

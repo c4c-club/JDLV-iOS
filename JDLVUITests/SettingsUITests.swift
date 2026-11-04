@@ -30,9 +30,8 @@ final class SettingsUITests: XCTestCase {
         } else {
             let tabBar = app.tabBars.firstMatch
             XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "tab bar not found")
-            let btn = tabBar.buttons["设置"]
-            XCTAssertTrue(btn.waitForExistence(timeout: 5), "设置 tab not found")
-            btn.tap()
+            XCTAssertTrue(tabExists(tabBar, "设置"), "设置 tab not found")
+            tabLabeled(tabBar, "设置").tap()
         }
         let page = app.descendants(matching: .any)["settings_page"].firstMatch
         XCTAssertTrue(page.waitForExistence(timeout: 10), "settings page not found")
@@ -118,5 +117,31 @@ final class SettingsUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground, "crash after collapsing db group")
         dbGroup.tap()
         XCTAssertEqual(app.state, .runningForeground, "crash after re-expanding db group")
+    }
+
+    // iOS 18.5 模拟器 tab 按钮的 label/identifier 偶发不等于标题 → label 直查 + 全量索引扫描双路
+    private func tabLabeled(_ tabBar: XCUIElement, _ label: String) -> XCUIElement {
+        let byLabel = tabBar.buttons[label]
+        if byLabel.exists { return byLabel }
+        let n = tabBar.buttons.count
+        for i in 0..<n {
+            let b = tabBar.buttons.element(boundBy: i)
+            if b.label.contains(label) || b.identifier.contains(label) { return b }
+        }
+        return byLabel
+    }
+
+    private func tabExists(_ tabBar: XCUIElement, _ label: String, timeout: TimeInterval = 5) -> Bool {
+        let byLabel = tabBar.buttons[label]
+        if byLabel.waitForExistence(timeout: timeout) { return true }
+        for _ in 0..<6 {
+            let n = tabBar.buttons.count
+            for i in 0..<n {
+                let b = tabBar.buttons.element(boundBy: i)
+                if b.label.contains(label) || b.identifier.contains(label) { return true }
+            }
+            usleep(500_000)
+        }
+        return false
     }
 }

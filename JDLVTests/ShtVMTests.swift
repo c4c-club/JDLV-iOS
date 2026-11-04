@@ -357,7 +357,7 @@ final class ShtVMTests: XCTestCase {
         let key = ShtVM.listCacheKey(
             main: "", cat: "", type: "", q: "", hasMagnet: false, fuzzy: false,
             semantic: true, sort: "date", per: 20, page: 1)
-        cache.put(key, page(["stale"]))
+        // 注：fetch 首步是 TTL 缓存命中；预置语义键会让用例到不了 error 分支 → 不预置
         let vm = makeVM(src, cache)
         // toggleSemantic 有"未安装模型"门禁（NA-06）；此处直测 fetch 的语义分支防御
         vm.semantic = true
