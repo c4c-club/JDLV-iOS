@@ -85,7 +85,8 @@ jobs:
           if [ -z "$NAME" ]; then
             NAME=$(xcrun simctl list devices available | sed -nE 's/^ *(iPhone [^(]*) \([0-9A-F-]{36}\).*/\1/p' | head -1 | xargs)
           fi
-          OSV=$(xcrun simctl list runtimes | grep -E '^iOS' | head -1 | awk '{print $2}')
+          # OS 从设备列表的分区头解析（设备仅存在于已配对的 runtime；runtimes 列表可能含无设备的旧版）
+          OSV=$(xcrun simctl list devices available | sed -nE 's/^-- iOS ([0-9.]+) --//p' | tail -1)
           test -n "$NAME" && test -n "$OSV"
           echo "DEST=platform=iOS Simulator,name=${NAME},OS=${OSV}" >> "$GITHUB_ENV"
           echo "Using destination: $DEST"
