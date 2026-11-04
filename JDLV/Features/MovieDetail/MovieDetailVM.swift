@@ -155,7 +155,7 @@ struct DemoMovieDetailDataSource: MovieDetailDataSource {
             for k in 0..<n {
                 let h = Self.fnv1a("\(mid)#m\(k)")
                 mags.append(Row([
-                    "hash": .string(String(format: "%016llx%08x", h, UInt32(h >> 24))),
+                    "hash": .string(String(format: "%016llx%08x", h, UInt32(truncatingIfNeeded: h >> 24))),
                     "name": .string("\(m.s("number"))-\(k + 1).mp4"),
                     "size": .string(String(700 + Int(h % 3000))),
                     "cnsub": .bool(k == 0),
