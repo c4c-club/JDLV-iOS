@@ -64,15 +64,17 @@ final class SettingsUITests: XCTestCase {
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
 
-        // ⑧ 关于 → 确保展开 → 开启「测试图片模式（调试）」（仅 DEBUG 构建显示）
+        // ⑧ 关于 → 确保展开（try toggle ≤3 次，覆盖"keys 循环后已展开/仍收起"两种状态）
+        //    → 开启「测试图片模式（调试）」（仅 DEBUG 构建显示）
         let aboutGroup = group(app, "about")
-        scrollUntilVisible(app, aboutGroup)
-        let sw0 = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
-        if !sw0.exists {
-            // 可能仍收起（header tap 被 toolbar/底栏吞掉）→ 再点一次头行
-            aboutGroup.tap()
+        var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
+        for attempt in 0..<3 {
+            scrollUntilVisible(app, aboutGroup, maxSwipes: 20)
+            if sw.waitForExistence(timeout: 2) { break }
+            aboutGroup.tap()   // 收起 ↔ 展开 切换；下一轮再找
+            _ = waitUntilShort(2) { sw.exists }
+            if sw.exists { break }
         }
-        let sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
         scrollUntilVisible(app, sw, maxSwipes: 24)
         if !sw.isHittable { app.swipeUp(); app.swipeUp() }
         XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
@@ -150,5 +152,14 @@ final class SettingsUITests: XCTestCase {
             usleep(500_000)
         }
         return false
+    }
+
+    private func waitUntilShort(_ timeout: TimeInterval, _ cond: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if cond() { return true }
+            usleep(200_000)
+        }
+        return cond()
     }
 }
