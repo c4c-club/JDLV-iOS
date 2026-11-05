@@ -62,10 +62,10 @@ final class SettingsUITests: XCTestCase {
         let aboutGroup = group(app, "about")
         scrollUntilVisible(app, aboutGroup, maxSwipes: 12)
         XCTAssertTrue(aboutGroup.waitForExistence(timeout: 5), "关于 card not found")
-        aboutGroup.tap()   // group 元素即 header 行 → 中心 tap = 切换展开
+        // CollapsiblePref 记忆展开态（前序用例可能已展开）→ 先探 switch，收起中才点头行
         var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
         if !sw.waitForExistence(timeout: 3) {
-            aboutGroup.tap()   // 状态歧义兜底：再切一次
+            aboutGroup.tap()   // 收起中 → 切换展开
             _ = waitUntilShort(3) { sw.exists }
         }
         XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
