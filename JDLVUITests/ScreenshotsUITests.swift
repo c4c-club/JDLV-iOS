@@ -129,6 +129,145 @@ final class ScreenshotsUITests: XCTestCase {
         }
     }
 
+
+    // MARK: P13.3 主走查：测试图片模式先开 → 14 页截图（每页 keepAlways 附件）
+
+    func testScreenshotWalkthrough14Pages() throws {
+        let app = launchDemo()
+
+        // 0) 门禁：demo 模式直接进主页（AppGate 跳过首启门禁）
+        let tabBarBtn = app.buttons["tab_search"]
+        XCTAssertTrue(tabBarBtn.waitForExistence(timeout: 20), "tab bar not found (gate not passed)")
+
+        // 1) 设置 → ⑧ 关于 → 开启「测试图片模式（调试）」→ ★ 铁律断言
+        openTab(app, "设置", "settings")
+        let settingsPage = app.descendants(matching: .any)["settings_page"].firstMatch
+        XCTAssertTrue(settingsPage.waitForExistence(timeout: 10), "settings page not found")
+
+        let aboutGroup = app.descendants(matching: .any)["settings_group_about"].firstMatch
+        scrollUntilVisible(app, aboutGroup, maxSwipes: 12)
+        // CollapsiblePref 记忆展开态（前序用例可能已展开）→ 先探 switch
+        var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
+        if !sw.waitForExistence(timeout: 3) {
+            aboutGroup.tap()   // 收起中 → 切换展开
+            _ = waitUntilShort(3) { sw.exists }
+        }
+        XCTAssertTrue(sw.waitForExistence(timeout: 5), "about_testimg_switch not found")
+        scrollUntilVisible(app, sw, maxSwipes: 24)
+        // 点击（行按钮 / 行内 Toggle 均触发 onChange）→ switch value == "1" 为止（≤4 次）
+        func switchOn() -> Bool {
+            app.switches.matching(NSPredicate(format: "value == %@", "1")).count > 0
+        }
+        if !switchOn() {
+            for _ in 0..<4 {
+                if sw.isHittable { sw.tap() } else {
+                    sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                }
+                waitUntilShort(2) { switchOn() }
+                if switchOn() { break }
+            }
+        }
+        XCTAssertTrue(switchOn(), "test image switch did not reach ON")
+        let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
+        XCTAssertTrue(anchor.waitForExistence(timeout: 5), "testImageModeOn anchor not found")
+        snap(app, "00_测试图片模式开启")
+
+        // 2) 14 页走查
+        openTab(app, "搜索", "search")
+        snapPage(app, "01_首页", [app.buttons["entry_articles"], app.buttons["entry_hotreviews"],
+                                  app.buttons["viewall_recent"]])
+
+        // 搜索态
+        let field = app.textFields.firstMatch
+        _ = typeInto(field, "演示")
+        snapPage(app, "02_搜索结果", [app.buttons["mode_fuzzy"], app.buttons["mode_exact"]])
+        app.terminate()
+        app.launch()
+
+        openTab(app, "浏览", "browse")
+        snapPage(app, "03_浏览", [app.buttons["sht_filter_button"], app.buttons["browse_grid"],
+                                  app.buttons["tab_browse"]])
+        let filterBtn = app.buttons["sht_filter_button"]
+        if filterBtn.exists { filterBtn.tap() }
+        snap(app, "04_筛选面板")
+        if filterBtn.exists { filterBtn.tap() }   // 关面板（toggle）
+
+        openTab(app, "搜索", "search")
+        let push = app.descendants(matching: .any)["home_push_movie"].firstMatch
+        if push.waitForExistence(timeout: 12) {
+            push.tap()
+            snapPage(app, "05_影片详情", [app.descendants(matching: .any)["secondary_page"].firstMatch])
+            navBack(app)
+        }
+
+        openTab(app, "女优", "actors")
+        snapPage(app, "06_女优列表", [app.descendants(matching: .any)["tab_root_actors"].firstMatch])
+        let actorCard = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示")).firstMatch
+        if actorCard.exists {
+            actorCard.tap()
+            snapPage(app, "07_女优详情", [app.descendants(matching: .any)["secondary_page"].firstMatch])
+            navBack(app)
+        }
+
+        openTab(app, "98t", "sht")
+        snapPage(app, "08_98t列表", [app.descendants(matching: .any)["sht_filter_button"].firstMatch])
+        let shtRow = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示帖子")).firstMatch
+        if shtRow.exists {
+            shtRow.tap()
+            snapPage(app, "09_帖子详情", [app.navigationBars.firstMatch,
+                                          app.descendants(matching: .any)["secondary_page"].firstMatch])
+            navBack(app)
+        }
+
+        openTab(app, "搜索", "search")
+        let entryArticles = app.buttons["entry_articles"]
+        if entryArticles.waitForExistence(timeout: 8) {
+            entryArticles.tap()
+            snapPage(app, "10_资讯", [app.descendants(matching: .any)["articles_page"].firstMatch])
+            navBack(app)
+        }
+        let entryHot = app.buttons["entry_hotreviews"]
+        if entryHot.exists {
+            entryHot.tap()
+            snapPage(app, "11_热评", [app.descendants(matching: .any)["hotreviews_page"].firstMatch])
+            navBack(app)
+        }
+        let viewallTop = app.buttons["viewall_top"]
+        if viewallTop.exists {
+            viewallTop.tap()
+            snapPage(app, "12_TOP250", [app.descendants(matching: .any)["top250_page"].firstMatch])
+            navBack(app)
+        }
+
+        openTab(app, "收藏", "favs")
+        snapPage(app, "13_收藏", [app.descendants(matching: .any)["tab_root_favs"].firstMatch])
+
+        openTab(app, "设置", "settings")
+        let dbGroup = app.descendants(matching: .any)["settings_group_db"].firstMatch
+        scrollUntilVisible(app, dbGroup, maxSwipes: 12)
+        snapPage(app, "14_设置数据源", [dbGroup])
+
+        XCTAssertGreaterThanOrEqual(snapCount, 12, "expected ≥12 screenshots, got \(snapCount)")
+    }
+
+    /// 滚动到可见（app 级 swipe，最多 maxSwipes）
+    private func scrollUntilVisible(_ app: XCUIApplication, _ el: XCUIElement, maxSwipes: Int = 14) {
+        var i = 0
+        while !(el.exists && el.isHittable) && i < maxSwipes {
+            app.swipeUp()
+            i += 1
+        }
+    }
+
+    private func waitUntilShort(_ timeout: TimeInterval, _ cond: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if cond() { return true }
+            usleep(200_000)
+        }
+        return cond()
+    }
+
     /// 切 tab（仅在 tab 根页面调用；label 容错：存在才点）
     private func openTab(_ app: XCUIApplication, _ label: String, _ route: String) {
         let btn = tabLabeled(app, label, route)
