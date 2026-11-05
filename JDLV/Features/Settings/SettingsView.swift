@@ -526,6 +526,7 @@ struct SettingsGroupCard<Content: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("settings_group_header_\(rememberKey)")
     }
 }
 
