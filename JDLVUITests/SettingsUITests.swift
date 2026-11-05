@@ -99,7 +99,7 @@ final class SettingsUITests: XCTestCase {
                 } else {
                     sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
                 }
-                waitUntilShort(2) { _ in }
+                waitUntilShort(2) { switchOn() }
                 if switchOn() { anchorFound = true; break }
             }
         }
