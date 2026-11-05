@@ -64,15 +64,23 @@ final class SettingsUITests: XCTestCase {
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
 
-        // ⑧ 关于 → 开启「测试图片模式（调试）」（仅 DEBUG 构建显示）
+        // ⑧ 关于 → 确保展开 → 开启「测试图片模式（调试）」（仅 DEBUG 构建显示）
         let aboutGroup = group(app, "about")
         scrollUntilVisible(app, aboutGroup)
-        if !aboutGroup.isHittable { app.swipeUp() }
-
+        let sw0 = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
+        if !sw0.exists {
+            // 可能仍收起（header tap 被 toolbar/底栏吞掉）→ 再点一次头行
+            aboutGroup.tap()
+        }
         let sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
-        scrollUntilVisible(app, sw)
+        scrollUntilVisible(app, sw, maxSwipes: 24)
+        if !sw.isHittable { app.swipeUp(); app.swipeUp() }
         XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
-        sw.tap()
+        if sw.isHittable {
+            sw.tap()
+        } else {
+            sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
 
         // ★ P13 截图前置锚点：测试图片模式开启即出现
         let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
