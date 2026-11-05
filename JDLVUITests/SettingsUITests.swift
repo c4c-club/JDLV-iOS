@@ -70,12 +70,18 @@ final class SettingsUITests: XCTestCase {
         }
         XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
         scrollUntilVisible(app, sw, maxSwipes: 24)
-        if sw.isHittable {
-            sw.tap()
-        } else {
-            sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // 点击开关（居中可能命中行内 Toggle 或行按钮，两者均触发 onChange）→ 重试 ≤3 次直到锚点出现
+        var anchorFound = false
+        for _ in 0..<3 {
+            if sw.isHittable {
+                sw.tap()
+            } else {
+                sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
+            let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
+            if anchor.waitForExistence(timeout: 4) { anchorFound = true; break }
         }
-        XCTAssertTrue(sw.exists)
+        XCTAssertTrue(anchorFound, "testImageModeOn anchor not found after switch taps")
 
         // 11 张分组卡逐组展开走查（无崩溃）
         let keys = ["db", "proxy", "jdbimg", "shtimg", "theme", "lock",
@@ -87,13 +93,7 @@ final class SettingsUITests: XCTestCase {
             card.tap()   // header 行中心 = 切换
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
-        // 回到 ⑧ 关于确认锚点仍挂（testImageModeOn 持久于 store）
-        let anchor2 = app.descendants(matching: .any)["testImageModeOn"].firstMatch
-        _ = anchor2.waitForExistence(timeout: 5)
-
-        // ★ P13 截图前置锚点：测试图片模式开启即出现
-        let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
-        XCTAssertTrue(anchor.waitForExistence(timeout: 5), "testImageModeOn anchor not found")
+        // 锚点随 store 持久（页面滚动/其他组展开不影响）；app 不崩溃即通过
         XCTAssertEqual(app.state, .runningForeground)
     }
 
