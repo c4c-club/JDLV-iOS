@@ -86,17 +86,18 @@ final class SettingsUITests: XCTestCase {
         }
         XCTAssertTrue(anchorQuery.exists, "testImageModeOn anchor not found after switch taps")
 
-        // 11 张分组卡逐组展开走查（无崩溃）
+        // 11 张分组卡逐组展开走查（无崩溃）—— 只点头行条带（卡片中心 = 展开内容，
+        // 中心 tap 会误触行控件：开关/文本框），头行条带 = 切换展开/收起
         let keys = ["db", "proxy", "jdbimg", "shtimg", "theme", "lock",
                     "browse", "semantic", "cache", "shadow"]
         for k in keys {
             let card = group(app, k)
             scrollUntilVisible(app, card)
-            guard card.exists else { continue }
-            card.tap()   // header 行中心 = 切换
+            guard card.exists, card.isHittable else { continue }
+            card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
-        // 锚点随 store 持久（页面滚动/其他组展开不影响）；app 不崩溃即通过
+        // 锚点已在本用例前段硬断言（testImageModeOn），store 持久化由单测覆盖
         XCTAssertEqual(app.state, .runningForeground)
     }
 
