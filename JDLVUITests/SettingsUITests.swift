@@ -118,28 +118,26 @@ final class SettingsUITests: XCTestCase {
     }
 
     // iOS 18.5 模拟器 tab 按钮的 label/identifier 偶发不等于标题 → label 直查 + 全量索引扫描双路
+    // tab_<route> 唯一且稳定；label 查询会与隐藏 Tab 内容多匹配 → 永远用 identifier
     private func tabLabeled(_ app: XCUIApplication, _ label: String, _ route: String) -> XCUIElement {
-        let byId = app.buttons["tab_\(route)"]
-        if byId.exists { return byId }
-        let byLabel = app.buttons[label]
-        if byLabel.exists { return byLabel }
+        let byId = app.buttons["tab_" + route]
+        if byId.waitForExistence(timeout: 5) { return byId }
         let n = app.buttons.count
         for i in 0..<n {
             let b = app.buttons.element(boundBy: i)
-            if b.label.contains(label) || b.identifier.contains("tab_" + route) { return b }
+            if b.identifier.contains("tab_" + route) { return b }
         }
-        return byId
+        return app.buttons[label].firstMatch
     }
 
     private func tabExists(_ app: XCUIApplication, _ label: String, _ route: String,
                            timeout: TimeInterval = 5) -> Bool {
-        if app.buttons["tab_\(route)"].waitForExistence(timeout: timeout) { return true }
-        if app.buttons[label].waitForExistence(timeout: 2) { return true }
+        if app.buttons["tab_" + route].waitForExistence(timeout: timeout) { return true }
         for _ in 0..<6 {
             let n = app.buttons.count
             for i in 0..<n {
                 let b = app.buttons.element(boundBy: i)
-                if b.label.contains(label) || b.identifier.contains("tab_" + route) { return true }
+                if b.identifier.contains("tab_" + route) { return true }
             }
             usleep(500_000)
         }

@@ -64,26 +64,26 @@ final class LaunchUITests: XCTestCase {
     }
 
     // iOS 18.5 模拟器 tab 按钮的 label/identifier 偶发不等于标题 → label 直查 + 全量索引扫描双路
-    private func tabLabeled(_ tabBar: XCUIElement, _ label: String, _ route: String) -> XCUIElement {
-        let byLabel = tabBar.buttons[label]
-        if byLabel.exists { return byLabel }
-        let n = tabBar.buttons.count
+    // tab_<route> 唯一且稳定；label 查询会与隐藏 Tab 内容多匹配 → 永远用 identifier
+    private func tabLabeled(_ app: XCUIApplication, _ label: String, _ route: String) -> XCUIElement {
+        let byId = app.buttons["tab_" + route]
+        if byId.waitForExistence(timeout: 5) { return byId }
+        let n = app.buttons.count
         for i in 0..<n {
-            let b = tabBar.buttons.element(boundBy: i)
-            if b.label.contains(label) || b.identifier.contains(label) || b.identifier.contains("tab_" + route) { return b }
+            let b = app.buttons.element(boundBy: i)
+            if b.identifier.contains("tab_" + route) { return b }
         }
-        return byLabel
+        return app.buttons[label].firstMatch
     }
 
-    private func tabExists(_ tabBar: XCUIElement, _ label: String, _ route: String, timeout: TimeInterval = 5) -> Bool {
-        let byLabel = tabBar.buttons[label]
-        if byLabel.waitForExistence(timeout: timeout) { return true }
-        if tabBar.buttons["tab_" + route].waitForExistence(timeout: 2) { return true }
+    private func tabExists(_ app: XCUIApplication, _ label: String, _ route: String,
+                           timeout: TimeInterval = 5) -> Bool {
+        if app.buttons["tab_" + route].waitForExistence(timeout: timeout) { return true }
         for _ in 0..<6 {
-            let n = tabBar.buttons.count
+            let n = app.buttons.count
             for i in 0..<n {
-                let b = tabBar.buttons.element(boundBy: i)
-                if b.label.contains(label) || b.identifier.contains(label) { return true }
+                let b = app.buttons.element(boundBy: i)
+                if b.identifier.contains("tab_" + route) { return true }
             }
             usleep(500_000)
         }
