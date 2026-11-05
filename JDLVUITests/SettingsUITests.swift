@@ -55,12 +55,15 @@ final class SettingsUITests: XCTestCase {
 
         // ⑧ 关于先展开：about 在页面最底部；此刻所有组收起、页面短 → header 一屏可达。
         //    （先于 11 组全部展开的走查，避免深滚动 + toggle 状态歧义）
-        let aboutGroup = group(app, "about")
-        scrollUntilVisible(app, aboutGroup, maxSwipes: 10)
-        aboutGroup.tap()   // 展开
+        // header 是 Button（SettingsGroupCard.header）；整卡 identifier 的中心点不在头行 →
+        // 必须点头行文本按钮（title "⑧ 关于"）
+        let aboutHeader = app.buttons["⑧ 关于"].firstMatch
+        scrollUntilVisible(app, aboutHeader, maxSwipes: 10)
+        XCTAssertTrue(aboutHeader.waitForExistence(timeout: 5), "⑧ 关于 header button not found")
+        aboutHeader.tap()
         var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
         if !sw.waitForExistence(timeout: 3) {
-            aboutGroup.tap()   // 状态歧义兜底：再切一次
+            aboutHeader.tap()   // 状态歧义兜底：再切一次
             _ = waitUntilShort(3) { sw.exists }
         }
         XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
@@ -73,10 +76,14 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(sw.exists)
 
         // 11 张分组卡逐组展开走查（无崩溃）
+        let titles = ["db": "① 数据源", "proxy": "② 网络与代理", "jdbimg": "③ jdb 图床",
+                      "shtimg": "③ 98t 图床", "theme": "④ 外观", "lock": "④ 启动锁",
+                      "browse": "⑤ 浏览与搜索", "semantic": "⑥ 语义搜索模型",
+                      "cache": "⑦ 缓存", "shadow": "⑦ 离线索引"]
         let keys = ["db", "proxy", "jdbimg", "shtimg", "theme", "lock",
                     "browse", "semantic", "cache", "shadow"]
         for k in keys {
-            let header = group(app, k)
+            let header = app.buttons[titles[k]!].firstMatch
             scrollUntilVisible(app, header)
             guard header.exists else { continue }
             header.tap()
