@@ -22,14 +22,13 @@ final class LaunchUITests: XCTestCase {
         let app = launchDemo()
 
         for (label, route) in tabs {
-            if !tabExists(tabBar, label, route) {
-                let n = tabBar.buttons.count
-                var dump = "tab bar buttons (" + String(n) + "): "
-                for i in 0..<max(n, 1) {
-                    let b = tabBar.buttons.element(boundBy: i)
+            if !tabExists(app, label, route) {
+                let n = app.buttons.count
+                var dump = "app buttons (n=" + String(n) + "): "
+                for i in 0..<min(n, 40) {
+                    let b = app.buttons.element(boundBy: i)
                     dump += "[" + String(i) + "] label='" + b.label + "' id='" + b.identifier + "'; "
                 }
-                dump += " tabbar label='" + tabBar.label + "'"
                 XCTFail("missing tab: " + label + " :: " + dump)
             }
         }
