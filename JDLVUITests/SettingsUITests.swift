@@ -171,7 +171,8 @@ final class SettingsUITests: XCTestCase {
             usleep(500_000)
         }
         return false
-    
+    }
+
     // 自绘底栏按钮：identifier tab_<route>（iOS 18.5 无系统 tab bar）→ 双路查找
     private func tabLabeled(_ app: XCUIApplication, _ label: String, _ route: String) -> XCUIElement {
         let byId = app.buttons["tab_\(route)"]
