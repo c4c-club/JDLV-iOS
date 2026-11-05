@@ -202,4 +202,3 @@ final class SettingsUITests: XCTestCase {
         return false
     }
 }
-}
