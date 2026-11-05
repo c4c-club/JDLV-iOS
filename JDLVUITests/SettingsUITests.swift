@@ -59,7 +59,24 @@ final class SettingsUITests: XCTestCase {
         // 必须点头行文本按钮（title "⑧ 关于"）
         let aboutHeader = app.buttons["settings_group_header_about"].firstMatch
         scrollUntilVisible(app, aboutHeader, maxSwipes: 12)
-        XCTAssertTrue(aboutHeader.waitForExistence(timeout: 5), "关于 header button not found")
+        if !aboutHeader.waitForExistence(timeout: 5) {
+            // 诊断：挂当前页面截图 + 全量按钮 dump，随后仍按原断言失败
+            let diag = XCTAttachment(screenshot: app.screenshot())
+            diag.name = "diag_about_header_missing"
+            diag.lifetime = .keepAlways
+            add(diag)
+            var dump = "buttons: "
+            let n = app.buttons.count
+            for i in 0..<min(n, 60) {
+                let b = app.buttons.element(boundBy: i)
+                dump += "[\(i)] '\(b.label)'/'\(b.identifier)'; "
+            }
+            let d2 = XCTAttachment(string: dump)
+            d2.name = "diag_buttons_dump"
+            d2.lifetime = .keepAlways
+            add(d2)
+        }
+        XCTAssertTrue(aboutHeader.waitForExistence(timeout: 2), "关于 header button not found")
         aboutHeader.tap()
         var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
         if !sw.waitForExistence(timeout: 3) {
