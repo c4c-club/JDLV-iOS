@@ -57,27 +57,12 @@ final class SettingsUITests: XCTestCase {
         //    （先于 11 组全部展开的走查，避免深滚动 + toggle 状态歧义）
         // header 是 Button（SettingsGroupCard.header）；整卡 identifier 的中心点不在头行 →
         // 必须点头行文本按钮（title "⑧ 关于"）
-        let aboutHeader = app.buttons["settings_group_header_about"].firstMatch
-        scrollUntilVisible(app, aboutHeader, maxSwipes: 12)
-        if !aboutHeader.waitForExistence(timeout: 5) {
-            // 诊断：挂当前页面截图 + 全量按钮 dump，随后仍按原断言失败
-            let diag = XCTAttachment(screenshot: app.screenshot())
-            diag.name = "diag_about_header_missing"
-            diag.lifetime = .keepAlways
-            add(diag)
-            var dump = "buttons: "
-            let n = app.buttons.count
-            for i in 0..<min(n, 60) {
-                let b = app.buttons.element(boundBy: i)
-                dump += "[\(i)] '\(b.label)'/'\(b.identifier)'; "
-            }
-            let d2 = XCTAttachment(string: dump)
-            d2.name = "diag_buttons_dump"
-            d2.lifetime = .keepAlways
-            add(d2)
-        }
-        XCTAssertTrue(aboutHeader.waitForExistence(timeout: 2), "关于 header button not found")
-        aboutHeader.tap()
+        // 卡 identifier 把整卡合并为单个 a11y 元素（子头行按钮被合并进卡片）→
+        // 点卡片顶部条带（header 区，dy≈0.08）切换展开
+        let aboutGroup = group(app, "about")
+        scrollUntilVisible(app, aboutGroup, maxSwipes: 12)
+        XCTAssertTrue(aboutGroup.waitForExistence(timeout: 5), "关于 card not found")
+        aboutGroup.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
         var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
         if !sw.waitForExistence(timeout: 3) {
             aboutHeader.tap()   // 状态歧义兜底：再切一次
@@ -96,10 +81,10 @@ final class SettingsUITests: XCTestCase {
         let keys = ["db", "proxy", "jdbimg", "shtimg", "theme", "lock",
                     "browse", "semantic", "cache", "shadow"]
         for k in keys {
-            let header = app.buttons["settings_group_header_\(k)"].firstMatch
-            scrollUntilVisible(app, header)
-            guard header.exists else { continue }
-            header.tap()
+            let card = group(app, k)
+            scrollUntilVisible(app, card)
+            guard card.exists else { continue }
+            card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
         // 回到 ⑧ 关于确认锚点仍挂（testImageModeOn 持久于 store）
