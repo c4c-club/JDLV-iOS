@@ -70,18 +70,21 @@ final class SettingsUITests: XCTestCase {
         }
         XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
         scrollUntilVisible(app, sw, maxSwipes: 24)
-        // 点击开关（居中可能命中行内 Toggle 或行按钮，两者均触发 onChange）→ 重试 ≤3 次直到锚点出现
-        var anchorFound = false
-        for _ in 0..<3 {
-            if sw.isHittable {
-                sw.tap()
-            } else {
-                sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+
+        // 锚点可能已挂（前序 UI 测试持久化 testImgMode=true）→ 先查再点，避免 ON→OFF 抖动
+        let anchorQuery = app.descendants(matching: .any)["testImageModeOn"].firstMatch
+        if !anchorQuery.exists {
+            // 点击开关（行按钮 / 行内 Toggle 均触发 onChange）→ 逐次点，锚点出现即停（≤4 次）
+            for _ in 0..<4 {
+                if sw.isHittable {
+                    sw.tap()
+                } else {
+                    sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                }
+                if anchorQuery.waitForExistence(timeout: 3) { break }
             }
-            let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
-            if anchor.waitForExistence(timeout: 4) { anchorFound = true; break }
         }
-        XCTAssertTrue(anchorFound, "testImageModeOn anchor not found after switch taps")
+        XCTAssertTrue(anchorQuery.exists, "testImageModeOn anchor not found after switch taps")
 
         // 11 张分组卡逐组展开走查（无崩溃）
         let keys = ["db", "proxy", "jdbimg", "shtimg", "theme", "lock",
