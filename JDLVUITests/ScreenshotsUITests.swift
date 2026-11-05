@@ -250,23 +250,6 @@ final class ScreenshotsUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(snapCount, 12, "expected ≥12 screenshots, got \(snapCount)")
     }
 
-    /// 滚动到可见（app 级 swipe，最多 maxSwipes）
-    private func scrollUntilVisible(_ app: XCUIApplication, _ el: XCUIElement, maxSwipes: Int = 14) {
-        var i = 0
-        while !(el.exists && el.isHittable) && i < maxSwipes {
-            app.swipeUp()
-            i += 1
-        }
-    }
-
-    private func waitUntilShort(_ timeout: TimeInterval, _ cond: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if cond() { return true }
-            usleep(200_000)
-        }
-        return cond()
-    }
 
     /// 切 tab（仅在 tab 根页面调用；label 容错：存在才点）
     private func openTab(_ app: XCUIApplication, _ label: String, _ route: String) {
