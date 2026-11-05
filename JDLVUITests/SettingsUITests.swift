@@ -65,7 +65,7 @@ final class SettingsUITests: XCTestCase {
         aboutGroup.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
         var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
         if !sw.waitForExistence(timeout: 3) {
-            aboutHeader.tap()   // 状态歧义兜底：再切一次
+            aboutGroup.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
             _ = waitUntilShort(3) { sw.exists }
         }
         XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
