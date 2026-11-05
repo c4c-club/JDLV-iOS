@@ -57,9 +57,10 @@ final class SettingsUITests: XCTestCase {
         //    （先于 11 组全部展开的走查，避免深滚动 + toggle 状态歧义）
         // header 是 Button（SettingsGroupCard.header）；整卡 identifier 的中心点不在头行 →
         // 必须点头行文本按钮（title "⑧ 关于"）
-        let aboutHeader = app.buttons["⑧ 关于"].firstMatch
+        let aboutHeader = app.buttons.containing(
+            NSPredicate(format: "label CONTAINS %@", "关于")).firstMatch
         scrollUntilVisible(app, aboutHeader, maxSwipes: 10)
-        XCTAssertTrue(aboutHeader.waitForExistence(timeout: 5), "⑧ 关于 header button not found")
+        XCTAssertTrue(aboutHeader.waitForExistence(timeout: 5), "关于 header button not found")
         aboutHeader.tap()
         var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
         if !sw.waitForExistence(timeout: 3) {
@@ -83,7 +84,9 @@ final class SettingsUITests: XCTestCase {
         let keys = ["db", "proxy", "jdbimg", "shtimg", "theme", "lock",
                     "browse", "semantic", "cache", "shadow"]
         for k in keys {
-            let header = app.buttons[titles[k]!].firstMatch
+            let keyText = String(titles[k]!.prefix(6))   // "① 数据源" 等（含编号前缀，足以唯一）
+            let header = app.buttons.containing(
+                NSPredicate(format: "label CONTAINS %@", keyText)).firstMatch
             scrollUntilVisible(app, header)
             guard header.exists else { continue }
             header.tap()
