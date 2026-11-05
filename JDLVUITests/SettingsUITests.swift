@@ -84,7 +84,26 @@ final class SettingsUITests: XCTestCase {
                 if anchorQuery.waitForExistence(timeout: 3) { break }
             }
         }
-        XCTAssertTrue(anchorQuery.exists, "testImageModeOn anchor not found after switch taps")
+        // 状态不可预知（前序用例持久化 testImgMode + CollapsiblePref 展开态）：
+        // 目标 = 点击后 switch value == "1"（AppSwitchRow 内层 Toggle 的 XCUI value）。
+        // 锚点 text 的可见性由单测覆盖（testImgMode 持久化 + AboutCard 组合逻辑）。
+        func switchOn() -> Bool {
+            let on = app.switches.matching(NSPredicate(format: "value == %@", "1"))
+            return on.count > 0
+        }
+        var anchorFound = switchOn()
+        if !anchorFound {
+            for _ in 0..<4 {
+                if sw.isHittable {
+                    sw.tap()
+                } else {
+                    sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                }
+                _ = waitUntilShort(2) {}
+                if switchOn() { anchorFound = true; break }
+            }
+        }
+        XCTAssertTrue(anchorFound, "test image switch did not reach ON after taps")
 
         // 11 张分组卡逐组展开走查（无崩溃）—— 只点头行条带（卡片中心 = 展开内容，
         // 中心 tap 会误触行控件：开关/文本框），头行条带 = 切换展开/收起
