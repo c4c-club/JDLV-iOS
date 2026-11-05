@@ -53,9 +53,28 @@ final class SettingsUITests: XCTestCase {
         let app = launchDemo()
         openSettings(app)
 
+        // ⑧ 关于先展开：about 在页面最底部；此刻所有组收起、页面短 → header 一屏可达。
+        //    （先于 11 组全部展开的走查，避免深滚动 + toggle 状态歧义）
+        let aboutGroup = group(app, "about")
+        scrollUntilVisible(app, aboutGroup, maxSwipes: 10)
+        aboutGroup.tap()   // 展开
+        var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
+        if !sw.waitForExistence(timeout: 3) {
+            aboutGroup.tap()   // 状态歧义兜底：再切一次
+            _ = waitUntilShort(3) { sw.exists }
+        }
+        XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
+        scrollUntilVisible(app, sw, maxSwipes: 24)
+        if sw.isHittable {
+            sw.tap()
+        } else {
+            sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(sw.exists)
+
         // 11 张分组卡逐组展开走查（无崩溃）
         let keys = ["db", "proxy", "jdbimg", "shtimg", "theme", "lock",
-                    "browse", "semantic", "cache", "shadow", "about"]
+                    "browse", "semantic", "cache", "shadow"]
         for k in keys {
             let header = group(app, k)
             scrollUntilVisible(app, header)
@@ -63,26 +82,9 @@ final class SettingsUITests: XCTestCase {
             header.tap()
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
-
-        // ⑧ 关于 → 确保展开（try toggle ≤3 次，覆盖"keys 循环后已展开/仍收起"两种状态）
-        //    → 开启「测试图片模式（调试）」（仅 DEBUG 构建显示）
-        let aboutGroup = group(app, "about")
-        var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
-        for attempt in 0..<3 {
-            scrollUntilVisible(app, aboutGroup, maxSwipes: 20)
-            if sw.waitForExistence(timeout: 2) { break }
-            aboutGroup.tap()   // 收起 ↔ 展开 切换；下一轮再找
-            _ = waitUntilShort(2) { sw.exists }
-            if sw.exists { break }
-        }
-        scrollUntilVisible(app, sw, maxSwipes: 24)
-        if !sw.isHittable { app.swipeUp(); app.swipeUp() }
-        XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
-        if sw.isHittable {
-            sw.tap()
-        } else {
-            sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
+        // 回到 ⑧ 关于确认锚点仍挂（testImageModeOn 持久于 store）
+        let anchor2 = app.descendants(matching: .any)["testImageModeOn"].firstMatch
+        _ = anchor2.waitForExistence(timeout: 5)
 
         // ★ P13 截图前置锚点：测试图片模式开启即出现
         let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
