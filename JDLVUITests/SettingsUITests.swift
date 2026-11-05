@@ -62,10 +62,10 @@ final class SettingsUITests: XCTestCase {
         let aboutGroup = group(app, "about")
         scrollUntilVisible(app, aboutGroup, maxSwipes: 12)
         XCTAssertTrue(aboutGroup.waitForExistence(timeout: 5), "关于 card not found")
-        aboutGroup.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        aboutGroup.tap()   // group 元素即 header 行 → 中心 tap = 切换展开
         var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
         if !sw.waitForExistence(timeout: 3) {
-            aboutGroup.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            aboutGroup.tap()   // 状态歧义兜底：再切一次
             _ = waitUntilShort(3) { sw.exists }
         }
         XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
@@ -84,7 +84,7 @@ final class SettingsUITests: XCTestCase {
             let card = group(app, k)
             scrollUntilVisible(app, card)
             guard card.exists else { continue }
-            card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            card.tap()   // header 行中心 = 切换
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
         // 回到 ⑧ 关于确认锚点仍挂（testImageModeOn 持久于 store）

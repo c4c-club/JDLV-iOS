@@ -501,7 +501,6 @@ struct SettingsGroupCard<Content: View>: View {
         .background(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner).fill(theme.bg1))
         .overlay(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner)
             .stroke(theme.line, lineWidth: ComponentMetrics.cardStroke))
-        .accessibilityIdentifier("settings_group_\(rememberKey)")
     }
 
     /// 头行：min 高 48、整行可点；标题 13 Bold accent；收起时摘要 12sp 1 行
@@ -526,7 +525,7 @@ struct SettingsGroupCard<Content: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("settings_group_header_\(rememberKey)")
+        .accessibilityIdentifier("settings_group_\(rememberKey)")
     }
 }
 
