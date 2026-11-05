@@ -137,34 +137,6 @@ final class ScreenshotsUITests: XCTestCase {
 
 
     // 自绘底栏按钮：identifier tab_<route>（iOS 18.5 无系统 tab bar）→ 双路查找
-    private func tabLabeled(_ app: XCUIApplication, _ label: String, _ route: String) -> XCUIElement {
-        let byId = app.buttons["tab_\(route)"]
-        if byId.exists { return byId }
-        let byLabel = app.buttons[label]
-        if byLabel.exists { return byLabel }
-        let n = app.buttons.count
-        for i in 0..<n {
-            let b = app.buttons.element(boundBy: i)
-            if b.label.contains(label) || b.identifier.contains("tab_" + route) { return b }
-        }
-        return byId
-    }
-
-    private func tabExists(_ app: XCUIApplication, _ label: String, _ route: String,
-                           timeout: TimeInterval = 5) -> Bool {
-        if app.buttons["tab_\(route)"].waitForExistence(timeout: timeout) { return true }
-        if app.buttons[label].waitForExistence(timeout: 2) { return true }
-        for _ in 0..<6 {
-            let n = app.buttons.count
-            for i in 0..<n {
-                let b = app.buttons.element(boundBy: i)
-                if b.label.contains(label) || b.identifier.contains("tab_" + route) { return true }
-            }
-            usleep(500_000)
-        }
-        return false
-    }
-
     // 自绘底栏按钮：identifier tab_<route>（iOS 18.5 无系统 tab bar）→ 双路查找
     private func tabLabeled(_ app: XCUIApplication, _ label: String, _ route: String) -> XCUIElement {
         let byId = app.buttons["tab_\(route)"]
