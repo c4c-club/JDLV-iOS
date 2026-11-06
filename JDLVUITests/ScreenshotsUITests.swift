@@ -232,11 +232,7 @@ final class ScreenshotsUITests: XCTestCase {
         if push.waitForExistence(timeout: 12) {
             // 横滑段首卡可能被滑出屏幕左侧（frame.minX < 0）→ 右滑拉回
             if !push.isHittable { app.swipeRight() }
-            if push.isHittable {
-                push.tap()
-            } else {
-                push.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            }
+            _ = tapResilient(push)
             snapPage(app, "05_影片详情", [app.descendants(matching: .any)["secondary_page"].firstMatch])
             navBack(app)
         }
@@ -246,7 +242,7 @@ final class ScreenshotsUITests: XCTestCase {
         snapPage(app, "06_女优列表", [app.descendants(matching: .any)["tab_root_actors"].firstMatch])
         let actorCard = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示")).firstMatch
         if actorCard.exists {
-            actorCard.tap()
+            _ = tapResilient(actorCard)
             snapPage(app, "07_女优详情", [app.descendants(matching: .any)["secondary_page"].firstMatch])
             navBack(app)
         }
@@ -255,7 +251,7 @@ final class ScreenshotsUITests: XCTestCase {
         snapPage(app, "08_98t列表", [app.descendants(matching: .any)["sht_filter_button"].firstMatch])
         let shtRow = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示帖子")).firstMatch
         if shtRow.exists {
-            shtRow.tap()
+            _ = tapResilient(shtRow)
             snapPage(app, "09_帖子详情", [app.navigationBars.firstMatch,
                                           app.descendants(matching: .any)["secondary_page"].firstMatch])
             navBack(app)
@@ -264,19 +260,19 @@ final class ScreenshotsUITests: XCTestCase {
         openTab(app, "搜索", "search")
         let entryArticles = app.buttons["entry_articles"]
         if entryArticles.waitForExistence(timeout: 8) {
-            entryArticles.tap()
+            _ = tapResilient(entryArticles)
             snapPage(app, "10_资讯", [app.descendants(matching: .any)["articles_page"].firstMatch])
             navBack(app)
         }
         let entryHot = app.buttons["entry_hotreviews"]
         if entryHot.exists {
-            entryHot.tap()
+            _ = tapResilient(entryHot)
             snapPage(app, "11_热评", [app.descendants(matching: .any)["hotreviews_page"].firstMatch])
             navBack(app)
         }
         let viewallTop = app.buttons["viewall_top"]
         if viewallTop.exists {
-            viewallTop.tap()
+            _ = tapResilient(viewallTop)
             snapPage(app, "12_TOP250", [app.descendants(matching: .any)["top250_page"].firstMatch])
             navBack(app)
         }
