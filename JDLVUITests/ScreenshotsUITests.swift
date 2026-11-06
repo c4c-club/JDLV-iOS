@@ -107,7 +107,15 @@ final class ScreenshotsUITests: XCTestCase {
     private func navBack(_ app: XCUIApplication) {
         let sysBack = app.navigationBars.buttons.firstMatch
         if sysBack.waitForExistence(timeout: 3) {
-            sysBack.tap()
+            // 页面转场动画中 AX tap 可能报 scroll-to-visible 失败 → 等 hittable 再点；
+            // 仍不可点（转场未结束）→ 用 frame 中心坐标兜底
+            var i = 0
+            while !sysBack.isHittable, i < 8 { usleep(250_000); i += 1 }
+            if sysBack.isHittable {
+                sysBack.tap()
+            } else {
+                sysBack.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
             return
         }
         _ = tapIfExist(app.buttons["返回"], 2)   // Top250 自绘返回（accessibilityLabel 逐字）
