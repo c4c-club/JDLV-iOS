@@ -157,11 +157,12 @@ final class ScreenshotsUITests: XCTestCase {
         // 目标 = testImageModeOn 锚点可见。点击顺序：行内 Toggle → 行按钮（iOS 26 上
         // Button 包 Toggle 的手势路由不定，两种都试）；锚点出现即停（≤6 次）
         let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
-        let innerToggle = sw.switches.firstMatch
+        // AppSwitchRow 内层 Toggle 带 identifier switch_<label>（Controls.swift）→ 直点开关本体
+        let innerToggle = app.switches["switch_测试图片模式（调试）"].firstMatch
         var anchorOn = anchor.exists
-        for i in 0..<6 {
+        for _ in 0..<4 {
             if anchor.exists { anchorOn = true; break }
-            if i % 2 == 0, innerToggle.exists, innerToggle.isHittable {
+            if innerToggle.exists, innerToggle.isHittable {
                 innerToggle.tap()
             } else if sw.isHittable {
                 sw.tap()

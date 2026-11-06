@@ -115,6 +115,7 @@ struct AppSwitchRow: View {
                 Toggle("", isOn: Binding(get: { checked }, set: { onChange($0) }))
                     .labelsHidden()
                     .tint(theme.accent)
+                    .accessibilityIdentifier("switch_\(label)")
                     .fixedSize()
             }
             .padding(.vertical, 2)
