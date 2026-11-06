@@ -171,6 +171,23 @@ final class ScreenshotsUITests: XCTestCase {
             }
             if anchor.waitForExistence(timeout: 3) { anchorOn = true; break }
         }
+        if !anchorOn {
+            // 诊断：挂截图 + 全部 switch 元素 dump
+            let diag = XCTAttachment(screenshot: app.screenshot())
+            diag.name = "diag_anchor_missing"
+            diag.lifetime = .keepAlways
+            add(diag)
+            var dump = "switches: "
+            let n = app.switches.count
+            for i in 0..<min(n, 30) {
+                let b = app.switches.element(boundBy: i)
+                dump += "[\(i)] id='\(b.identifier)' label='\(b.label)' value='\(b.value as? String ?? "?")' hittable=\(b.isHittable); "
+            }
+            let d2 = XCTAttachment(string: dump)
+            d2.name = "diag_switches_dump"
+            d2.lifetime = .keepAlways
+            add(d2)
+        }
         XCTAssertTrue(anchorOn, "testImageModeOn anchor not found after toggle attempts")
         snap(app, "00_测试图片模式开启")
 
