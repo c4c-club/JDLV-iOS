@@ -230,7 +230,13 @@ final class ScreenshotsUITests: XCTestCase {
         openTab(app, "搜索", "search")
         let push = app.descendants(matching: .any)["home_push_movie"].firstMatch
         if push.waitForExistence(timeout: 12) {
-            push.tap()
+            // 横滑段首卡可能被滑出屏幕左侧（frame.minX < 0）→ 右滑拉回
+            if !push.isHittable { app.swipeRight() }
+            if push.isHittable {
+                push.tap()
+            } else {
+                push.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
             snapPage(app, "05_影片详情", [app.descendants(matching: .any)["secondary_page"].firstMatch])
             navBack(app)
         }
