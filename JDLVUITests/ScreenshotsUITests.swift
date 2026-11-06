@@ -89,7 +89,12 @@ final class ScreenshotsUITests: XCTestCase {
     @discardableResult
     private func typeInto(_ field: XCUIElement, _ text: String) -> Bool {
         guard field.waitForExistence(timeout: 6) else { return false }
-        field.tap()
+        if field.isHittable {
+            field.tap()
+        } else {
+            // 元素存在但不可点（横幅/底栏遮挡）→ 用自身 frame 中心坐标兜底
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
         do {
             try field.typeText(text)
             return true
