@@ -154,22 +154,23 @@ final class ScreenshotsUITests: XCTestCase {
         }
         XCTAssertTrue(sw.waitForExistence(timeout: 5), "about_testimg_switch not found")
         scrollUntilVisible(app, sw, maxSwipes: 24)
-        // 点击（行按钮 / 行内 Toggle 均触发 onChange）→ switch value == "1" 为止（≤4 次）
-        func switchOn() -> Bool {
-            app.switches.matching(NSPredicate(format: "value == %@", "1")).count > 0
-        }
-        if !switchOn() {
-            for _ in 0..<4 {
-                if sw.isHittable { sw.tap() } else {
-                    sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-                }
-                waitUntilShort(2) { switchOn() }
-                if switchOn() { break }
-            }
-        }
-        XCTAssertTrue(switchOn(), "test image switch did not reach ON")
+        // 目标 = testImageModeOn 锚点可见。点击顺序：行内 Toggle → 行按钮（iOS 26 上
+        // Button 包 Toggle 的手势路由不定，两种都试）；锚点出现即停（≤6 次）
         let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
-        XCTAssertTrue(anchor.waitForExistence(timeout: 5), "testImageModeOn anchor not found")
+        let innerToggle = sw.switches.firstMatch
+        var anchorOn = anchor.exists
+        for i in 0..<6 {
+            if anchor.exists { anchorOn = true; break }
+            if i % 2 == 0, innerToggle.exists, innerToggle.isHittable {
+                innerToggle.tap()
+            } else if sw.isHittable {
+                sw.tap()
+            } else {
+                sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
+            if anchor.waitForExistence(timeout: 3) { anchorOn = true; break }
+        }
+        XCTAssertTrue(anchorOn, "testImageModeOn anchor not found after toggle attempts")
         snap(app, "00_测试图片模式开启")
 
         // 2) 14 页走查
