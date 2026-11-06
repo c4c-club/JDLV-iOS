@@ -223,9 +223,9 @@ final class ScreenshotsUITests: XCTestCase {
         snapPage(app, "03_浏览", [app.buttons["sht_filter_button"], app.buttons["browse_grid"],
                                   app.buttons["tab_browse"]])
         let filterBtn = app.buttons["sht_filter_button"]
-        if filterBtn.exists { filterBtn.tap() }
+        _ = tapResilient(filterBtn)
         snap(app, "04_筛选面板")
-        if filterBtn.exists { filterBtn.tap() }   // 关面板（toggle）
+        _ = tapResilient(filterBtn)   // 关面板（toggle）
 
         openTab(app, "搜索", "search")
         let push = app.descendants(matching: .any)["home_push_movie"].firstMatch
@@ -329,5 +329,21 @@ final class ScreenshotsUITests: XCTestCase {
             usleep(500_000)
         }
         return false
+    }
+
+    /// 遮挡容错点击：hittable → 直接点；否则等待 1.5s 重试（toast/横幅消退）→ 坐标兜底
+    @discardableResult
+    private func tapResilient(_ el: XCUIElement, attempts: Int = 3) -> Bool {
+        for i in 0..<attempts {
+            guard el.exists else { return false }
+            if el.isHittable {
+                el.tap()
+                return true
+            }
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        guard el.exists else { return false }
+        el.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        return true
     }
 }
