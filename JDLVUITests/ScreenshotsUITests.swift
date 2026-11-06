@@ -153,9 +153,18 @@ final class ScreenshotsUITests: XCTestCase {
             _ = waitUntilShort(3) { sw.exists }
         }
         XCTAssertTrue(sw.waitForExistence(timeout: 5), "about_testimg_switch not found")
-        scrollUntilVisible(app, sw, maxSwipes: 24)
-        // 目标 = testImageModeOn 锚点可见。点击顺序：行内 Toggle → 行按钮（iOS 26 上
-        // Button 包 Toggle 的手势路由不定，两种都试）；锚点出现即停（≤6 次）
+        // About 是最后一卡：滚动到"行位于屏幕上半部"（确定可见、且在自绘底栏之上）
+        var si = 0
+        while si < 30 {
+            let f = sw.frame
+            let screenH = app.frame.height
+            if sw.exists, sw.isHittable, f.minY < screenH * 0.5 { break }
+            app.swipeUp()
+            si += 1
+        }
+        XCTAssertTrue(sw.isHittable, "about switch not hittable after scrolling")
+        // 目标 = testImageModeOn 锚点可见；点击行内 Toggle（identifier switch_<label>），
+        // 不中则点行按钮；锚点出现即停（≤4 次）
         let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
         // AppSwitchRow 内层 Toggle 带 identifier switch_<label>（Controls.swift）→ 直点开关本体
         let innerToggle = app.switches["switch_测试图片模式（调试）"].firstMatch
