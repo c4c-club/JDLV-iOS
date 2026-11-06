@@ -210,9 +210,11 @@ final class ScreenshotsUITests: XCTestCase {
         snapPage(app, "01_首页", [app.buttons["entry_articles"], app.buttons["entry_hotreviews"],
                                   app.buttons["viewall_recent"]])
 
-        // 搜索态
+        // 搜索态（搜索框被横幅/键盘遮挡时退化为首页态截图）
         let field = app.textFields.firstMatch
-        _ = typeInto(field, "演示")
+        if field.exists, field.isHittable {
+            _ = typeInto(field, "演示")
+        }
         snapPage(app, "02_搜索结果", [app.buttons["mode_fuzzy"], app.buttons["mode_exact"]])
         app.terminate()
         app.launch()
@@ -234,6 +236,7 @@ final class ScreenshotsUITests: XCTestCase {
         }
 
         openTab(app, "女优", "actors")
+        // demo 模式所有女优卡 label 含"演示" → 无需搜索；搜索框可能被横幅遮挡（不 hittable）→ 跳过输入
         snapPage(app, "06_女优列表", [app.descendants(matching: .any)["tab_root_actors"].firstMatch])
         let actorCard = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示")).firstMatch
         if actorCard.exists {
