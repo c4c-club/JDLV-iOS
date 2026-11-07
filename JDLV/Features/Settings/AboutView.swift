@@ -96,12 +96,12 @@ struct AboutView: View {
         Toggle("测试图片模式（调试）", isOn: Binding(
             get: { store.settings.testImgMode },
             set: { v in
-                Task {
-                    _ = await store.editNow { $0.testImgMode = v }
-                    TestImages.clearCache()
-                    AppServices.shared.showToast(v ? SettingsCopy.testImgOnToast
-                                                   : SettingsCopy.testImgOffToast)
-                }
+                // 同步写（updateSettings 立即落盘 + saveState 状态机）；异步 Task 会让
+                // UI 测试的 anchor 等待与开关回读产生竞态
+                store.updateSettings { $0.testImgMode = v }
+                TestImages.clearCache()
+                AppServices.shared.showToast(v ? SettingsCopy.testImgOnToast
+                                               : SettingsCopy.testImgOffToast)
             }))
             .accessibilityIdentifier("about_testimg_switch")
     }

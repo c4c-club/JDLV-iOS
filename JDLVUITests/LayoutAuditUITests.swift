@@ -81,20 +81,14 @@ final class LayoutAuditUITests: XCTestCase {
                 out.append((e.identifier, e.frame))
             }
         }
-        if out.isEmpty {
-            // 兜底源：demo 卡内容（label 含「演示」的 button）—— wrapper a11y 容器
-            // 在部分 tab 上未成节点的替身（frame = 卡 Button 自身 frame，含 cardChrome）
-            let dq = app.buttons.containing(
-                NSPredicate(format: "label CONTAINS %@", "演示"))
-            let dn = dq.count
-            for i in 0..<min(dn, 40) {
-                let e = dq.element(boundBy: i)
-                if e.exists, e.frame.width > 1 {
-                    out.append(("\(prefix)demo_\(i)", e.frame))
-                }
-            }
-        }
         return out
+    }
+
+    /// 数据存在性兜底（不参与 frame 审计——demo 内容 button 的 label 查询慢且含非卡元素）
+    private func hasDemoCards(_ app: XCUIApplication) -> Bool {
+        let dq = app.buttons.containing(
+            NSPredicate(format: "label CONTAINS %@", "演示"))
+        return dq.count > 0
     }
 
     /// 等待首卡出现（demo 数据 bind 异步；30s 内未出现 → 诊断截图 + violation）
@@ -103,6 +97,7 @@ final class LayoutAuditUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if !collect(app, prefix: prefix).isEmpty { return true }
+            if hasDemoCards(app) { return true }   // 数据在（wrapper a11y 未成节点的兜底判定）
             Thread.sleep(forTimeInterval: 0.5)
         }
         snapDiag(app, "no-cards-\(page)")
@@ -162,16 +157,24 @@ final class LayoutAuditUITests: XCTestCase {
         }
         if checkScroll, cards.count >= 2 {
             let before = cards.map { $0.1.minY }
-            app.swipeUp()
-            Thread.sleep(forTimeInterval: 0.6)
+            // 屏幕中部定向 swipe（避开 toolbar/PageChip 干扰）；静置等滚动动画结束
+            let w = app.frame
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+            Thread.sleep(forTimeInterval: 1.2)
             let after = collect(app, prefix: prefix).map { $0.1.minY }
             let moved = (after.max() ?? 0) < (before.max() ?? 0) - 10
             let more = after.count > before.count
             if !moved && !more {
-                addViolation(page, prefix, "not scrollable (minY unchanged, no new cards)")
+                addViolation(page, prefix,
+                             "not scrollable (minY unchanged, no new cards)")
             }
-            app.swipeDown()
-            Thread.sleep(forTimeInterval: 0.4)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
+            Thread.sleep(forTimeInterval: 0.6)
+            _ = w
         }
     }
 
