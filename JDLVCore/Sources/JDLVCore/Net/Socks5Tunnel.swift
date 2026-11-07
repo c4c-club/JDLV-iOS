@@ -7,6 +7,12 @@ import MySQLNIO
 // serverHostname 仍填真实主机（保 TLS SNI）。
 // Android 的 JVM 全局 socksProxy 属性在 iOS 不存在，本隧道即其等价物。
 
+public enum Socks5TunnelDebug {
+    /// 测试观测钩子（默认 nil = 零开销；CI 隧道用例挂接以定位握手卡点）
+    public static var sink: ((String) -> Void)?
+    static func emit(_ e: String) { sink?(e) }
+}
+
 public enum Socks5Codec {
     public enum AuthMethod: UInt8 {
         case noAuth = 0x00
@@ -230,6 +236,7 @@ final class RelayInboundHandler: ChannelInboundHandler {
     func channelActive(context: ChannelHandlerContext) {
         context.fireChannelActive()
         let el = context.eventLoop
+        Socks5TunnelDebug.emit("inbound-active target=\(targetHost):\(targetPort) proxy=\(proxy.host):\(proxy.port)")
         let established = el.makePromise(of: Channel.self)
         let bootstrap = ClientBootstrap(group: el)
             .channelInitializer { ch in
@@ -241,7 +248,10 @@ final class RelayInboundHandler: ChannelInboundHandler {
                                    inbound: context.channel))
             }
         bootstrap.connect(host: proxy.host, port: Int(proxy.port)).whenComplete { r in
-            if case .failure(let e) = r {
+            switch r {
+            case .success: Socks5TunnelDebug.emit("upstream-tcp-ok")
+            case .failure(let e):
+                Socks5TunnelDebug.emit("upstream-tcp-failed:\(e)")
                 established.fail(e)
             }
         }
@@ -315,6 +325,7 @@ final class SocksUpHandler: ChannelInboundHandler {
         if proxy.username != nil || proxy.password != nil {
             methods = [.usernamePassword, .noAuth]
         }
+        Socks5TunnelDebug.emit("greeting-sent methods=\(methods.map(\.rawValue))")
         write(context, Socks5Codec.greeting(methods: methods))
         context.fireChannelActive()
     }
@@ -331,6 +342,7 @@ final class SocksUpHandler: ChannelInboundHandler {
         switch phase {
         case .greetingReply:
             guard let bytes = accum.readBytes(length: 2) else { return }
+            Socks5TunnelDebug.emit("greeting-reply method=\(bytes.count > 1 ? String(bytes[1]) : "?")")
             guard Socks5Codec.parseGreetingReply(bytes) != nil else {
                 settleFail(Socks5Error.rejected(bytes.count > 1 ? bytes[1] : 0xFF)); return
             }
@@ -350,6 +362,7 @@ final class SocksUpHandler: ChannelInboundHandler {
             phase = .connectReply
             write(context, Socks5Codec.connect(host: targetHost, port: targetPort))
         case .connectReply:
+            Socks5TunnelDebug.emit("connect-reply-bytes=\(accum.readableBytes)")
             guard accum.readableBytes >= 4 else { return }
             guard let atyp = accum.getInteger(at: accum.readerIndex + 3, as: UInt8.self) else { return }
             let need: Int
@@ -384,12 +397,14 @@ final class SocksUpHandler: ChannelInboundHandler {
         guard !settled else { return }
         settled = true
         phase = .relaying
+        Socks5TunnelDebug.emit("established")
         established.succeed(context.channel)
     }
 
     private func settleFail(_ e: Error) {
         guard !settled else { return }
         settled = true
+        Socks5TunnelDebug.emit("handshake-failed:\(e)")
         established.fail(e)
     }
 

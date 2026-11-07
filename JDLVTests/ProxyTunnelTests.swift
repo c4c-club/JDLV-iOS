@@ -147,6 +147,14 @@ private final class FakeSocksConn {
     private var phase: Phase = .greeting
     private var backend: NWConnection?
 
+    fileprivate func phaseName() -> String {
+        switch phase {
+        case .greeting: return "greeting"
+        case .connect: return "connect"
+        case .relay: return "relay"
+        }
+    }
+
     init(conn: NWConnection, server: FakeSocks5Server) {
         self.conn = conn
         self.server = server
@@ -173,6 +181,7 @@ private final class FakeSocksConn {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, complete, error in
             guard let self else { return }
             if let data, !data.isEmpty {
+                self.server.record("recv:\(data.count)b phase=\(self.phaseName())")
                 buf.append(data)
                 process()
             }
@@ -313,6 +322,7 @@ final class ProxyTunnelTests: XCTestCase {
         AppBootstrap.box.update(AppSettings())
         AppBootstrap.injectRuntime()
         CdnRewrite.settingsProvider = { CdnSettings() }
+        Socks5TunnelDebug.sink = nil
         try await super.tearDown()
     }
 
@@ -339,6 +349,9 @@ final class ProxyTunnelTests: XCTestCase {
         let listen = mgr.activeListenPort
         XCTAssertNotNil(listen, "隧道应已监听")
         XCTAssertNil(mgr.lastError)
+        // 隧道握手观测（失败时随断言输出）
+        var tunnelEvents: [String] = []
+        Socks5TunnelDebug.sink = { tunnelEvents.append($0) }
 
         // override 合并：传输三元组替换 + SNI 保留 + 其余字段实时取自 base
         let base = try XCTUnwrap(AppBootstrap.mysqlSettings(s))
@@ -356,7 +369,8 @@ final class ProxyTunnelTests: XCTestCase {
             try await waitUntil(timeout: 5) { !fake.connects.isEmpty }
         }
         guard let first = fake.connects.first else {
-            XCTFail("CONNECT 未到达假代理: connCount=\(fake.connCount) events=\(fake.events.joined(separator: " | "))")
+            XCTFail("CONNECT 未到达假代理: connCount=\(fake.connCount) fakeEvents=\(fake.events.joined(separator: " | ")) " +
+                    "tunnelEvents=\(tunnelEvents.joined(separator: " | "))")
             return
         }
         XCTAssertEqual(first.0, "203.0.113.9")
@@ -438,11 +452,14 @@ final class ProxyTunnelTests: XCTestCase {
         await mgr.reconcileAndWait(s)
         XCTAssertNotNil(mgr.activeListenPort)
         XCTAssertNil(mgr.lastError)
+        var tunnelEvents: [String] = []
+        Socks5TunnelDebug.sink = { tunnelEvents.append($0) }
 
         let ok = await Db.check("jdb")
         if !ok {
             XCTFail("经回环隧道连真实 MySQL 失败（lastError=\(mgr.lastError ?? "-")；" +
-                    "fake connCount=\(fake.connCount) events=\(fake.events.joined(separator: " | "))）")
+                    "fake connCount=\(fake.connCount) fakeEvents=\(fake.events.joined(separator: " | ")) " +
+                    "tunnelEvents=\(tunnelEvents.joined(separator: " | "))）")
             return
         }
         let rows = try await Db.query("jdb", "select 1")
