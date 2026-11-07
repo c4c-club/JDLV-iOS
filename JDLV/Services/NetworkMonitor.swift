@@ -19,12 +19,12 @@ final class NetworkMonitor: ObservableObject {
     static let shared = NetworkMonitor()
 
     /// UI 测试注入值（nil = 正常模式）
-    static func fakeNetworkArg() -> String? {
+    nonisolated static func fakeNetworkArg() -> String? {
         fakeNetworkArgOrNil(for: ProcessInfo.processInfo.arguments)
     }
 
-    /// 解析器（可注入参数列表，单测用）
-    static func fakeNetworkArgOrNil(for args: [String]) -> String? {
+    /// 解析器（可注入参数列表，单测用；nonisolated —— 纯函数）
+    nonisolated static func fakeNetworkArgOrNil(for args: [String]) -> String? {
         guard let i = args.firstIndex(of: "-JDLV_FAKE_NETWORK"), i + 1 < args.count else { return nil }
         return args[i + 1]
     }
