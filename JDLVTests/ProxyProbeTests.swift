@@ -93,10 +93,10 @@ final class ProxyProbeTests: XCTestCase {
 
     func testProxyDictionaryContainsHostPort() {
         let d = ProxyProbe.proxyDictionary(host: "10.0.0.2", port: 7890)
-        XCTAssertEqual(d[kCFNetworkProxiesHTTPProxy as String] as? String, "10.0.0.2")
-        XCTAssertEqual(d[kCFNetworkProxiesHTTPPort as String] as? Int, 7890)
-        XCTAssertEqual(d[kCFNetworkProxiesHTTPSProxy as String] as? String, "10.0.0.2")
-        XCTAssertNil(d[kCFNetworkProxiesSOCKSProxy as String], "非 1080 端口不加 SOCKS 键")
+        XCTAssertEqual(d["HTTPProxy"] as? String, "10.0.0.2")
+        XCTAssertEqual(d["HTTPPort"] as? Int, 7890)
+        XCTAssertEqual(d["HTTPSProxy"] as? String, "10.0.0.2")
+        XCTAssertNil(d["SOCKSProxy"], "非 1080 端口不加 SOCKS 键")
 
         let socks = ProxyProbe.proxyDictionary(host: "127.0.0.1", port: 1080)
         XCTAssertEqual(socks[kCFNetworkProxiesSOCKSProxy as String] as? String, "127.0.0.1")

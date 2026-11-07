@@ -42,18 +42,20 @@ enum ProxyProbe {
 
     /// 代理字典（HTTP/HTTPS；socks 端口约定 1080 另加 SOCKS 键）
     static func proxyDictionary(host: String, port: Int) -> [AnyHashable: Any] {
+        // iOS SDK：kCFNetworkProxies* 宏 unavailable —— 用 CFNetwork 同名字符串键
+        // （与 macOS connectionProxyDictionary 键值一致；SOCKS 约定端口 1080）
         var d: [AnyHashable: Any] = [
-            kCFNetworkProxiesHTTPEnable as String: true,
-            kCFNetworkProxiesHTTPProxy as String: host,
-            kCFNetworkProxiesHTTPPort as String: port,
-            kCFNetworkProxiesHTTPSEnable as String: true,
-            kCFNetworkProxiesHTTPSProxy as String: host,
-            kCFNetworkProxiesHTTPSPort as String: port,
+            "HTTPEnable": true,
+            "HTTPProxy": host,
+            "HTTPPort": port,
+            "HTTPSEnable": true,
+            "HTTPSProxy": host,
+            "HTTPSPort": port,
         ]
         if port == 1080 {
-            d[kCFNetworkProxiesSOCKSEnable as String] = true
-            d[kCFNetworkProxiesSOCKSProxy as String] = host
-            d[kCFNetworkProxiesSOCKSPort as String] = port
+            d["SOCKSEnable"] = true
+            d["SOCKSProxy"] = host
+            d["SOCKSPort"] = port
         }
         return d
     }
