@@ -1080,7 +1080,7 @@ final class QIntegrationTests: XCTestCase {
         try await boot()
         let res = try await Q.shtBrowse()
         let items = rowsOf(res, "items")
-        XCTAssertEqual(items.map { $0.s("tid") }, ["1001", "1002", "1003", "1004", "1005", "1007", "1006"], "post_date DESC, tid DESC")
+        XCTAssertEqual(items.map { $0.s("tid") }, ["1001", "1002", "1003", "1007", "1004", "1005", "1006"], "post_date DESC, tid DESC")
         XCTAssertEqual(int64Of(res, "total"), -1)
         XCTAssertEqual(res["approx"] as? Bool, true)
         XCTAssertEqual(res["derived"] as? String, "")
@@ -1129,9 +1129,11 @@ final class QIntegrationTests: XCTestCase {
         XCTAssertEqual(rowsOf(magnet, "items").map { $0.s("tid") }, ["1001", "1002", "1003", "1006"])
         let none = try await Q.shtBrowse(main: "tc", type: "图片区")
         XCTAssertTrue(rowsOf(none, "items").isEmpty, "组合无命中 → 空页")
-        // 主版不命中：其他主版名不应带出 tc 的行
-        let other = try await Q.shtBrowse(main: "欧洲原创")
-        XCTAssertEqual(rowsOf(other, "items").map { $0.s("tid") }, ["1006"])
+        // 主版不命中：其他主版名不应带出 tc 的行（fixture 主版名 = board 值短码）
+        let other = try await Q.shtBrowse(main: "eu")
+        XCTAssertEqual(rowsOf(other, "items").map { $0.s("tid") }, ["1006"], "board 短码 eu 命中 1006")
+        let wrong = try await Q.shtBrowse(main: "tw")
+        XCTAssertEqual(rowsOf(wrong, "items").map { $0.s("tid") }, ["1004"], "主版互不串扰")
     }
 
     func test_Q_shtBrowse_updatedSortDerived() async throws {
@@ -1149,7 +1151,7 @@ final class QIntegrationTests: XCTestCase {
         XCTAssertEqual(items1.map { $0.s("tid") }, ["1001", "1002"])
         let anchor = (items1.last?.s("post_date") ?? "", items1.last?.s("tid") ?? "")
         let p2 = try await Q.shtBrowse(page: 2, per: 2, anchor: anchor)
-        XCTAssertEqual(rowsOf(p2, "items").map { $0.s("tid") }, ["1003", "1004"], "keyset: post_date/tid 双键续页")
+        XCTAssertEqual(rowsOf(p2, "items").map { $0.s("tid") }, ["1003", "1007"], "keyset: post_date/tid 双键续页（1007 排 1004 前）")
     }
 
     func test_Q_shtBrowse_coversMap() async throws {
@@ -1175,9 +1177,9 @@ final class QIntegrationTests: XCTestCase {
         let __a36 = try await Q.shtBrowseCount(main: "", cat: "", type: "", q: "字", hasMagnet: false, sort: "date")
         XCTAssertEqual(__a36, 1, "单字 LIKE 计数")
         let __a37 = try await Q.shtBrowseCount(main: "", cat: "", type: "", q: "", hasMagnet: false, sort: "updated")
-        XCTAssertEqual(__a37, 6, "updated → 派生窗口计数（窗口 ⊇ 全表）")
+        XCTAssertEqual(__a37, 7, "updated → 派生窗口计数（窗口 ⊇ 全表）")
         let __a38 = try await Q.shtBrowseCount(main: "", cat: "", type: "", q: "", hasMagnet: false, sort: "date")
-        XCTAssertEqual(__a38, 6, "date → 全库真值")
+        XCTAssertEqual(__a38, 7, "date → 全库真值")
     }
 
     // MARK: - B.28 shtThread
