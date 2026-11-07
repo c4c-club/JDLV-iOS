@@ -73,38 +73,138 @@ struct ShtThreadData: Equatable {
         magnets.isEmpty && images.isEmpty && videos.isEmpty && ed2k.isEmpty && !isLiterature
     }
 
-    // MARK: 解析（Q.shtThread 返回 [String: Any]；值类型 Int64/String/Double/[Any]）
+    // MARK: 解析（Q.shtThread 返回 [String: Any]；R3 问题 10 多形态解码）
 
     static func parse(_ d: [String: Any], tid: String) -> ShtThreadData {
         var out = ShtThreadData(
             tid: tid,
-            title: str(d, "title"),
-            boardName: str(d, "board_name"),
+            title: decodeEntities(str(d, "title")),
+            boardName: decodeEntities(str(d, "board_name")),
             postDate: str(d, "post_date"),
             catName: str(d, "cat_name"),
             words: int64(d, "words") ?? int64(d, "article_words") ?? 0)
-        for m in d["magnets"] as? [[String: Any]] ?? [] {
-            out.magnets.append(ShtMagnet(
-                hash: str(m, "hash"), name: str(m, "name"), size: str(m, "size"),
-                filesCount: int64(m, "files_count") ?? 0, link: str(m, "link")))
+        for m in parseMagnets(d["magnets"]) {
+            out.magnets.append(m)
         }
         for e in d["ed2k"] as? [[String: Any]] ?? [] {
             out.ed2k.append(ShtEd2k(
                 url: str(e, "url"), name: str(e, "name"), size: str(e, "size")))
         }
-        out.images = (d["images"] as? [Any])?.compactMap { $0 as? String } ?? []
+        out.images = parseImageUrls(d["images"])
         out.videos = (d["videos"] as? [Any])?.compactMap { $0 as? String } ?? []
-        if let arr = d["blocks"] as? [[String: Any]] {
-            out.blocks = arr.map { b in
+        out.blocks = parseBlocks(d["blocks"], article: d["article"])
+        return out
+    }
+
+    // MARK: 多形态解析（R3 问题 10）
+
+    /// magnets：[[String:Any]]（hash/name/size/link）或 [String]（裸 magnet 链接）
+    private static func parseMagnets(_ v: Any?) -> [ShtMagnet] {
+        if let arr = v as? [[String: Any]] {
+            return arr.map { m in
+                ShtMagnet(
+                    hash: str(m, "hash"), name: str(m, "name"), size: str(m, "size"),
+                    filesCount: int64(m, "files_count") ?? 0, link: str(m, "link"))
+            }
+        }
+        if let arr = v as? [Any] {
+            return arr.compactMap { item -> ShtMagnet? in
+                if let s = item as? String, !s.isEmpty {
+                    let hash = s.contains("urn:btih:")
+                        ? String(s.split(separator: ":").last ?? "") : ""
+                    return ShtMagnet(hash: hash, name: "", size: "", filesCount: 0, link: s)
+                }
+                if let m = item as? [String: Any] {
+                    return ShtMagnet(
+                        hash: str(m, "hash"), name: str(m, "name"), size: str(m, "size"),
+                        filesCount: int64(m, "files_count") ?? 0, link: str(m, "link"))
+                }
+                return nil
+            }
+        }
+        return []
+    }
+
+    /// images：[String] 或 [[String:Any]]（url/src/image 三键名兼容）
+    private static func parseImageUrls(_ v: Any?) -> [String] {
+        guard let arr = v as? [Any] else { return [] }
+        return arr.compactMap { item -> String? in
+            if let s = item as? String { return decodeEntities(s) }
+            if let m = item as? [String: Any] {
+                for k in ["url", "src", "image"] {
+                    if let s = m[k] as? String, !s.isEmpty { return decodeEntities(s) }
+                }
+            }
+            return nil
+        }
+    }
+
+    /// blocks：[[String:Any]] / JSON String / [String]（纯段落）；
+    /// 全空且 article 为纯文本 → 按空行分段。HTML entity 解码。
+    private static func parseBlocks(_ v: Any?, article: Any?) -> [ReaderBlock] {
+        var blocks: [ReaderBlock] = []
+        if let arr = v as? [[String: Any]] {
+            blocks = arr.map { b in
                 ReaderBlock(
-                    t: str(b, "t").isEmpty ? nil : str(b, "t"),
+                    t: decodeEntities(str(b, "t")).isEmpty ? nil : decodeEntities(str(b, "t")),
                     i: str(b, "i").isEmpty ? nil : str(b, "i"),
                     b: str(b, "b").isEmpty ? nil : str(b, "b"),
                     c: str(b, "c").isEmpty ? nil : str(b, "c"),
                     al: str(b, "al").isEmpty ? nil : str(b, "al"),
                     sz: Double(int64(b, "sz") ?? 0))
             }
+        } else if let json = v as? String,
+                  json.drop(while: { $0.isWhitespace }).first == "[" {
+            if let arr = try? JSONSerialization.jsonObject(with: Data(json.utf8))
+                as? [[String: Any]] {
+                blocks = parseBlocks(arr, article: nil)
+            }
+        } else if let arr = v as? [Any], !arr.isEmpty {
+            // [String] 纯段落形态
+            blocks = arr.compactMap { item -> ReaderBlock? in
+                if let s = item as? String, !s.isEmpty {
+                    return ReaderBlock(t: decodeEntities(s), i: nil, b: nil, c: nil,
+                                       al: nil, sz: nil)
+                }
+                if let m = item as? [String: Any] {
+                    let t = decodeEntities(str(m, "t"))
+                    let i = str(m, "i")
+                    if t.isEmpty && i.isEmpty { return nil }
+                    return ReaderBlock(
+                        t: t.isEmpty ? nil : t, i: i.isEmpty ? nil : i,
+                        b: str(m, "b").isEmpty ? nil : str(m, "b"),
+                        c: str(m, "c").isEmpty ? nil : str(m, "c"),
+                        al: str(m, "al").isEmpty ? nil : str(m, "al"),
+                        sz: Double(int64(m, "sz") ?? 0))
+                }
+                return nil
+            }
         }
+        if blocks.isEmpty, let text = article as? String,
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // 纯文本 article：按空行分段
+            blocks = text
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .components(separatedBy: "\n\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { ReaderBlock(t: decodeEntities($0), i: nil, b: nil, c: nil,
+                                   al: nil, sz: nil) }
+        }
+        return blocks
+    }
+
+    /// HTML entity 解码（&amp; &lt; &gt; &quot; &#39; &nbsp;）
+    static func decodeEntities(_ s: String) -> String {
+        guard s.contains("&") else { return s }
+        var out = s
+        out = out.replacingOccurrences(of: "&nbsp;", with: " ")
+        out = out.replacingOccurrences(of: "&amp;", with: "&")
+        out = out.replacingOccurrences(of: "&lt;", with: "<")
+        out = out.replacingOccurrences(of: "&gt;", with: ">")
+        out = out.replacingOccurrences(of: "&quot;", with: "\"")
+        out = out.replacingOccurrences(of: "&#39;", with: "'")
+        out = out.replacingOccurrences(of: "&apos;", with: "'")
         return out
     }
 

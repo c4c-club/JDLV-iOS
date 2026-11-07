@@ -26,6 +26,10 @@ struct AppText: View {
     /// 覆盖 lvl 默认字重（如 Meta Medium）
     var fontWeight: Font.Weight? = nil
     var underline: Bool = false
+    /// 紧凑行距（固定高文本块内用：lineSpacing 0，让自然行高贴合 CardLayout 公式）
+    var tight: Bool = false
+    /// maxLines 截断时预留行空间（卡片标题 2 行占位等高）
+    var reservesSpace: Bool = false
 
     @Environment(\.appTheme) private var theme
 
@@ -36,7 +40,9 @@ struct AppText: View {
          minLines: Int = 0,
          textAlign: TextAlignment = .leading,
          fontWeight: Font.Weight? = nil,
-         underline: Bool = false) {
+         underline: Bool = false,
+         tight: Bool = false,
+         reservesSpace: Bool = false) {
         self.text = text
         self.lvl = lvl
         self.color = color
@@ -45,6 +51,8 @@ struct AppText: View {
         self.textAlign = textAlign
         self.fontWeight = fontWeight
         self.underline = underline
+        self.tight = tight
+        self.reservesSpace = reservesSpace
     }
 
     /// 解析后的默认色（Meta → text2 / 其余 text）
@@ -55,7 +63,7 @@ struct AppText: View {
     private var base: some View {
         Text(text)
             .font(.system(size: lvl.size, weight: fontWeight ?? lvl.weight))
-            .lineSpacing(max(0, lvl.lineHeight - lvl.size))
+            .lineSpacing(tight ? 0 : max(0, lvl.lineHeight - lvl.size))
             .foregroundColor(resolvedColor)
             .multilineTextAlignment(textAlign)
             .underline(underline, color: resolvedColor)
@@ -66,6 +74,8 @@ struct AppText: View {
             base.lineLimit(minLines, reservesSpace: true)
         } else if maxLines == Int.max {
             base
+        } else if reservesSpace {
+            base.lineLimit(maxLines, reservesSpace: true)
         } else {
             base.lineLimit(maxLines)
         }

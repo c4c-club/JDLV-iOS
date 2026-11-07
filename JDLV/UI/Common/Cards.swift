@@ -2,14 +2,18 @@ import SwiftUI
 import JDLVCore
 
 //
-//  Cards.swift —— MovieCard 三档 / ShtCard / ActorCard / ViewAllCard（07 B11/B13/B14/B15、08 A.4）。
+//  Cards.swift —— MovieCard 三档 / ShtCard / ActorCard / ViewAllCard（07 B11/B13/B14/B15
+//  + 13 §2.5/§2.6 设计系统 v2 重写）。
 //
-//  Card 规格（四卡同款）：1pt outlineVariant(theme.line) 描边 + 2pt 投影 + surface(theme.bg1) 底。
-//  "已读"灰化是全局唯一允许的 alpha<0.9 文本（60%）——标题用 theme.text.opacity(0.6)。
-//  元信息四段拼接顺序与条件逐字（AppCopy.movieMetaParts / shtMetaParts）。
+//  v2 契约（问题 5/6/8 根因修复）：
+//  - 图片一律 AspectImage（先定框：ratio 决定布局高；图片只做 overlay，不再撑大布局）。
+//  - 卡片填满父容器：CardGrid/横滑行给 frame(cellW, cardH)；卡内部不假设宽度。
+//  - 文本块固定高（CardLayout：Movie 76/86、Sht 68/76、Actor 44），标题
+//    lineLimit(2, reservesSpace)（AppText tight+reservesSpace），元信息 1 行。
+//  - CardShell 承担背景/描边/圆角/阴影/裁剪，内容不得溢出。
 //
 
-// MARK: - 卡片容器（1pt 描边 + 2pt 投影 + surface 底）
+// MARK: - 卡片容器（v2：CardShell；保留 cardChrome 给未迁移调用方）
 
 struct CardChrome: ViewModifier {
     @Environment(\.appTheme) private var theme
@@ -40,7 +44,7 @@ private struct ReadDot: View {
     }
 }
 
-// MARK: - MovieCard（viewMode 0 小图 / 1 大图 / 2 列表行）
+// MARK: - MovieCard（viewMode 0 小图 3:4+76 / 1 大图 16:9+86 / 2 列表行）
 
 struct MovieCard: View {
     let m: Row
@@ -81,7 +85,7 @@ struct MovieCard: View {
 
     private var listRow: some View {
         HStack(alignment: .top, spacing: 8) {
-            PosterImage(url: coverUrl, half: true)
+            AspectImage(url: coverUrl, ratio: 84.0 / 60.0, half: true, radius: 8)
                 .frame(width: 84, height: 60)
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
@@ -103,37 +107,47 @@ struct MovieCard: View {
         .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
     }
 
-    // MARK: 网格模式（viewMode 0 小图 400:520 右半 / 1 大图 800:520 整张）：Column(padding 8)
+    // MARK: 网格模式（v2：AspectImage 定框 + 固定文本块，填满 CardGrid 给的 cell）
 
     private var gridCell: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PosterImage(url: coverUrl,
+            AspectImage(url: coverUrl,
+                        ratio: viewMode == 1 ? 16.0 / 9.0 : 3.0 / 4.0,
                         half: viewMode == 0,           // 小图取右半（受 coverHalf 设置）
-                        aspect: viewMode == 1 ? 800.0 / 520.0 : 400.0 / 520.0)
-            Group {
-                HStack(spacing: 4) {
-                    if read { ReadDot() }
-                    AppText(number, lvl: viewMode == 1 ? .body : .bodyS,
-                            color: theme.accent, maxLines: 1, fontWeight: .bold)
-                    Spacer(minLength: 4)
-                    if score > 0 {
-                        AppText("★ \(Fmt.score(score))", lvl: .meta, color: theme.accent2)
-                    }
-                }
-                AppText(title.isEmpty ? " " : title, lvl: .bodyS, color: titleColor,
-                        maxLines: viewMode == 1 ? 3 : 2, textAlign: .leading)
-                    .padding(.top, 2)
-                AppText(metaText, lvl: .meta, maxLines: 1)
-                    .padding(.top, 4)
-            }
-            .padding(.horizontal, ComponentMetrics.cardPadding)
-            .padding(.top, 6)
-            .padding(.bottom, ComponentMetrics.cardPadding)
+                        radius: 0)
+            textBlock(height: viewMode == 1 ? ComponentMetrics.textBlockLarge
+                                            : ComponentMetrics.textBlockSmall,
+                      titleLines: 2)
         }
+    }
+
+    /// 固定高文本块：番号行(13 bold) + 标题 2 行预留(13) + 元信息 1 行(12)；
+    /// tight 行距贴合 CardLayout 公式（76/86）。
+    private func textBlock(height: CGFloat, titleLines: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                if read { ReadDot() }
+                AppText(number, lvl: .bodyS, color: theme.accent,
+                        maxLines: 1, fontWeight: .bold, tight: true)
+                Spacer(minLength: 4)
+                if score > 0 {
+                    AppText("★ \(Fmt.score(score))", lvl: .meta, color: theme.accent2, tight: true)
+                }
+            }
+            AppText(title.isEmpty ? " " : title, lvl: .bodyS, color: titleColor,
+                    maxLines: titleLines, textAlign: .leading,
+                    tight: true, reservesSpace: true)
+            AppText(metaText, lvl: .meta, maxLines: 1, tight: true)
+        }
+        .padding(.horizontal, ComponentMetrics.cardPadding)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: height, alignment: .topLeading)
     }
 }
 
-// MARK: - ShtCard（98t 帖子卡：大图 1.6:1 / 小图·列表 4:5）
+// MARK: - ShtCard（98t 帖子卡：大图 16:10+76 / 小图·列表 4:5+68）
 
 struct ShtCard: View {
     let t: Row
@@ -154,32 +168,37 @@ struct ShtCard: View {
             magnetCount: t.i("magnet_count"),
             fav: fav))
     }
-    private var coverAspect: CGFloat { viewMode == 1 ? 1.6 : 4.0 / 5.0 }
+    private var coverRatio: CGFloat { viewMode == 1 ? 1.6 : 4.0 / 5.0 }
 
     var body: some View {
         Button(action: onClick) {
             VStack(alignment: .leading, spacing: 0) {
+                // 文本块合计 = CardLayout 的 68/76/86：标题块 40（上）+ meta 块 28（下）
                 HStack(alignment: .top, spacing: 4) {
                     if read { ReadDot() }
-                    // maxLines 2 minLines 2（两行占位等高）
+                    // maxLines 2 reservesSpace（两行占位等高）
                     AppText(title.isEmpty ? " " : title, lvl: .bodyS,
                             color: read ? theme.text.opacity(0.6) : theme.text,
-                            maxLines: 2, minLines: 2, textAlign: .leading)
+                            maxLines: 2, textAlign: .leading,
+                            tight: true, reservesSpace: true)
                 }
                 .padding(.horizontal, ComponentMetrics.cardPadding)
                 .padding(.top, ComponentMetrics.cardPadding)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: 40, alignment: .topLeading)
                 if coverUrl.isEmpty {
-                    ShtCoverPlaceholder(t: t, aspect: coverAspect)
-                        .padding(ComponentMetrics.cardPadding)
+                    ShtCoverPlaceholder(t: t, ratio: coverRatio)
                 } else {
-                    PosterImage(url: coverUrl,
+                    AspectImage(url: coverUrl,
+                                ratio: coverRatio,
                                 half: viewMode == 0,      // 小图也按"取右半"设置生效
-                                aspect: coverAspect)
-                        .padding(ComponentMetrics.cardPadding)
+                                radius: 0)
                 }
-                AppText(metaText, lvl: .meta, maxLines: 1)
+                AppText(metaText, lvl: .meta, maxLines: 1, tight: true)
                     .padding(.horizontal, ComponentMetrics.cardPadding)
                     .padding(.bottom, ComponentMetrics.cardPadding)
+                    .frame(maxWidth: .infinity, alignment: .bottomLeading)
+                    .frame(height: 28, alignment: .bottomLeading)
             }
             .contentShape(Rectangle())
         }
@@ -192,7 +211,7 @@ struct ShtCard: View {
 
 struct ShtCoverPlaceholder: View {
     let t: Row
-    var aspect: CGFloat = 4.0 / 5.0
+    var ratio: CGFloat = 4.0 / 5.0
     @Environment(\.appTheme) private var theme
 
     /// magnet_count>0 → 🧲；type/cat_name 含"图" → 🖼；words>0 → 📝；否则 📄
@@ -205,7 +224,7 @@ struct ShtCoverPlaceholder: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: ComponentMetrics.imageCorner).fill(theme.bg3)
+            RoundedRectangle(cornerRadius: 0).fill(theme.bg3)
             VStack(spacing: 2) {
                 AppText(icon, lvl: .titleM, color: theme.text2)
                 let ch = t.s("title").first.map(String.init) ?? ""
@@ -214,11 +233,11 @@ struct ShtCoverPlaceholder: View {
                 }
             }
         }
-        .aspectRatio(aspect, contentMode: .fit)
+        .aspectRatio(ratio, contentMode: .fit)
     }
 }
 
-// MARK: - ActorCard（B15：头像 1:1 + "N 部" + ·★均分）
+// MARK: - ActorCard（B15：头像 1:1 + "N 部" + ·★均分；v2 文本块固定 44）
 
 struct ActorCard: View {
     let a: Row
@@ -227,17 +246,19 @@ struct ActorCard: View {
     var body: some View {
         Button(action: onClick) {
             VStack(alignment: .leading, spacing: 0) {
-                PosterImage(url: a.s("avatar_url"), aspect: 1)   // Img.actorAvatar()
-                    .padding(ComponentMetrics.cardPadding)
+                AspectImage(url: a.s("avatar_url"), ratio: 1, radius: 0)   // Img.actorAvatar()
                 VStack(alignment: .leading, spacing: 2) {
                     AppText(a.s("name").isEmpty ? " " : a.s("name"), lvl: .meta,
-                            maxLines: 1, fontWeight: .medium)
+                            maxLines: 1, fontWeight: .medium, tight: true)
                     AppText(AppCopy.actorMetaLine(
                         videosCount: a.i("videos_count"),
-                        avgScoreAll: a.d("avg_score_all")), lvl: .meta, maxLines: 1)
+                        avgScoreAll: a.d("avg_score_all")), lvl: .meta, maxLines: 1, tight: true)
                 }
                 .padding(.horizontal, ComponentMetrics.cardPadding)
+                .padding(.top, 4)
                 .padding(.bottom, ComponentMetrics.cardPadding)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: 44, alignment: .topLeading)
             }
             .contentShape(Rectangle())
         }
@@ -246,7 +267,7 @@ struct ActorCard: View {
     }
 }
 
-// MARK: - ViewAllCard（07 C4：行尾"查看全部"占位卡 180×200，虚线框）
+// MARK: - ViewAllCard（07 C4：行尾"查看全部"占位卡；v2 高度由外部 frame 决定）
 
 struct ViewAllCard: View {
     var onClick: () -> Void
@@ -263,7 +284,6 @@ struct ViewAllCard: View {
                     AppText("查看全部", lvl: .meta, color: theme.text2)
                 }
             }
-            .frame(width: 180, height: 200)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

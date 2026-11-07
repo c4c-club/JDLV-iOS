@@ -118,14 +118,14 @@ struct MovieDetailView: View {
                     lightboxIndex = 0
                     lightboxOpen = true
                 } label: {
-                    PosterImage(
+                    AspectImage(
                         url: MovieImg.movieCover(m?.s("cover_url") ?? "", mid),
-                        aspect: 800.0 / 538.0)
+                        ratio: 800.0 / 538.0, fill: false)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)   // 无涟漪
             } else {
-                PosterImage(url: "", aspect: 800.0 / 538.0)
+                AspectImage(url: "", ratio: 800.0 / 538.0, fill: false)
             }
         }
         .padding(.top, 12)
@@ -315,7 +315,7 @@ struct MovieDetailView: View {
                                 lightboxIndex = vm.galleryIndexOfPreview(i)
                                 lightboxOpen = true
                             } label: {
-                                PosterImage(url: MovieImg.preview(p), aspect: 3.0 / 2.0)
+                                AspectImage(url: MovieImg.preview(p), ratio: 3.0 / 2.0, fill: false)
                                     .frame(width: 160)
                                     .contentShape(Rectangle())
                             }
@@ -355,11 +355,13 @@ struct MovieDetailView: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    // 主行：magnet:?xt=urn:btih:{hash}（Monospace 12，最多 2 行省略）
+                    // 主行：magnet:?xt=urn:btih:{hash}（Monospace 12；v2 不截断 + textSelection）
                     Text(MovieDetailVM.magnetLink(mag))
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(theme.text)
-                        .lineLimit(2)
+                        .lineLimit(nil)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     // 角标：{fmtSize}{ · 中字}
                     AppText(MovieDetailVM.magnetBadge(mag), lvl: .meta, color: theme.accent,

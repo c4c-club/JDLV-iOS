@@ -22,6 +22,12 @@ import JDLVCore
 protocol FavsStore {
     /// 对齐 LocalStore.favList：行键 kind/id/title/ts；ts DESC（新→旧）
     func favList(kind: String) async -> [Row]
+    /// 取消收藏（R3 问题 11 §4.12 swipeActions；demo no-op）
+    func favRemove(kind: String, id: String, title: String) async
+}
+
+extension FavsStore {
+    func favRemove(kind: String, id: String, title: String) async {}
 }
 
 /// 生产：Core LocalStore（jdlv_local.db；BrowseMarks 单例宿主复用）
@@ -31,6 +37,12 @@ struct LocalFavsStore: FavsStore {
     func favList(kind: String) async -> [Row] {
         guard let store else { return [] }
         return (try? store.favList(kind: kind)) ?? []
+    }
+
+    func favRemove(kind: String, id: String, title: String) async {
+        guard let store else { return }
+        // 已收藏态 toggle → 取消收藏
+        _ = try? store.favToggle(kind: kind, itemId: id, title: title)
     }
 }
 
@@ -154,6 +166,13 @@ final class FavsVM: ObservableObject {
         sht = await store.favList(kind: "sht")
         actor = await store.favList(kind: "actor")
         loading = false
+    }
+
+    // MARK: remove（R3 §4.12 swipeActions 删除 → 取消收藏 + reload）
+
+    func remove(_ r: Row) async {
+        await store.favRemove(kind: r.s("kind"), id: r.s("id"), title: r.s("title"))
+        await reload()
     }
 
     // MARK: 行卡展示值（10 §7.2）

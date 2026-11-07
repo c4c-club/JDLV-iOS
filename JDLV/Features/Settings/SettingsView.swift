@@ -155,7 +155,7 @@ enum SettingsCopy {
     static let proxyShtLabel = "98t 图床走代理 (HTTP)"
     static let proxyShtDesc = "98t 图床 = 论坛图片 (帖子截图/贴图); 两者可分别指定, 互不影响"
     static let proxyOverlayNote = "图床替换 (下方) 与代理可叠加使用; 代理/图床变更保存后立即生效 (无需重启)"
-    static let proxyTestButton = "测试当前连接"
+    static let proxyTestButton = "测试代理（图床）"   // R3 问题 2：测图床不是数据库
 
     // MARK: ③ jdb 图床（§4 逐字）
 
@@ -204,7 +204,7 @@ enum SettingsCopy {
     static let lockNone = "无"
     static let lockPin = "PIN"
     static let lockPattern = "图案"
-    static let lockBiometric = "系统指纹"
+    static let lockBiometric = "面容 ID"   // R3 问题 3：iOS 主流 Face ID（动态文案见 BiometryLabel）
     static func lockEnabledHint(_ type: String) -> String { "已启用: \(type) · 下次打开 app 生效" }
     static let pinDialogTitle = "设置启动 PIN (4-12 位数字)"
     static let pinPh1 = "输入 PIN"
@@ -466,21 +466,18 @@ struct SettingsGroupCard<Content: View>: View {
     var defaultExpanded: Bool = false
     /// 收起时标题下一行 12sp 摘要（maxLines 1 截断）
     var summary: String = ""
-    /// 卡底部保存三态行（任务 P12：每张卡底部显示 autoSave 结果）
-    var bus: SaveStateBus? = nil
     @ViewBuilder let content: Content
 
     @State private var expanded: Bool
     @Environment(\.appTheme) private var theme
 
     init(title: String, rememberKey: String, defaultExpanded: Bool = false,
-         summary: String = "", bus: SaveStateBus? = nil,
+         summary: String = "",
          @ViewBuilder content: () -> Content) {
         self.title = title
         self.rememberKey = rememberKey
         self.defaultExpanded = defaultExpanded
         self.summary = summary
-        self.bus = bus
         self.content = content()
         _expanded = State(initialValue: CollapsiblePref.isExpanded(rememberKey, default: defaultExpanded))
     }
@@ -491,7 +488,6 @@ struct SettingsGroupCard<Content: View>: View {
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
                     content
-                    if let bus { SaveStateLine(bus: bus) }
                 }
                 .padding(.top, 8)
             }
@@ -526,55 +522,6 @@ struct SettingsGroupCard<Content: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("settings_group_\(rememberKey)")
-    }
-}
-
-// MARK: - 保存三态（0.1；bus 由 SettingsView 持有, 每卡底部一行）
-
-@MainActor
-final class SaveStateBus: ObservableObject {
-    /// -1 = 未渲染；0 = 保存中；1 = SAVED；2 = NO_CHANGE；3 = FAILED
-    @Published var kind = -1
-    @Published var at = Date()
-
-    func markSaving() {
-        kind = 0
-        at = Date()
-    }
-
-    func apply(_ r: SaveResult) {
-        switch r {
-        case .saved: kind = 1
-        case .noChange: kind = 2
-        case .failed: kind = 3
-        }
-        at = Date()
-    }
-}
-
-struct SaveStateLine: View {
-    @ObservedObject var bus: SaveStateBus
-    @Environment(\.appTheme) private var theme
-
-    var body: some View {
-        Group {
-            if bus.kind >= 0 {
-                AppText(SettingsCopy.saveStateText(kind: bus.kind, at: bus.at),
-                        lvl: .meta,
-                        color: color,
-                        textAlign: .trailing)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .accessibilityIdentifier("settings_save_state")
-            }
-        }
-    }
-
-    private var color: Color {
-        switch bus.kind {
-        case 1: return Color(hex: 0x2E7D32)   // SAVED 绿（逐字色值）
-        case 3: return theme.red
-        default: return theme.text2
-        }
     }
 }
 
@@ -843,25 +790,24 @@ struct SettingsView: View {
     @Environment(\.appTheme) private var theme
     @Environment(\.scenePhase) private var scenePhase
 
-    @StateObject private var bus = SaveStateBus()
-
     var body: some View {
         let s = store.settings
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                // 顶部保存状态行（§0.1：仅在已有保存事件后渲染）
-                SaveStateLine(bus: bus)
-                DataSourceCard(firstRun: firstRun, bus: bus)
-                ProxyCard(bus: bus)
-                JdbImageCard(bus: bus)
-                ShtImageCard(bus: bus)
-                ThemeCard(bus: bus)
-                LockCard(bus: bus)
-                BrowseSearchCard(bus: bus)
-                SemanticModelCard(bus: bus)
-                CacheCard(bus: bus)
-                OfflineIndexCard(bus: bus)
-                AboutCard(bus: bus)
+                // 全局唯一保存状态行（R3 问题 4：单一 SaveStatusView；各卡不再挂）
+                SaveStatusView(state: store.saveState,
+                               onRetry: { Task { await store.flushPendingEdits() } })
+                DataSourceCard(firstRun: firstRun)
+                ProxyCard()
+                JdbImageCard()
+                ShtImageCard()
+                ThemeCard()
+                LockCard()
+                BrowseSearchCard()
+                SemanticModelCard()
+                CacheCard()
+                OfflineIndexCard()
+                aboutLink
                 Spacer().frame(height: 30)
             }
             .padding(16)
@@ -883,10 +829,29 @@ struct SettingsView: View {
                 Task { await store.flushPendingEdits() }
             }
         }
-        // 三态结果 → 页面状态行（每卡底部 SaveStateLine 共用同一 bus）
-        .onReceive(store.$lastSaveResult) { r in
-            guard let r else { return }
-            bus.apply(r)
+    }
+
+    // MARK: 关于（R3 问题 4：NavigationLink 子页 AboutView；不再挂保存状态行）
+
+    private var aboutLink: some View {
+        NavigationLink {
+            AboutView()
+        } label: {
+            HStack(spacing: 0) {
+                AppText("关于", lvl: .bodyS, fontWeight: .bold)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13))
+                    .foregroundColor(theme.text2)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner).fill(theme.bg1))
+            .overlay(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner)
+                .stroke(theme.line, lineWidth: ComponentMetrics.cardStroke))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("settings_about_link")
     }
 }

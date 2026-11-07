@@ -1,19 +1,19 @@
 import SwiftUI
 
 //
-//  Lightbox.swift —— 全屏灯箱（08 B.3 / 10 §1.5：帖子详情、影片详情、资讯详情共用）。
+//  Lightbox.swift —— 全屏灯箱（13 §2.8/§4.16 设计系统 v2 重写：fit 不裁切）。
 //
-//  - 全屏黑底；HorizontalPager 对位 TabView(.page) 横滑翻页（相邻页预加载天然满足）。
-//  - 手势（未放大 scale ≤ 1.5）：点左 1/3（x < 30% 宽）→ 上一页；点右 1/3（x > 70% 宽）
-//    → 下一页；中间无动作；单指横滑交给翻页。
-//  - 放大状态：点按不翻页；单指拖动平移。
-//  - 双击：scale > 1.5 → 复位 1.0，否则放大 2.5（offset 归零）。
-//  - 双指捏合：scale clamp 1..6，跟手平移。
-//  - 左下角页码「{当前页+1} / {总页数}」（白 75% 透明，12pt）；右上角关闭按钮
-//    「✕ 关闭」（白 12pt）；urls 为空居中「无图」（#9aa0ad）。
+//  v2（问题 8 根因修复）：
+//  - 每页 ZoomableImage（UIScrollView scaleAspectFit —— 图片完整显示，四边黑边；
+//    旧 PosterImage fill 语义裁切退役）。
+//  - 手势：双击 2.5×/复位（点击点为中心）；放大后单指平移 clamp；未放大单击
+//    左/右 1/3 翻页；横滑翻页交给 TabView(.page)。
+//  - chrome 用 safeAreaInset（页码/关闭避开刘海与 Home Indicator）；背景纯黑。
+//  - 左下角页码「{当前页+1} / {总页数}」（白 75%，12pt）；右上角「✕ 关闭」；
+//    urls 为空居中「无图」。
 //
 
-/// 灯箱阈值（DesignTokenTests 断言用）。
+/// 灯箱阈值（DesignTokenTests 断言用；与 ZoomableImage 共用）。
 enum LightboxMetrics {
     static let doubleTapZoom: CGFloat = 2.5
     static let minZoom: CGFloat = 1
@@ -44,36 +44,40 @@ struct Lightbox: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        Group {
             if urls.isEmpty {
                 emptyState
             } else {
                 pager
-                chrome
             }
         }
+        .safeAreaInset(edge: .top) { topChrome }
+        .safeAreaInset(edge: .bottom) { bottomChrome }
+        .background(Color.black.ignoresSafeArea())
     }
 
     // MARK: 空态（「无图」）
 
     private var emptyState: some View {
         AppText("无图", lvl: .meta, color: .lightboxEmptyText)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black.ignoresSafeArea())
     }
 
-    // MARK: 翻页
+    // MARK: 翻页（ZoomableImage 每页；换页时新实例 → 缩放自动复位）
 
     private var pager: some View {
         TabView(selection: $index) {
             ForEach(urls.indices, id: \.self) { i in
-                LightboxPage(url: urls[i],
-                             onPrev: { go(-1) },
-                             onNext: { go(1) })
+                ZoomableImage(url: urls[i],
+                              onPrev: { go(-1) },
+                              onNext: { go(1) })
                     .tag(i)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea()
+        .accessibilityIdentifier("lightbox_pager")
     }
 
     private func go(_ delta: Int) {
@@ -82,34 +86,40 @@ struct Lightbox: View {
         withAnimation { index = next }
     }
 
-    // MARK: 页码 + 关闭
+    // MARK: chrome（safeAreaInset：不压刘海/Home Indicator）
 
-    private var chrome: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                Button {
-                    onClose()
-                } label: {
-                    AppText("✕ 关闭", lvl: .meta, color: .white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("lightbox_close")
-            }
-            .padding(.horizontal, 8)
-            .padding(.top, 4)
+    private var topChrome: some View {
+        HStack(spacing: 0) {
             Spacer(minLength: 0)
-            HStack(spacing: 0) {
+            Button {
+                onClose()
+            } label: {
+                AppText("✕ 关闭", lvl: .meta, color: .white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("lightbox_close")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .background(Color.black.opacity(0.001))
+    }
+
+    private var bottomChrome: some View {
+        HStack(spacing: 0) {
+            if !urls.isEmpty {
                 AppText("\(index + 1) / \(urls.count)", lvl: .meta,
                         color: .white.opacity(LightboxMetrics.pageIndicatorOpacity))
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+        .background(Color.black.opacity(0.001))
     }
 }
 
@@ -117,79 +127,4 @@ struct Lightbox: View {
 /// 把 alpha 字节解析为 0（透明），Reader/Lightbox 一律用显式 RGB 构造，见移植报告）。
 private extension Color {
     static let lightboxEmptyText = Color(red: 0x9A / 255.0, green: 0xA0 / 255.0, blue: 0xAD / 255.0)
-}
-
-// MARK: - 单页（缩放 + 平移 + 点区翻页）
-
-private struct LightboxPage: View {
-    let url: String
-    var onPrev: () -> Void
-    var onNext: () -> Void
-
-    @State private var scale: CGFloat = LightboxMetrics.minZoom
-    @State private var gestureScale: CGFloat = 1
-    @State private var offset: CGSize = .zero
-    @GestureState private var pan: CGSize = .zero
-
-    private var isZoomed: Bool { scale > LightboxMetrics.zoomedThreshold }
-
-    var body: some View {
-        GeometryReader { geo in
-            PosterImage(url: url, radius: 0)
-                .frame(width: geo.size.width, height: geo.size.height)
-                .scaleEffect(scale * gestureScale)
-                .offset(x: offset.width + pan.width, y: offset.height + pan.height)
-                .gesture(magnify)
-                .simultaneousGesture(drag)
-                .gesture(SpatialTapGesture().onEnded { value in
-                    guard !isZoomed else { return }   // 放大态点按不翻页
-                    let w = max(geo.size.width, 1)
-                    let x = value.location.x / w
-                    if x < LightboxMetrics.prevTapZone {
-                        onPrev()
-                    } else if x > LightboxMetrics.nextTapZone {
-                        onNext()
-                    }
-                })
-                .onTapGesture(count: 2) {
-                    withAnimation {
-                        if isZoomed {
-                            scale = LightboxMetrics.minZoom
-                            offset = .zero
-                        } else {
-                            scale = LightboxMetrics.doubleTapZoom
-                            offset = .zero
-                        }
-                    }
-                }
-        }
-    }
-
-    /// 双指捏合 1–6（onChanged 跟手、onEnded 落定 clamp）
-    private var magnify: some Gesture {
-        MagnificationGesture()
-            .onChanged { gestureScale = $0 }
-            .onEnded { v in
-                let target = min(max(scale * v, LightboxMetrics.minZoom), LightboxMetrics.maxZoom)
-                withAnimation {
-                    scale = target
-                    if target <= LightboxMetrics.minZoom { offset = .zero }
-                }
-                gestureScale = 1
-            }
-    }
-
-    /// 放大态单指拖动平移（未放大交给 Pager 翻页）
-    private var drag: some Gesture {
-        DragGesture()
-            .updating($pan) { v, state, _ in
-                guard isZoomed else { return }
-                state = v.translation
-            }
-            .onEnded { v in
-                guard isZoomed else { return }
-                offset = CGSize(width: offset.width + v.translation.width,
-                                height: offset.height + v.translation.height)
-            }
-    }
 }

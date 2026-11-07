@@ -182,7 +182,7 @@ public enum SqlPolicy {
             reg("jdb.actor.count.tagged", #"select count\(\*\) from movie_actors ma join movies m on m\.id = ma\.movie_id where ma\.actor_id = \? and m\.id in \(select movie_id from movie_tags where tag_id = \?\)"#, "idx", "女优影片计数 (含标签子查询)"),
             reg("jdb.actor.movies", #"select .* from movies m join movie_actors ma on ma\.movie_id = m\.id where ma\.actor_id = \? order by m\.release_date desc limit \? offset \?"#, "idx", "idx_actor + PK 回表"),
             // sht 分类聚合
-            reg("sht.cat.subs", #"select board main, board_name name, count\(\*\) c from \(select board, board_name from (sht_)?threads order by tid desc limit \d+\) k where .* group by board, board_name"#, "derived", "最近 2 万帖聚合 (~200ms)"),
+            reg("sht.cat.subs", #"select coalesce\(nullif\(trim\(board\), ''\), cat_name\) main, board_name name, count\(\*\) c from \(select board, board_name, cat_name from (sht_)?threads order by tid desc limit \d+\) k where .* group by main, board_name"#, "derived", "最近 2 万帖聚合 (~200ms; main=COALESCE(board,cat_name))"),
             reg("sht.cat.cats", #"select cat_name name, count\(\*\) c from \(select cat_name from (sht_)?threads order by tid desc limit \d+\) k where .* group by cat_name( order by c desc)?"#, "derived", "派生表聚合"),
             reg("sht.cat.types", #"select board_name sub, `type` name, count\(\*\) c from \(select board_name, `type` from (sht_)?threads order by tid desc limit \d+\) k where .* group by board_name, `type`"#, "derived", "派生表聚合"),
             // sht 列表/搜索

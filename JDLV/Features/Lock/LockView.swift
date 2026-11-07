@@ -317,7 +317,7 @@ struct LockView: View {
         }
         if throttle.checkLocked() { return }   // 锁定期间验证直接 return
         if secret.isEmpty {
-            msg = "锁凭据丢失, 请在设置中重新设置 (可先用系统指纹解锁)"
+            msg = "锁凭据丢失, 请在设置中重新设置 (可先用\(BiometryLabel.current)解锁)"
             failTick &+= 1   // 清空输入便于重试（不计失败）
             return
         }
@@ -636,7 +636,7 @@ private struct BiometricGateView: View {
         } else if ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) {
             evaluate(ctx, policy: .deviceOwnerAuthentication)
         } else {
-            msg = "设备无可用指纹/系统凭据, 请在设置中改用 PIN 或图案"
+            msg = "设备无可用\(BiometryLabel.current)/系统凭据, 请在设置中改用 PIN 或图案"
         }
     }
 

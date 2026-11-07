@@ -132,8 +132,9 @@ public enum ShtSearch {
         var params: [SQLValue?] = []
         if hasMagnet { whereClause.append("t.magnet_count > 0") }
         if !main.isEmpty {
-            whereClause.append("(t.board = ? OR (t.board IS NULL AND t.cat_name = ?))")
-            params.append(.string(main))
+            // R3 问题 9：主版 = COALESCE(board 非空串, cat_name)。真实库 board 全部
+            // 非空且与 cat_name 恒等（R0 探测 648624/648632），空串/NULL 由 cat_name 兜底。
+            whereClause.append("COALESCE(NULLIF(TRIM(t.board), ''), t.cat_name) = ?")
             params.append(.string(main))
         }
         if !cat.isEmpty {
@@ -291,8 +292,8 @@ public enum ShtSearch {
             var params: [SQLValue?] = []
             if hasMagnet { whereClause.append("magnet_count > 0") }
             if !main.isEmpty {
-                whereClause.append("(board = ? OR (board IS NULL AND cat_name = ?))")
-                params.append(.string(main))
+                // R3 问题 9：与 list() 同口径（COALESCE 主版归一化）。
+                whereClause.append("COALESCE(NULLIF(TRIM(board), ''), cat_name) = ?")
                 params.append(.string(main))
             }
             if !cat.isEmpty {

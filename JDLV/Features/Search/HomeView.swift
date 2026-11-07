@@ -2,21 +2,16 @@ import SwiftUI
 import JDLVCore
 
 //
-//  HomeView.swift —— 搜索 Tab = 首页三段态 + 搜索态（07 C 节 SearchScreen 对位）。
+//  HomeView.swift —— 搜索 Tab = 首页三段态 + 搜索态（07 C 节 SearchScreen 对位
+//  + 13 §4.1 设计系统 v2 重写）。
 //
-//  骨架：ListScaffold 包单个滚动容器（LazyVStack）；搜索条/范围 chips/匹配+视图/
-//  引导卡/资讯热评入口/搜索历史全部随列表滚出屏幕（勿固定 header，07 C0/C8 注 1）。
+//  v2 结构（问题 5/7 修复）：PageScaffold（单 ScrollView + 单 LazyVStack + 原生
+//  .refreshable + overlay 页码）；三段 SectionHeader + 横滑 LazyHStack(.top, spacing 12)
+//  卡片 160×289（CardLayout.homeCardW/H）+ ViewAllCard 同高；结果态 CardGrid
+//  （等宽等高 + 最后一行占位）。搜索条/范围 chips/匹配+视图/引导卡/资讯热评入口/
+//  搜索历史全部随列表滚出屏幕（勿固定 header，07 C0/C8 注 1）。
 //
-//  三态：
-//  - setup（C1）：全屏首启引导（不查询）。
-//  - 首页态（items==nil && home!=nil）：三段竖排区块（🆕 最近更新 / 🔥 最多想看 /
-//    🏆 TOP250），段头「查看全部 ›」三分支：recent/hot → lookup 压栈（label 逐字、
-//    sort release_date / want_watch_count），top → push .top250；每段一行横滑
-//    MovieCard(宽 180) + ViewAllCard；大图模式（viewMode==1）每段直接平铺 grid。
-//  - 结果态（items!=nil && query 非空）：网格 MovieCard（viewMode 1/2 → 1 列；
-//    小图 2 列 / 屏宽 regular 3 列）+ 精确范围标注 + 本地索引来源标注（点击改远程）+
-//    LoadMoreFooter + ListNavTools 跳页。
-//
+//  三态：setup（C1）；首页态（items==nil && home!=nil）；结果态（items!=nil && query 非空）。
 //  交互：输入 300ms 防抖可取消；范围/模式切换立即重搜；历史 chips（UserDefaults
 //  jdlv_search_history 上限 10）；下拉刷新/重试按 query 空否分流（C0）。
 //
@@ -27,6 +22,10 @@ struct HomeView: View {
     @EnvironmentObject private var services: AppServices
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.containerWidth) private var envWidth
+
+    /// 容器宽（PageScaffold 注入；首帧回退 size class 估算）
+    private var pageWidth: CGFloat { resolvedContainerWidth(envWidth, hSize: hSize) }
 
     @StateObject private var vm: SearchVM
     @State private var history: [String] = SearchHistory.load()
@@ -75,6 +74,8 @@ struct HomeView: View {
             }
         }
         .background(theme.bg0.ignoresSafeArea())
+        .navigationTitle("搜索")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear { vm.bind(to: store, persistMode: persistMode) }
         .onChange(of: vm.query) { _ in
             if skipNextDebounce {
@@ -89,11 +90,10 @@ struct HomeView: View {
         .onReceive(store.$dataEpoch) { vm.onDataEpoch($0) }
     }
 
-    // MARK: 列表壳（四态 + 下拉刷新 + footer + 右下角工具）
+    // MARK: 列表壳（PageScaffold：单 ScrollView + 单 LazyVStack + .refreshable + overlay 工具）
 
     private var list: some View {
-        ListScaffold(
-            refreshing: vm.refreshing,
+        PageScaffold(
             onRefresh: { vm.refreshFromPull() },
             firstLoading: vm.loading,
             empty: vm.home == nil && vm.items == nil,
@@ -109,21 +109,20 @@ struct HomeView: View {
             pagePer: vm.per,
             goPage: { p in Task { await vm.goPage(p) } }
         ) {
-            LazyVStack(spacing: 0) {
-                topBlocks
-                if let note = vm.offlineNote {
-                    AppText(note, lvl: .meta, color: theme.accent2, textAlign: .center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                }
-                if resultVisible {
-                    resultSection
-                } else if vm.home != nil {
-                    homeSections
-                }
+            topBlocks
+            if let note = vm.offlineNote {
+                AppText(note, lvl: .meta, color: theme.accent2, textAlign: .center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+            }
+            if resultVisible {
+                resultSection
+            } else if vm.home != nil {
+                homeSections
             }
         }
+        .accessibilityIdentifier("home_page")
     }
 
     // MARK: 顶部块（随列表滚动，C2）
@@ -145,7 +144,7 @@ struct HomeView: View {
             .padding(.top, 6)
             if welcomeVisible {
                 welcomeCard
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, ComponentMetrics.pageMargin)
                     .padding(.top, 8)
             }
             if vm.items == nil {
@@ -169,7 +168,7 @@ struct HomeView: View {
             } label: {
                 AppText(SearchCopy.welcomeAction, lvl: .bodyS, color: .white, fontWeight: .medium)
                     .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent))
+                    .background(RoundedRectangle(cornerRadius: Radius.card).fill(theme.accent))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -177,21 +176,21 @@ struct HomeView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent.opacity(0.15)))
+        .background(RoundedRectangle(cornerRadius: Radius.card).fill(theme.accent.opacity(0.15)))
     }
 
     private var historyBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer().frame(height: 6)
             AppText(SearchCopy.historyTitle, lvl: .meta, fontWeight: .bold)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, ComponentMetrics.pageMargin)
             HistoryChipsRow(items: history) { doSearch($0) }
                 .padding(.top, 4)
             Spacer().frame(height: 16)
         }
     }
 
-    // MARK: 首页三段（C4：段头 + 横滑卡片流；大图模式平铺 grid）
+    // MARK: 首页三段（C4：SectionHeader + 横滑卡片流 160×289；大图模式平铺 CardGrid）
 
     private var homeSections: some View {
         VStack(spacing: 0) {
@@ -215,25 +214,14 @@ struct HomeView: View {
     private func homeSection(key: String, title: String, rows: [Row],
                              onViewAll: @escaping () -> Void) -> some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                AppText(title, lvl: .titleM)
-                Spacer(minLength: 8)
-                Button(action: onViewAll) {
-                    AppText(SearchCopy.viewAll, lvl: .meta, color: theme.accent)
-                        .padding(.horizontal, 8)
-                        .frame(minHeight: 36)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("viewall_\(key)")
-            }
+            SectionHeader(title: title, actionTitle: SearchCopy.viewAll,
+                          onAction: onViewAll, actionId: "viewall_\(key)")
             .padding(.top, 6)
             .padding(.bottom, 2)
-            .padding(.horizontal, 12)
 
             if rows.isEmpty {
                 AppText(SearchCopy.emptyHomeSection, lvl: .meta)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, ComponentMetrics.pageMargin)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if vm.viewMode == 1 {
@@ -244,47 +232,47 @@ struct HomeView: View {
         }
     }
 
-    /// 小图/列表模式：一行横滑，卡片固定宽 180 + 行尾 ViewAllCard（C4）
+    /// 小图/列表模式：一行横滑，卡片 160×289 + 行尾 ViewAllCard 同高（C4 + 13 §4.1）
     private func sectionHScroll(rows: [Row], keyPrefix: String,
                                 onViewAll: @escaping () -> Void) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 10) {
+            LazyHStack(alignment: .top, spacing: 12) {
                 ForEach(rows.indices, id: \.self) { i in
                     let m = rows[i]
                     MovieCard(m: m, viewMode: 0,
                               read: vm.readIds.contains(m.s("id")),
                               fav: vm.favIds.contains(m.s("id")),
                               onClick: { router.push(.movie(m.s("id"))) })
-                        .frame(width: 180)
+                        .frame(width: CardLayout.homeCardW, height: CardLayout.homeCardH)
                         .id("r_\(keyPrefix)_\(m.s("id"))")
                         .accessibilityIdentifier(cardIdentifier(key: keyPrefix, index: i))
                 }
                 ViewAllCard(onClick: onViewAll)
+                    .frame(width: CardLayout.homeCardW, height: CardLayout.homeCardH)
                     .accessibilityIdentifier("viewall_card_\(keyPrefix)")
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, ComponentMetrics.pageMargin)
             .padding(.vertical, 4)
         }
     }
 
-    /// 大图模式（viewMode==1）：每段影片直接平铺进 grid（C4）
+    /// 大图模式（viewMode==1）：每段影片 CardGrid 平铺（C4；1 列大图 16:9+86）
     private func sectionGrid(rows: [Row], keyPrefix: String,
                              onViewAll: @escaping () -> Void) -> some View {
-        VStack(spacing: 0) {
-            LazyVGrid(columns: gridColumns, spacing: 10) {
-                ForEach(rows.indices, id: \.self) { i in
-                    let m = rows[i]
-                    MovieCard(m: m, viewMode: 1,
-                              read: vm.readIds.contains(m.s("id")),
-                              fav: vm.favIds.contains(m.s("id")),
-                              onClick: { router.push(.movie(m.s("id"))) })
-                        .id("r_\(keyPrefix)_\(m.s("id"))")
-                        .accessibilityIdentifier(cardIdentifier(key: keyPrefix, index: i))
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+        let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: 1)
+        return CardGrid(items: rows.indices.map { ($0, rows[$0]) },
+                        columns: 1, cellWidth: cellW,
+                        cellHeight: CardLayout.movieLargeH(cellW: cellW)) { pair in
+            let (i, m) = pair
+            return MovieCard(m: m, viewMode: 1,
+                             read: vm.readIds.contains(m.s("id")),
+                             fav: vm.favIds.contains(m.s("id")),
+                             onClick: { router.push(.movie(m.s("id"))) })
+                .id("r_\(keyPrefix)_\(m.s("id"))")
+                .accessibilityIdentifier(cardIdentifier(key: keyPrefix, index: i))
         }
+        .padding(.horizontal, ComponentMetrics.pageMargin)
+        .padding(.vertical, 4)
     }
 
     /// Lazy item key 带段前缀（C4：三段间影片可能重复，裸 id 撞 key）——
@@ -293,7 +281,11 @@ struct HomeView: View {
         index == 0 && key == "recent" ? "home_push_movie" : "home_\(key)_\(index)"
     }
 
-    // MARK: 结果态（C5/C6）
+    // MARK: 结果态（C5/C6：CardGrid 等宽等高）
+
+    private var resultColumns: Int {
+        (vm.viewMode == 1 || vm.viewMode == 2) ? 1 : (hSize == .regular ? 3 : 2)
+    }
 
     @ViewBuilder
     private var resultSection: some View {
@@ -304,17 +296,22 @@ struct HomeView: View {
                 .frame(height: 360)
                 .frame(maxWidth: .infinity)
         } else {
-            LazyVGrid(columns: gridColumns, spacing: 10) {
-                ForEach(items.indices, id: \.self) { i in
-                    let m = items[i]
-                    MovieCard(m: m, viewMode: vm.viewMode,
-                              read: vm.readIds.contains(m.s("id")),
-                              fav: vm.favIds.contains(m.s("id")),
-                              onClick: { router.push(.movie(m.s("id"))) })
-                        .id("s_\(m.s("id"))_\(i)")
-                }
+            let cols = resultColumns
+            let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: cols)
+            let cardH = vm.viewMode == 1
+                ? CardLayout.movieLargeH(cellW: cellW)
+                : CardLayout.movieSmallH(cellW: cellW)
+            CardGrid(items: items.indices.map { ($0, items[$0]) },
+                     columns: cols, cellWidth: cellW, cellHeight: cardH) { pair in
+                let (i, m) = pair
+                return MovieCard(m: m, viewMode: vm.viewMode,
+                                 read: vm.readIds.contains(m.s("id")),
+                                 fav: vm.favIds.contains(m.s("id")),
+                                 onClick: { router.push(.movie(m.s("id"))) })
+                    .id("s_\(m.s("id"))_\(i)")
+                    .accessibilityIdentifier("card_search_\(i)")
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, ComponentMetrics.pageMargin)
             .padding(.vertical, 6)
             exactScopeNote
             localSourceNote
@@ -347,18 +344,6 @@ struct HomeView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("local_source_note")
         }
-    }
-
-    // MARK: 网格列数（C5：viewMode 1/2 → 1 列；小图 2 列 / 屏宽 regular 3 列）
-
-    private var gridColumns: [GridItem] {
-        let count: Int
-        if vm.viewMode == 1 || vm.viewMode == 2 {
-            count = 1
-        } else {
-            count = hSize == .regular ? 3 : 2
-        }
-        return Array(repeating: GridItem(.flexible(), spacing: 10), count: count)
     }
 
     // MARK: LoadMoreFooter 配置（结果态且非空才挂）
@@ -395,7 +380,7 @@ struct HomeView: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent))
+                    .background(RoundedRectangle(cornerRadius: Radius.card).fill(theme.accent))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

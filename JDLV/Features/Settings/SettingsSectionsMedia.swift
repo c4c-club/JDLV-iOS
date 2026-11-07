@@ -18,7 +18,6 @@ import JDLVCore
 
 struct JdbImageCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
@@ -43,7 +42,6 @@ struct JdbImageCard: View {
             title: SettingsCopy.groupJdbImg,
             rememberKey: "jdbimg",
             summary: SettingsCopy.summaryJdbImg(s, failureRate: ImgBreaker.shared.failureRatePct()),
-            bus: bus
         ) {
             SettingsSegmented(label: SettingsCopy.jdbImgHostLabel,
                               options: [
@@ -97,12 +95,10 @@ struct JdbImageCard: View {
     }
 
     private func editDebounced(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         store.edit(t)
     }
 
     private func editNow(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         Task { await store.editNow(t) }
     }
 
@@ -120,7 +116,6 @@ struct JdbImageCard: View {
 
 struct ShtImageCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
@@ -138,7 +133,6 @@ struct ShtImageCard: View {
             title: SettingsCopy.groupShtImg,
             rememberKey: "shtimg",
             summary: SettingsCopy.summaryShtImg(live: s, draft: s),
-            bus: bus
         ) {
             MirrorField(label: SettingsCopy.shtMirrorLabel,
                         text: $shtMirror,
@@ -201,7 +195,6 @@ struct ShtImageCard: View {
     private func saveAndSniff() {
         let u = CdnRewrite.normalizeUrl(shtMirror)
         guard !u.isEmpty else { return }
-        bus.markSaving()
         Task {
             _ = await store.autoSave { $0.shtMirror = u }
             CdnSniffer.shared.request(kind: "sht", siteUrl: u)
@@ -219,7 +212,6 @@ struct ShtImageCard: View {
     }
 
     private func editDebounced(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         store.edit(t)
     }
 }
@@ -228,7 +220,6 @@ struct ShtImageCard: View {
 
 struct ThemeCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
 
@@ -238,7 +229,6 @@ struct ThemeCard: View {
             title: SettingsCopy.groupTheme,
             rememberKey: "theme",
             summary: SettingsCopy.summaryTheme(s),
-            bus: bus
         ) {
             SettingsSegmented(label: SettingsCopy.themeLabel,
                               options: [
@@ -258,7 +248,6 @@ struct ThemeCard: View {
     }
 
     private func editNow(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         Task { await store.editNow(t) }
     }
 }
@@ -267,7 +256,6 @@ struct ThemeCard: View {
 
 struct LockCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
@@ -287,11 +275,10 @@ struct LockCard: View {
             title: SettingsCopy.groupLock,
             rememberKey: "lock",
             summary: SettingsCopy.summaryLock(s),
-            bus: bus
         ) {
             SettingsSegmented(label: SettingsCopy.lockTypeLabel,
                               options: [
-                                        (SettingsCopy.lockNone, "none"), (SettingsCopy.lockPin, "pin"), (SettingsCopy.lockPattern, "pattern"), (SettingsCopy.lockBiometric, "biometric")],
+                                        (SettingsCopy.lockNone, "none"), (SettingsCopy.lockPin, "pin"), (SettingsCopy.lockPattern, "pattern"), (BiometryLabel.current, "biometric")],
                               current: currentChip) { v in
                 select(v)
             }
@@ -370,7 +357,6 @@ struct LockCard: View {
 
     /// 落盘（P6 接口 applyLockChange；凭据 hash 走 Keychain）
     private func applyLock(enabled: Bool, type: String, secret: String) {
-        bus.markSaving()
         Task {
             let hash = secret.isEmpty ? "" : await Task.detached(priority: .userInitiated) {
                 LockSecrets.hashSecret(secret)

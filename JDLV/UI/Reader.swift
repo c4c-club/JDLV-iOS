@@ -147,7 +147,9 @@ struct ReaderBody: View {
     @State private var visibleBlocks: Set<Int> = []
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        // R3 问题 10：外层已有单 ScrollView（ShtDetailView/PageScaffold），此处改普通
+        // VStack——不再多层 lazy 嵌套（LazyVStack 高度估算导致正文只渲染首屏）。
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(blocks.indices, id: \.self) { idx in
                 blockView(blocks[idx], altIndex: altIndexOf(idx), idx: idx)
             }
@@ -239,6 +241,8 @@ struct ReaderParagraph: UIViewRepresentable {
     func makeUIView(context: Context) -> UILabel {
         let l = UILabel()
         l.numberOfLines = 0
+        // R3 问题 10：SwiftUI 宽度提议不定时 UILabel 换行计算错误 → 常规宽度兜底
+        l.preferredMaxLayoutWidth = 361
         return l
     }
 
@@ -254,6 +258,8 @@ struct ReaderParagraph: UIViewRepresentable {
         default:
             font = base
         }
+        // 实际可用宽度（容器宽 − padding 12×2 − 阅读器容器 padding 12×2）随系统更新
+        label.preferredMaxLayoutWidth = UIScreen.main.bounds.width - 48
         let ps = NSMutableParagraphStyle()
         // 行高 = rdFontPt × rdLineHeight（三端口径）：lineSpacing = 目标行高 − 字体自然行高
         ps.lineSpacing = max(0, fontPt * lineHeight - font.lineHeight)

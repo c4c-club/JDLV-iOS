@@ -24,7 +24,8 @@ enum ComponentMetrics {
     // chips / 下拉 / 触控
     static let chipHeight: CGFloat = 36
     static let dropdownHeight: CGFloat = 36
-    static let touchMin: CGFloat = 36
+    /// 最小触控目标（iOS HIG 44pt；13 §3.2 —— 旧值 36 已弃用，仅存量引用待 R2–R9 迁移）
+    static let touchMin: CGFloat = 44
     static let buttonMin: CGFloat = 48
 
     // 卡片
@@ -32,6 +33,16 @@ enum ComponentMetrics {
     static let cardStroke: CGFloat = 1
     static let cardElevation: CGFloat = 2
     static let cardPadding: CGFloat = 8
+
+    // 设计系统 v2 网格/页面（13 §3.2 Tokens）
+    static let pageMargin: CGFloat = 16
+    static let gridSpacing: CGFloat = 12
+    /// 卡片文本块固定高度（小图 76 / 大图 86；标题 2 行预留）
+    static let textBlockSmall: CGFloat = 76
+    static let textBlockLarge: CGFloat = 86
+    /// 首页横滑卡宽（160×289：393pt 屏可见 2.2 张）
+    static let homeCardWidth: CGFloat = 160
+    static let homeCardHeight: CGFloat = 289
 
     // 图片 / 骨架
     static let imageCorner: CGFloat = 10

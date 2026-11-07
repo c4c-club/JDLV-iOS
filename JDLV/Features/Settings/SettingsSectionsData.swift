@@ -18,7 +18,6 @@ import JDLVCore
 struct DataSourceCard: View {
 
     var firstRun: Bool = false
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
@@ -59,7 +58,6 @@ struct DataSourceCard: View {
             rememberKey: "db",
             defaultExpanded: firstRun || s.user.isEmpty,   // 唯一自动展开例外（§0.3）
             summary: SettingsCopy.summaryDb(s),
-            bus: bus
         ) {
             SettingsSegmented(label: SettingsCopy.dsLabelSource,
                               options: [("本地库", "local"), ("远程库", "remote")],
@@ -203,12 +201,10 @@ struct DataSourceCard: View {
     }
 
     private func editDebounced(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         store.edit(t)
     }
 
     private func editNow(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         Task { await store.editNow(t) }
     }
 
@@ -251,7 +247,6 @@ struct DataSourceCard: View {
 
 struct ProxyCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
@@ -270,7 +265,6 @@ struct ProxyCard: View {
             title: SettingsCopy.groupProxy,
             rememberKey: "proxy",
             summary: SettingsCopy.summaryProxy(s),
-            bus: bus
         ) {
             SettingsLabeledRow(label: SettingsCopy.proxyHostLabel) {
                 CompactField(text: $proxyHost,
@@ -330,7 +324,6 @@ struct ProxyCard: View {
     }
 
     private func editDebounced(_ host: String, _ port: String) {
-        bus.markSaving()
         store.edit { s in
             s.proxyHost = host
             s.proxyPort = port
@@ -338,23 +331,22 @@ struct ProxyCard: View {
     }
 
     private func editNow(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         Task { await store.editNow(t) }
     }
 
     private func runTest() {
         testing = true
-        testResult = SettingsCopy.dsTestingText
+        // R3 问题 2：代理测试 = 图床探测（ProxyProbe），与数据库测试（数据源卡）分离
+        testResult = "正在经代理探测图床…"
         Task {
-            // A4/R4：与 ① 数据源同一口径 —— flush 防抖链 + 显式草稿测试
             await store.flushPendingEdits()
             var draft = store.settings
             draft.proxyHost = proxyHost
             draft.proxyPort = proxyPort
-            let r = await SettingsDiagnostics.testConnection(draft)
+            let r = await ProxyProbe.test(draft)
             testing = false
-            testResult = r
-            await SettingsDiagnostics.applyConnTestOutcome(r, store: store)
+            testResult = r.message
+            AppServices.shared.showToast(r.ok ? "✓ 图床可达" : "✗ 图床不可达")
         }
     }
 }

@@ -2,13 +2,13 @@ import SwiftUI
 import JDLVCore
 
 //
-//  Top250View.swift —— TOP250 完整页（10 §5 Top250Screen 移植）。
+//  Top250View.swift —— TOP250 完整页（10 §5 Top250Screen 对位 + 13 §4.11 设计系统 v2）。
 //
-//  顶栏（自绘 Row，导航栏隐藏）：返回按钮 + 「🏆 TOP250」（TitleM）+ 副标题
-//  「共 {total} 部 · 当前：全部/{year}年」（全角冒号）。年份 chips（「全部」+「{y} ({n})」
-//  横向滚动）；LazyVGrid 列数 = viewMode==1 → 1；否则 ≥600pt/regular → 3；否则 2；
-//  MovieCard 复用（0 小图 400:520 / 1 大图 800:520）；key = "t250_{id}"；点击 → movie/{id}；
-//  LoadMoreFooter（per=40）+ ListNavTools。空态「该年份 TOP250 无数据」；骨架 2 列。
+//  v2：PageScaffold（单 ScrollView + 单 LazyVStack + .refreshable + overlay 页码）；
+//  navigationTitle("TOP 250") + 副标题（共 {total} 部 · 当前：全部/{year}年，全角冒号）
+//  随列表滚动；年份 chips（「全部」+「{y} ({n})」横向滚动）；行卡 Top250Row 112pt
+//  （排名徽标 + 缩略图 72×96 + 番号/标题 + 评分）；footer = LoadMoreFooter（per=40）。
+//  空态「该年份 TOP250 无数据」；骨架 1 列。
 //
 
 struct Top250View: View {
@@ -16,7 +16,6 @@ struct Top250View: View {
     @EnvironmentObject private var services: AppServices
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
-    @Environment(\.horizontalSizeClass) private var hSize
 
     @StateObject private var vm: Top250VM
 
@@ -26,27 +25,15 @@ struct Top250View: View {
 
     private var items: [Row] { vm.items ?? [] }
 
-    /// 列数（§5.4）：viewMode==1 → 1 列；否则屏宽最短边 ≥600 或 regular → 3 列；否则 2 列
-    private var gridColumns: Int {
-        if vm.viewMode == 1 { return 1 }
-        let short = min(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
-        return (short >= 600 || hSize == .regular) ? 3 : 2
-    }
-
-    private var columns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 10), count: gridColumns)
-    }
-
     var body: some View {
-        ListScaffold(
-            refreshing: vm.refreshing,
-            onRefresh: { Task { await vm.refresh() } },
+        PageScaffold(
+            onRefresh: { await vm.refresh() },
             firstLoading: vm.loading,
             empty: items.isEmpty,
             error: vm.error,
             onRetry: { Task { await vm.reload() } },
             emptyText: Top250Copy.emptyText,
-            skeletonColumns: 2,
+            skeletonColumns: 1,
             loadMore: LoadMoreConfig(
                 loaded: items.count, total: vm.total, loadingMore: vm.loadingMore,
                 hasMore: vm.hasMore,
@@ -57,11 +44,12 @@ struct Top250View: View {
             pagePer: vm.per,
             goPage: { p in Task { await vm.goPage(p) } }
         ) {
-            topBar
+            subtitleBar
             yearChips
-            grid
+            list
         }
-        .toolbar(.hidden, for: .navigationBar)   // 自绘顶栏（对位 Android 非 TopAppBar）
+        .navigationTitle("TOP 250")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if vm.store == nil { vm.store = store }
             Task { await vm.bind() }
@@ -75,31 +63,14 @@ struct Top250View: View {
         .accessibilityIdentifier("top250_page")
     }
 
-    // MARK: 顶栏（返回 + 标题 + 副标题）
+    // MARK: 副标题（共 {total} 部 · 当前：全部/{year}年）
 
-    private var topBar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Button {
-                    router.pop()
-                } label: {
-                    Image(systemName: "arrow.left")
-                        .font(.system(size: 20))
-                        .foregroundColor(theme.text)
-                        .frame(width: 40, height: 40)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("返回")
-                AppText(Top250Copy.title, lvl: .titleM)
-                Spacer(minLength: 0)
-            }
-            AppText(Top250VM.subtitle(total: vm.total, year: vm.year), lvl: .meta,
-                    color: theme.text2)
-                .padding(.horizontal, 48)
-        }
-        .padding(.horizontal, 4)
-        .padding(.top, 4)
+    private var subtitleBar: some View {
+        AppText(Top250VM.subtitle(total: vm.total, year: vm.year), lvl: .meta,
+                color: theme.text2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, ComponentMetrics.pageMargin)
+            .padding(.top, 4)
     }
 
     // MARK: 年份 chips（首项「全部」+「{y} ({n})」；失败只剩「全部」）
@@ -119,7 +90,7 @@ struct Top250View: View {
                     .accessibilityIdentifier("top250_year_\(e.year)")
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, ComponentMetrics.pageMargin)
         }
         .padding(.vertical, 4)
     }
@@ -129,18 +100,66 @@ struct Top250View: View {
         vm.years.map { Top250VM.yearEntry($0) }.filter { !$0.year.isEmpty }
     }
 
-    // MARK: 列表（MovieCard 复用；key = t250_{id}；点击 → movie/{id}）
+    // MARK: 行卡列表（Top250Row 112pt；点击 → movie/{id}）
 
-    private var grid: some View {
-        LazyVGrid(columns: columns, spacing: 10) {
+    private var list: some View {
+        VStack(spacing: 10) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, m in
-                MovieCard(m: m, viewMode: vm.viewMode, read: false, fav: false) {
+                Top250Row(m: m) {
                     router.push(.movie(m.s("id")))
                 }
                 .accessibilityIdentifier("t250_\(m.s("id"))")
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, ComponentMetrics.pageMargin)
         .padding(.vertical, 6)
+    }
+}
+
+// MARK: - Top250Row（13 §4.11：排名 + 缩略图 72×96 + 番号/标题 + 评分；行高 112）
+
+struct Top250Row: View {
+    let m: Row
+    var onClick: () -> Void
+
+    @Environment(\.appTheme) private var theme
+
+    private var rank: String { m.s("rank").isEmpty ? m.s("ranking") : m.s("rank") }
+    private var number: String { m.s("number") }
+    private var title: String { m.s("title") }
+    /// 封面（MovieImg.movieCover；thumb 无效不回退裸 id）
+    private var coverUrl: String {
+        let t = m.s("cover_url").trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? "" : MovieImg.movieCover(t, m.s("id"))
+    }
+
+    var body: some View {
+        Button(action: onClick) {
+            HStack(alignment: .center, spacing: 10) {
+                AppText(rank.isEmpty ? " " : "#\(rank)", lvl: .bodyS, color: theme.accent,
+                        maxLines: 1, fontWeight: .bold)
+                    .frame(width: 40, alignment: .center)
+                AspectImage(url: coverUrl, ratio: 72.0 / 96.0, radius: 8)
+                    .frame(width: 72, height: 96)
+                VStack(alignment: .leading, spacing: 4) {
+                    AppText(number.isEmpty ? " " : number, lvl: .bodyS, color: theme.accent,
+                            maxLines: 1, fontWeight: .bold, tight: true)
+                    AppText(title.isEmpty ? " " : title, lvl: .meta, maxLines: 2,
+                            textAlign: .leading, tight: true, reservesSpace: true)
+                    if m.d("score") > 0 {
+                        AppText("★ \(Fmt.score(m.d("score")))", lvl: .meta,
+                                color: theme.accent2, tight: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(8)
+            .frame(height: 112, alignment: .center)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cardChrome()
+        .clipShape(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner))
+        .accessibilityIdentifier("top250_row")
     }
 }

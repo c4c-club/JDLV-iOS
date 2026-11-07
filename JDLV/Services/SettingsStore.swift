@@ -43,6 +43,34 @@ final class SettingsStore: ObservableObject {
     /// 最近一次 autoSave 结果（P12 设置页三态状态行：已保存 HH:mm:ss / 无变化 / 保存失败 (重试或检查存储)）
     @Published private(set) var lastSaveResult: SaveResult?
 
+    // MARK: - 全局保存状态（R3 问题 4：单实例 SaveState；替换每卡 SaveStateBus）
+
+    /// 所有写通道统一：入口 .saving → 出口 .saved/.noChange/.failed；5s watchdog 超时。
+    @Published private(set) var saveState: SaveState = .idle
+    private var saveWatchdog: Task<Void, Never>?
+
+    /// 写通道入口（内部通道自动调用；外部通道 applyLockChange/saveAndSniff 显式调）
+    func noteSaving() {
+        saveState = .saving(Date())
+        saveWatchdog?.cancel()
+        saveWatchdog = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard let self, !Task.isCancelled, self.saveState.isSaving else { return }
+            self.saveState = .failed("保存超时", Date())
+        }
+    }
+
+    /// 写通道出口
+    func noteFinished(_ r: SaveResult) {
+        saveWatchdog?.cancel()
+        saveWatchdog = nil
+        switch r {
+        case .saved: saveState = .saved(Date())
+        case .noChange: saveState = .noChange(Date())
+        case .failed: saveState = .failed("保存失败", Date())
+        }
+    }
+
     // MARK: A7/R7 Keychain 可观测
 
     /// 口令读取失败（未解锁/访问被拒等）—— 不得静默当空口令连库
@@ -285,21 +313,28 @@ final class SettingsStore: ObservableObject {
 
     /// 主题/视图/每页数量等纯展示设置用；落盘失败不阻断内存生效（下次保存重写）。
     /// A3/R3：副作用只在【落盘成功】后经 onPersistedEffects 单入口执行。
+    /// R3 问题 4：值未变 → .noChange；落盘异常 → .failed；成功 → .saved。
     func updateSettings(_ transform: SettingsTransform) {
         var next = settings
         transform(&next)
-        guard next != settings else { return }
+        guard next != settings else {
+            noteFinished(.noChange)
+            return
+        }
+        noteSaving()
         var saved = false
         do {
             try persist(next)
             saved = true
         } catch {
             // 落盘失败：内存生效（展示态），但不触发运行时副作用（A3：失败不触发）
+            noteFinished(.failed)
         }
         let old = settings
         settings = next
         if saved {
             onPersistedEffects?(old, next)
+            noteFinished(.saved)
         }
     }
 
@@ -307,18 +342,25 @@ final class SettingsStore: ObservableObject {
 
     /// 值未变 → NO_CHANGE（不写盘）；落盘异常 → FAILED；否则 SAVED。
     /// A3/R3：SAVED 才执行副作用（onPersistedEffects），FAILED 一律不触发。
+    /// R3 问题 4：saveState 同步出口（不再依赖每卡 bus）。
     @discardableResult
     func updateSettingsNow(_ transform: @escaping SettingsTransform) async -> SaveResult {
         var next = settings
         transform(&next)
-        guard next != settings else { return .noChange }
+        guard next != settings else {
+            noteFinished(.noChange)
+            return .noChange
+        }
+        noteSaving()
         do {
             try persist(next)
             let old = settings
             settings = next
             onPersistedEffects?(old, next)
+            noteFinished(.saved)
             return .saved
         } catch {
+            noteFinished(.failed)
             return .failed
         }
     }

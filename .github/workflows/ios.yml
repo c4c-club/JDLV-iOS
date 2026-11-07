@@ -41,6 +41,10 @@ jobs:
             git check-ignore -q docs/ || { echo 'guard FAIL: docs/ not gitignored'; exit 1; }
           fi
           grep -q 'MARKETING_VERSION: 1.6.0' project.yml || { echo 'guard FAIL: version'; exit 1; }
+          # R3 门禁：键盘 API 审计（问题 1 —— asciiCapable/inputView/UIKeyInput 禁用）
+          kb_hits=$(grep -R -E "asciiCapable|inputView|UIKeyInput" JDLV --include='*.swift' || true)
+          [ -z "$kb_hits" ] || { echo 'guard FAIL: banned keyboard API (issue 1 audit)'; echo "$kb_hits"; exit 1; }
+          echo 'keyboard audit: 0 hits'
           echo 'guard OK'
 
   core-linux:
@@ -151,6 +155,23 @@ jobs:
         run: |
           mkdir -p build/attachments
           xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/attachments || echo 'no attachments (non-blocking evidence export)'
+
+      - name: Verify screenshots (R3 gate)
+        if: always()
+        run: |
+          set -eo pipefail
+          cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
+          MANIFEST=$(ls *creenshots-manifest*.json 2>/dev/null | head -1 || true)
+          python3 -I "$GITHUB_WORKSPACE/scripts/verify_screenshots.py" ./*.png ${MANIFEST:+--manifest "$MANIFEST"}
+
+      - name: Verify layout report (R3 gate)
+        if: always()
+        run: |
+          set -eo pipefail
+          cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
+          REPORT=$(ls *ayout-report*.json 2>/dev/null | head -1 || true)
+          if [ -z "$REPORT" ]; then echo 'FAIL layout-report.json missing (LayoutAuditUITests did not run)'; exit 1; fi
+          python3 -I "$GITHUB_WORKSPACE/scripts/verify_layout.py" "$REPORT"
 
       - name: Package simulator app
         run: |

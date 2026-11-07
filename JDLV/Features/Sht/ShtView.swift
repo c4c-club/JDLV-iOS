@@ -3,21 +3,15 @@ import UIKit
 import JDLVCore
 
 //
-//  ShtView.swift —— 98t 帖子列表（09 C 节 ShtScreen 逐字移植）。
+//  ShtView.swift —— 98t 帖子列表（09 C 节 ShtScreen 对位 + 13 §4.6 设计系统 v2）。
 //
-//  结构：ListScaffold（骨架屏 2 列）内嵌 MovieGrid：viewMode 0=小图（手机 2 列 /
-//  ≥600dp 3 列）或 1=大图（1 列）；卡片 key = tid（ShtCard 复用 UI/Common/Cards.swift）。
-//  header（ShtHeader，随列表滚动）两行：搜索条独占整行 + 排序/筛选(徽标)/视图切换/导出；
-//  footer = ListScaffold 集成的 LoadMoreFooter；右下角 ListNavTools。
+//  v2（问题 7/11）：PageScaffold（单 ScrollView + 单 LazyVStack + .refreshable +
+//  overlay 页码）内嵌 CardGrid（等宽等高 + 最后一行占位）；navigationTitle("98t") +
+//  toolbar：排序 Menu、视图 Menu、筛选（badge）→ .sheet、导出 ShareLink。
+//  FilterSheet：Form + Section（版区：主版/副版/分类 Picker 级联 + 每页 Picker；
+//  开关：仅看磁力/模糊/语义 Toggle）+ 重置/完成（setMain 清 cat+type / setCat 清 type）。
 //
-//  筛选 sheet（C5 ModalBottomSheet 对位 .sheet + presentationDetents）：分类索引来源行
-//  （「分类索引：远程库 · 更新于 HH:mm」+「刷新分类」）+「版区」卡 4 下拉（主版/副版/分类/
-//  每页，级联 setMain 清 cat+type / setCat 清 type）+「开关与搜索模式」卡 3 chips
-//  （仅看有磁力/模糊/语义互斥）+ 搜索提示 + 底部「完成」。
-//
-//  导出（C4）：Toast「导出中… (当前筛选范围)」→ vm.exportLinks() → 系统分享
-//  （UIActivityViewControllerRepresentable；EXTRA_SUBJECT「98t 链接导出」/ Chooser 标题
-//  「分享导出链接」在 iOS 由分享面板统一呈现，文本「导出 ${n} 条链接」随附件传递）+
+//  导出（C4）：Toast「导出中… (当前筛选范围)」→ vm.exportLinks() → 系统分享 +
 //  Toast「✓ 已导出 ${n} 条链接」。
 //
 
@@ -50,6 +44,7 @@ private struct ShtContent: View {
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.containerWidth) private var envWidth
 
     @State private var showFilter = false
     @State private var exportShare: ShtExportResult? = nil
@@ -58,6 +53,7 @@ private struct ShtContent: View {
 
     private var items: [Row] { vm.items ?? [] }
     private var itemsEmpty: Bool { items.isEmpty }
+    private var pageWidth: CGFloat { resolvedContainerWidth(envWidth, hSize: hSize) }
 
     /// 列数：viewMode 1(大图) → 1 列；0(小图) → 手机 2 列、最短边 ≥600（或 regular）3 列
     private var gridColumns: Int {
@@ -86,9 +82,8 @@ private struct ShtContent: View {
     // MARK: body
 
     var body: some View {
-        ListScaffold(
-            refreshing: vm.refreshing,
-            onRefresh: { Task { await vm.refresh() } },
+        PageScaffold(
+            onRefresh: { await vm.refresh() },
             firstLoading: vm.loading,
             empty: itemsEmpty,
             error: vm.error,
@@ -106,19 +101,20 @@ private struct ShtContent: View {
             pagePer: vm.per,
             goPage: { p in Task { await vm.goPage(p) } }
         ) {
-            shtHeader
+            searchBar
             if !itemsEmpty {
                 grid
             }
         }
-        .toolbar(.hidden, for: .navigationBar)   // 自绘 ShtHeader（对位 Android 无 TopAppBar）
+        .navigationTitle("98t")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar { shtToolbar }
         .sheet(isPresented: $showFilter) {
             ShtFilterSheet(vm: vm)
                 .presentationDetents([.medium, .large])   // ModalBottomSheet 对位
         }
         .sheet(item: $exportShare) { r in
-            // 系统分享（Intent.ACTION_SEND text/plain 对位）：文件 + 文本「导出 n 条链接」；
-            // EXTRA_SUBJECT「98t 链接导出」/ Chooser 标题「分享导出链接」由分享面板统一承载
+            // 系统分享（Intent.ACTION_SEND text/plain 对位）：文件 + 文本「导出 n 条链接」
             ActivityShareSheet(activityItems: [r.url, "导出 \(r.count) 条链接"])
         }
         .onAppear {
@@ -133,110 +129,112 @@ private struct ShtContent: View {
             services.showToast(r.toastText)
             vm.refreshChannel.consume()
         }
+        .accessibilityIdentifier("sht_page")
     }
 
-    // MARK: ShtHeader（随列表滚动两行）
+    // MARK: toolbar（排序/视图 Menu + 筛选 badge + 导出）
 
-    private var shtHeader: some View {
-        VStack(spacing: 6) {
-            // 第 1 行：搜索条独占整行（fillMaxWidth 对位）
-            SearchBarCompact(
-                text: Binding(get: { vm.queryState }, set: { vm.setQuery($0) }),
-                placeholder: "搜索: 空格=且; 纯数字=按帖子ID",
-                onSearch: { Task { await vm.search() } })   // 不 trim，Q 层自行 trim
-                .accessibilityIdentifier("sht_searchbar")
-            // 第 2 行（固定尺寸，从左到右）
-            HStack(spacing: 8) {
-                DropdownBox(
-                    label: "排序",
-                    options: [
-                        DropdownOption(label: "发布日期", value: "date"),
-                        DropdownOption(label: "最后更新", value: "updated"),
-                    ],
-                    current: vm.sort,
-                    onSelect: { v in Task { await vm.setSort(v) } })
-                filterButton
-                ViewToggleButton(viewMode: vm.viewMode) { v in vm.setViewMode(v) }
-                Spacer(minLength: 0)
-                exportButton
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.top, 6)
-    }
-
-    /// 筛选入口：BadgedBox 徽标（filterCount>0）+ FilledTonalButton(36dp) = FilterList + 「筛选」
-    private var filterButton: some View {
-        Button {
-            showFilter = true
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "line.3.horizontal.decrease")
-                    .font(.system(size: 14))
-                AppText("筛选", lvl: .meta)
-            }
-            .padding(.horizontal, 10)
-            .frame(minHeight: ComponentMetrics.chipHeight)
-            .background(RoundedRectangle(cornerRadius: 8).fill(theme.accent.opacity(0.15)))
-            .overlay(RoundedRectangle(cornerRadius: 8)
-                .stroke(theme.accent.opacity(0.35), lineWidth: ComponentMetrics.cardStroke))
-            .contentShape(Rectangle())
-            .overlay(alignment: .topTrailing) {
-                if vm.filterCount > 0 {
-                    AppText("\(vm.filterCount)", lvl: .meta, color: .white, fontWeight: .bold)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(theme.accent))
-                        .offset(x: 10, y: -6)
+    @ToolbarContentBuilder
+    private var shtToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            Menu {
+                Button {
+                    Task { await vm.setSort("date") }
+                } label: {
+                    if vm.sort == "date" { Label("发布日期", systemImage: "checkmark") }
+                    else { Text("发布日期") }
                 }
+                Button {
+                    Task { await vm.setSort("updated") }
+                } label: {
+                    if vm.sort == "updated" { Label("最后更新", systemImage: "checkmark") }
+                    else { Text("最后更新") }
+                }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
             }
+            .accessibilityIdentifier("sht_sort_menu")
+
+            Button {
+                showFilter = true
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .overlay(alignment: .topTrailing) {
+                        if vm.filterCount > 0 {
+                            Text("\(vm.filterCount)")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(theme.accent))
+                                .offset(x: 8, y: -6)
+                        }
+                    }
+            }
+            .accessibilityIdentifier("sht_filter_button")
+
+            Menu {
+                Button { vm.setViewMode(0) } label: {
+                    if vm.viewMode == 0 { Label(AppCopy.viewSmall, systemImage: "checkmark") }
+                    else { Text(AppCopy.viewSmall) }
+                }
+                Button { vm.setViewMode(1) } label: {
+                    if vm.viewMode == 1 { Label(AppCopy.viewLarge, systemImage: "checkmark") }
+                    else { Text(AppCopy.viewLarge) }
+                }
+            } label: {
+                Image(systemName: "square.grid.2x2")
+            }
+            .accessibilityIdentifier("sht_view_menu")
+
+            Button {
+                Task { await exportLinks() }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel("导出链接")
+            .accessibilityIdentifier("sht_export_button")
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("sht_filter_button")
     }
 
-    /// 导出 IconButton（48dp）：Share 图标，contentDescription「导出链接」
-    private var exportButton: some View {
-        Button {
-            Task { await exportLinks() }
-        } label: {
-            Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 18))
-                .foregroundColor(theme.accent)
-                .frame(width: 48, height: 48)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("导出链接")
-        .accessibilityIdentifier("sht_export_button")
+    // MARK: 搜索条（随列表滚动；「不 trim，Q 层自行 trim」）
+
+    private var searchBar: some View {
+        SearchBarCompact(
+            text: Binding(get: { vm.queryState }, set: { vm.setQuery($0) }),
+            placeholder: "搜索: 空格=且; 纯数字=按帖子ID",
+            onSearch: { Task { await vm.search() } })
+            .accessibilityIdentifier("sht_searchbar")
+            .padding(.top, 6)
     }
 
-    // MARK: 网格（卡片 key = tid；触底加载：倒数 3 项）
+    // MARK: 网格（CardGrid 等宽等高；卡片 key = tid；触底加载：倒数 3 项）
 
     private var grid: some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: gridColumns),
-            alignment: .leading,
-            spacing: 10
-        ) {
-            ForEach(items.indices, id: \.self) { i in
-                let t = items[i]
-                ShtCard(
-                    t: t,
-                    coverUrl: vm.coverUrl(tid: t.s("tid"), row: t),
-                    viewMode: vm.viewMode,
-                    read: vm.readIds.contains(t.s("tid")),
-                    fav: vm.favIds.contains(t.s("tid")),
-                    onClick: { router.push(.shtThread(t.s("tid"))) }   // nav("sht/{tid}")
-                )
-                .onAppear {
-                    if i >= items.count - 3 {
-                        Task { await vm.loadNext() }
-                    }
+        let cols = gridColumns
+        let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: cols)
+        let cardH = vm.viewMode == 1
+            ? CardLayout.shtLargeH(cellW: cellW)
+            : CardLayout.shtSmallH(cellW: cellW)
+        return CardGrid(items: items.indices.map { ($0, items[$0]) },
+                        columns: cols, cellWidth: cellW, cellHeight: cardH) { pair in
+            let (i, t) = pair
+            return ShtCard(
+                t: t,
+                coverUrl: vm.coverUrl(tid: t.s("tid"), row: t),
+                viewMode: vm.viewMode,
+                read: vm.readIds.contains(t.s("tid")),
+                fav: vm.favIds.contains(t.s("tid")),
+                onClick: { router.push(.shtThread(t.s("tid"))) }   // nav("sht/{tid}")
+            )
+            .accessibilityIdentifier("card_sht_\(i)")
+            .onAppear {
+                if i >= items.count - 3 {
+                    Task { await vm.loadNext() }
                 }
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, ComponentMetrics.pageMargin)
         .padding(.vertical, 6)
         .accessibilityIdentifier("sht_grid")
     }
@@ -251,7 +249,7 @@ private struct ShtContent: View {
     }
 }
 
-// MARK: - 筛选 sheet（C5：单 LazyColumn + 分区卡）
+// MARK: - 筛选 sheet（13 §4.6：Form + Section + Picker 级联 + Toggle + 重置/完成）
 
 private struct ShtFilterSheet: View {
     @ObservedObject var vm: ShtVM
@@ -259,133 +257,109 @@ private struct ShtFilterSheet: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                sourceRow
-                sectionCard("版区") { boardsCard }
-                sectionCard("开关与搜索模式") { switchCard }
-                AppText("搜索: 空格=且; 纯数字=按帖子ID; 模糊/语义二选一", lvl: .meta)
-                doneButton
+        NavigationStack {
+            Form {
+                Section("分类索引") {
+                    HStack(spacing: 8) {
+                        Text(vm.catTs > 0
+                             ? "远程库 · 更新于 \(Fmt.fmtTime(vm.catTs))"   // 全角冒号
+                             : "远程库")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                        Spacer(minLength: 0)
+                        Button("刷新分类") {
+                            Task { await vm.loadCats(force: true) }
+                        }
+                        .font(.system(size: 13))
+                        .accessibilityIdentifier("sht_refresh_cats")
+                    }
+                }
+                Section("版区") {
+                    Picker("主版", selection: mainBinding) {
+                        Text("全部").tag("")
+                        ForEach(vm.mains.indices, id: \.self) { i in
+                            Text("\(vm.mains[i].s("name")) (\(vm.mains[i].i("c")))")
+                                .tag(vm.mains[i].s("name"))
+                        }
+                    }
+                    .accessibilityIdentifier("sht_main_picker")
+                    Picker("副版", selection: subBinding) {
+                        Text("全部").tag("")
+                        ForEach(subList.indices, id: \.self) { i in
+                            Text(subList[i].s("name")).tag(subList[i].s("name"))
+                        }
+                    }
+                    Picker("分类", selection: typeBinding) {
+                        Text("全部").tag("")
+                        ForEach(typeList.indices, id: \.self) { i in
+                            Text(typeList[i].s("name")).tag(typeList[i].s("name"))
+                        }
+                    }
+                    Picker("每页", selection: perBinding) {
+                        ForEach(["20", "40", "60", "80", "100"], id: \.self) { p in
+                            Text(p).tag(p)
+                        }
+                    }
+                }
+                Section("开关与搜索模式") {
+                    Toggle("仅看有磁力", isOn: magnetBinding)
+                    Toggle("模糊", isOn: fuzzyBinding)
+                    Toggle("语义", isOn: semanticBinding)
+                }
+                Section {
+                    Text("搜索: 空格=且; 纯数字=按帖子ID; 模糊/语义二选一")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                Section {
+                    Button("重置") {
+                        Task { await vm.clearFilters() }
+                    }
+                    .accessibilityIdentifier("sht_filter_reset")
+                }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(theme.bg0.ignoresSafeArea())
-    }
-
-    // MARK: 分类索引来源行（catTs>0 → 更新于 HH:mm；右侧「刷新分类」TextButton 36dp）
-
-    private var sourceRow: some View {
-        HStack(spacing: 8) {
-            AppText(
-                vm.catTs > 0
-                    ? "分类索引：远程库 · 更新于 \(Fmt.fmtTime(vm.catTs))"   // 全角冒号
-                    : "分类索引：远程库",
-                lvl: .meta)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button {
-                Task { await vm.loadCats(force: true) }
-            } label: {
-                AppText("刷新分类", lvl: .meta, color: theme.accent)
-                    .frame(minHeight: ComponentMetrics.chipHeight)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("sht_refresh_cats")
-        }
-    }
-
-    // MARK: 版区卡（4 下拉 FlowRow；级联：setMain 清 cat+type / setCat 清 type）
-
-    private var boardsCard: some View {
-        FlowLayout(spacing: 8) {
-            DropdownBox(
-                label: "主版", options: mainOptions, current: vm.main,
-                onSelect: { v in Task { await vm.setMain(v) } })
-            DropdownBox(
-                label: "副版", options: subOptions, current: vm.cat,
-                onSelect: { v in Task { await vm.setCat(v) } })
-            DropdownBox(
-                label: "分类", options: typeOptions, current: vm.type,
-                onSelect: { v in Task { await vm.setType(v) } })
-            DropdownBox(
-                label: "每页", options: perOptions, current: "\(vm.per)",
-                onSelect: { v in Task { await vm.setPer(Int(v) ?? 20) } })
-        }
-    }
-
-    /// 主版：首项「全部」→"" + 各主版「name (count)」→name（C5 逐字）
-    private var mainOptions: [DropdownOption] {
-        [DropdownOption(label: "全部", value: "")] + vm.mains.map {
-            DropdownOption(label: "\($0.s("name")) (\($0.i("c")))", value: $0.s("name"))
-        }
-    }
-
-    /// 副版：「全部」+ subs（主版为空显示全部副版，否则过滤 sub.main == main）
-    private var subOptions: [DropdownOption] {
-        let list = vm.main.isEmpty ? vm.subs : vm.subs.filter { $0.s("main") == vm.main }
-        return [DropdownOption(label: "全部", value: "")] + list.map {
-            DropdownOption(label: $0.s("name"), value: $0.s("name"))
-        }
-    }
-
-    /// 分类：「全部」+ types（副版为空显示全部，否则过滤 type.sub == cat）
-    private var typeOptions: [DropdownOption] {
-        let list = vm.cat.isEmpty ? vm.types : vm.types.filter { $0.s("sub") == vm.cat }
-        return [DropdownOption(label: "全部", value: "")] + list.map {
-            DropdownOption(label: $0.s("name"), value: $0.s("name"))
-        }
-    }
-
-    /// 每页：20/40/60/80/100（写设置 shtPer）
-    private var perOptions: [DropdownOption] {
-        ["20", "40", "60", "80", "100"].map { DropdownOption(label: $0, value: $0) }
-    }
-
-    // MARK: 开关与搜索模式卡（AppToggleChip 选中加「✓ 」前缀由组件处理）
-
-    private var switchCard: some View {
-        FlowLayout(spacing: 8) {
-            AppToggleChip(label: "仅看有磁力", selected: vm.hasMagnet) {
-                Task { await vm.toggleMagnet() }
-            }
-            AppToggleChip(label: "模糊", selected: vm.fuzzy) {
-                Task { await vm.toggleFuzzy() }
-            }
-            AppToggleChip(label: "语义", selected: vm.semantic) {
-                Task { await vm.toggleSemantic() }
+            .navigationTitle("筛选")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                        .accessibilityIdentifier("sht_filter_done")
+                }
             }
         }
     }
 
-    // MARK: 完成（≥48dp）
+    // MARK: 级联绑定（setMain 清 cat+type / setCat 清 type 由 VM 承担）
 
-    private var doneButton: some View {
-        Button {
-            dismiss()
-        } label: {
-            AppText("完成", lvl: .bodyS, color: theme.accent, textAlign: .center,
-                    fontWeight: .medium)
-                .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
-                .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent.opacity(0.15)))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.top, 4)
+    private var mainBinding: Binding<String> {
+        Binding(get: { vm.main }, set: { v in Task { await vm.setMain(v) } })
+    }
+    private var subBinding: Binding<String> {
+        Binding(get: { vm.cat }, set: { v in Task { await vm.setCat(v) } })
+    }
+    private var typeBinding: Binding<String> {
+        Binding(get: { vm.type }, set: { v in Task { await vm.setType(v) } })
+    }
+    private var perBinding: Binding<String> {
+        Binding(get: { "\(vm.per)" }, set: { v in Task { await vm.setPer(Int(v) ?? 20) } })
+    }
+    private var magnetBinding: Binding<Bool> {
+        Binding(get: { vm.hasMagnet }, set: { _ in Task { await vm.toggleMagnet() } })
+    }
+    private var fuzzyBinding: Binding<Bool> {
+        Binding(get: { vm.fuzzy }, set: { _ in Task { await vm.toggleFuzzy() } })
+    }
+    private var semanticBinding: Binding<Bool> {
+        Binding(get: { vm.semantic }, set: { _ in Task { await vm.toggleSemantic() } })
     }
 
-    /// 分区卡（SectionCardSht 对位：标题 13sp primary Bold + 内容卡）
-    private func sectionCard<Content: View>(_ title: String,
-                                            @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            AppText(title, lvl: .bodyS, color: theme.accent, fontWeight: .bold)
-            content()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner).fill(theme.bg1))
-        .overlay(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner)
-            .stroke(theme.line, lineWidth: ComponentMetrics.cardStroke))
+    /// 副版：主版为空显示全部副版，否则过滤 sub.main == main
+    private var subList: [Row] {
+        vm.main.isEmpty ? vm.subs : vm.subs.filter { $0.s("main") == vm.main }
+    }
+    /// 分类：副版为空显示全部，否则过滤 type.sub == cat
+    private var typeList: [Row] {
+        vm.cat.isEmpty ? vm.types : vm.types.filter { $0.s("sub") == vm.cat }
     }
 }
 
