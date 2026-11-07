@@ -66,12 +66,15 @@ struct PageScaffold<Content: View>: View {
     }
 
     private var core: some View {
-        ScrollView {
-            offsetReader
-            stateBody
+        GeometryReader { geo in
+            ScrollView {
+                offsetReader
+                stateBody
+            }
+            .coordinateSpace(name: ListScaffoldConst.space)
+            .onPreferenceChange(PageScrollOffsetKey.self) { scrollY = $0 }
+            .environment(\.containerWidth, geo.size.width)
         }
-        .coordinateSpace(name: ListScaffoldConst.space)
-        .onPreferenceChange(PageScrollOffsetKey.self) { scrollY = $0 }
     }
 
     /// 四态优先级：骨架 → 错 → 空 → 正文（正文 = content + LoadMoreFooter）

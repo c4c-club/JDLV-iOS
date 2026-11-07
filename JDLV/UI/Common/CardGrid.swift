@@ -18,6 +18,24 @@ import SwiftUI
 
 // MARK: - 纯布局数学（可单测）
 
+/// 容器宽度环境（PageScaffold 注入；页面计算 cellW 用，禁 UIScreen.main.bounds）。
+private struct ContainerWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    var containerWidth: CGFloat {
+        get { self[ContainerWidthKey.self] }
+        set { self[ContainerWidthKey.self] = newValue }
+    }
+}
+
+/// 页面侧取容器宽度：注入值 > 0 用之；否则回退水平 size class 估算（首帧）
+func resolvedContainerWidth(_ envWidth: CGFloat, hSize: HorizontalSizeClass) -> CGFloat {
+    if envWidth > 0 { return envWidth }
+    return hSize == .regular ? 768 : 393
+}
+
 enum GridMath {
     /// 列宽公式：cellW = (W - 2*margin - (N-1)*spacing) / N（13 §3.4）
     static func cellWidth(pageWidth: CGFloat, columns: Int,
