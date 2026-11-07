@@ -60,13 +60,13 @@ final class MySQLIntegrationTests: XCTestCase {
     override func setUpWithError() throws {
         OfflineGate.reset(now: 0)
         // 基建测试的任意 SQL 不在 106 生产模板内 → 关闭 enforce（Q 层测试保持 enforce=true）
-        SqlPolicy.enforce = false
+        SqlPolicy.setEnforceForTesting(false)
         pool = MySQLPool()
     }
 
     override func tearDownWithError() throws {
         OfflineGate.reset(now: 0)
-        SqlPolicy.enforce = true
+        SqlPolicy.setEnforceForTesting(true)
         pool = nil
     }
 
@@ -367,7 +367,7 @@ final class MySQLIntegrationTests: XCTestCase {
     func test_22_sqlPolicyRejectsUnregistered() async throws {
         try await bootstrapFixture()
         installPool(makePoolSettings())
-        SqlPolicy.enforce = true   // 本用例验证准入（setUp 里对基建测试关闭了 enforce）
+        SqlPolicy.setEnforceForTesting(true)   // 本用例验证准入（setUp 里对基建测试关闭了 enforce）
         do {
             _ = try await pool.query(which: "jdb", sql: "DELETE FROM movies")
             XCTFail("expected SqlPolicyViolation")

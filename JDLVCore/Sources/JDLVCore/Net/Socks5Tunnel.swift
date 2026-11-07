@@ -152,9 +152,13 @@ public final class Socks5Tunnel {
         }
     }
 
+    /// 进程级 event loop（不随实例销毁：与 MySQLPool 同口径，禁止 syncShutdownGracefully ——
+    /// 强关在途命令的 channel 会触发 MySQLNIO 断言 → SIGILL）
+    private static let sharedGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+
     public private(set) var listenPort: UInt16 = 0
     private var serverChannel: Channel?
-    let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+    var group: EventLoopGroup { Socks5Tunnel.sharedGroup }
     let proxy: ProxyConfig
     /// CONNECT 固定目标（真实 db host:port）
     public var targetHost: String
@@ -193,10 +197,10 @@ public final class Socks5Tunnel {
     }
 
     deinit {
-        if let ch = serverChannel {
-            _ = try? ch.close().wait()
-        }
-        _ = try? group.syncShutdownGracefully()
+        // 与 MySQLPool.deinit 同口径：不做 syncShutdownGracefully（R11）。
+        // group 为进程级单例不随实例销毁；serverChannel 走 fire-and-forget 关闭，
+        // 正常路径由 destroy() 完成（Manager 持有实例，deinit 仅兜底）。
+        serverChannel?.close(promise: nil)
     }
 }
 

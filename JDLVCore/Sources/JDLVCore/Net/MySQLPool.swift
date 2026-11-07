@@ -73,6 +73,12 @@ final class OneShot<T> {
 
     var futureResult: EventLoopFuture<T> { promise.futureResult }
 
+    /// R9/R3：竞态判定（迟到成功方据此关闭连接）
+    var isFired: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return fired
+    }
+
     func succeed(_ v: T) {
         lock.lock()
         if fired { lock.unlock(); return }
@@ -179,9 +185,18 @@ public final class AsyncSemaphore {
 // MARK: - 连接构建
 
 enum ConnFactory {
+    /// R9/R13：显式白名单（非 jdb/sht 一律类型化错误，不再默认映射 sht）
+    static func databaseName(_ which: String, _ s: MySQLPoolSettings) throws -> String {
+        switch which {
+        case "jdb": return s.jdbDb
+        case "sht": return s.shtDb
+        default: throw DbError(kind: .semantic, message: "未知数据源 (which=\(which))")
+        }
+    }
+
     static func connect(_ which: String, _ s: MySQLPoolSettings,
                         on group: EventLoopGroup) async throws -> MySQLConnection {
-        let db = which == "jdb" ? s.jdbDb : s.shtDb
+        let db = try databaseName(which, s)
         var tlsConfig: TLSConfiguration?
         if s.tls {
             var c = TLSConfiguration.makeClientConfiguration()
@@ -196,7 +211,7 @@ enum ConnFactory {
             throw DbError(kind: .connection, message: "地址解析失败: \(s.host):\(s.port)")
         }
         let box = OneShot<MySQLConnection>(on: el)
-        MySQLConnection.connect(
+        let fut = MySQLConnection.connect(
             to: addr,
             username: s.user,
             database: db,
@@ -204,9 +219,21 @@ enum ConnFactory {
             tlsConfiguration: tlsConfig,
             serverHostname: s.tls ? (s.serverHostname ?? s.host) : nil,
             on: el
-        ).whenComplete { r in
+        )
+        fut.whenComplete { r in
             switch r {
-            case .success(let c): box.succeed(c)
+            case .success(let c):
+                // R9/R3：连接超时已触发 → 迟到成功。OneShot 会忽略该结果，
+                // 必须关闭迟到连接（否则 MySQLConnection deinit 撞 assert(!channel.isActive)）
+                if box.isFired {
+                    MySQLPool.pinned.add(c)
+                    Task { [c] in
+                        _ = try? await awaitFuture(c.close())
+                        MySQLPool.pinned.remove(c)
+                    }
+                } else {
+                    box.succeed(c)
+                }
             case .failure(let e): box.fail(e)
             }
         }
@@ -252,10 +279,20 @@ public final class MySQLPool {
     private var idle: [String: [Slot]] = [:]
     private var created: [String: Int] = [:]
 
-    /// 设置提供器（每次取当前设置）
-    public var settingsProvider: (() -> MySQLPoolSettings?)?
-    /// 无网判定注入（App 层用 NWPathMonitor；nil = 视为有网）
-    public var hasNetwork: (() -> Bool)?
+    private let cfgLock = NSLock()
+    private var _settingsProvider: (() -> MySQLPoolSettings?)?
+    private var _hasNetwork: (() -> Bool)?
+
+    /// 设置提供器（每次取当前设置；A10/R10：锁保护 —— 任意线程读写安全）
+    public var settingsProvider: (() -> MySQLPoolSettings?)? {
+        get { cfgLock.lock(); defer { cfgLock.unlock() }; return _settingsProvider }
+        set { cfgLock.lock(); _settingsProvider = newValue; cfgLock.unlock() }
+    }
+    /// 无网判定注入（App 层用 NWPathMonitor；nil = 视为有网；锁保护）
+    public var hasNetwork: (() -> Bool)? {
+        get { cfgLock.lock(); defer { cfgLock.unlock() }; return _hasNetwork }
+        set { cfgLock.lock(); _hasNetwork = newValue; cfgLock.unlock() }
+    }
 
     init() {
         for w in MySQLPool.DBS {
@@ -325,17 +362,25 @@ public final class MySQLPool {
         created[which] = (created[which] ?? 0) + 1
         let g = gen
         lock.unlock()
-        let conn = try await ConnFactory.connect(which, s, on: group)
+        let conn: MySQLConnection
+        do {
+            conn = try await ConnFactory.connect(which, s, on: group)
+        } catch {
+            // R9/R6：建连失败必须回滚账目（否则 created 只增不减，与信号量口径漂移）
+            lock.lock()
+            created[which] = max(0, (created[which] ?? 1) - 1)
+            lock.unlock()
+            throw error
+        }
         return Slot(conn: conn, gen: g, lastUsed: nowMs())
     }
 
     /// isValid(2) 等价：SELECT 1 短校验（2s），异常视为失效
+    /// （R9/R4：pinned 竞速 —— 超时后底层查询落定再关，杜绝在途 simpleQuery 被 close）
     private func connValid(_ slot: Slot) async -> Bool {
         guard !slot.conn.isClosed else { return false }
         do {
-            _ = try await raceTimeout(2, on: slot.conn.eventLoop) {
-                slot.conn.simpleQuery("SELECT 1")
-            }
+            _ = try await MySQLPool.raceQuery(slot.conn, "SELECT 1", timeoutSec: 2)
             return true
         } catch {
             return false
@@ -369,7 +414,8 @@ public final class MySQLPool {
         which: String, sql: String, params: [SQLValue?] = [], timeoutSec: Int? = nil
     ) async throws -> [Row] {
         guard let sem = sems[which] else {
-            fatalError("MySQLPool 未初始化 (which=\(which))")
+            // R9/R13：未知 which → 类型化错误（不再 fatalError）
+            throw DbError(kind: .semantic, message: "未知数据源 (which=\(which))")
         }
         try SqlPolicy.guard_(which, sql)
         guard let s = settingsProvider?() else {
@@ -466,6 +512,40 @@ public final class MySQLPool {
 
     // MARK: ping / reset
 
+    /// R9/R4：pinned 竞速查询（connValid / ping / 显式探活共用）。
+    /// 超时/取消时连接由 pinned 在底层 future 落定后关闭 —— 与 execQuery 同口径。
+    static func raceQuery(
+        _ conn: MySQLConnection, _ sql: String, timeoutSec: Int
+    ) async throws -> [Row] {
+        let el = conn.eventLoop
+        let box = OneShot<[Row]>(on: el)
+        let fut = conn.simpleQuery(sql)
+        fut.whenComplete { r in
+            switch r {
+            case .success(let rows): box.succeed(rows.map(Self.normRow))
+            case .failure(let e): box.fail(e)
+            }
+        }
+        _ = el.scheduleTask(in: .milliseconds(Int64(timeoutSec) * 1000)) {
+            box.fail(QueryTimeoutError("timeout after \(timeoutSec)s"))
+        }
+        do {
+            return try await awaitFuture(box.futureResult)
+        } catch {
+            if error is QueryTimeoutError || error is CancellationError {
+                MySQLPool.pinned.add(conn)
+                fut.whenComplete { [conn] _ in
+                    Task {
+                        _ = try? await awaitFuture(conn.close())
+                        MySQLPool.pinned.remove(conn)
+                    }
+                }
+            }
+            if Task.isCancelled { throw CancellationError() }
+            throw error
+        }
+    }
+
     /// 探活：一次性短连接（不进池不占信号量）、SELECT 1、2s 超时；成功清该库离线标记
     public func ping(_ which: String) async -> Bool {
         guard hasNetwork?() ?? true else { return false }
@@ -476,15 +556,54 @@ public final class MySQLPool {
         } catch {
             return false
         }
-        defer { Task { _ = try? await awaitFuture(conn.close()) } }
         do {
-            _ = try await raceTimeout(2, on: conn.eventLoop) {
-                conn.simpleQuery("SELECT 1")
-            }
+            _ = try await MySQLPool.raceQuery(conn, "SELECT 1", timeoutSec: 2)
             OfflineGate.clear(which)
+            _ = try? await awaitFuture(conn.close())   // 正常路径立即关
             return true
         } catch {
+            // 超时/取消：raceQuery 已 pin 并在落定后关；其它错误：立即关
+            if !(error is QueryTimeoutError) && !(error is CancellationError) {
+                _ = try? await awaitFuture(conn.close())
+            }
             return false
+        }
+    }
+
+    // MARK: 显式设置探活（A4/R4：测试连接用草稿直连，不改全局 provider / 不进池）
+
+    /// 显式设置探活结果：真实版本号（SELECT VERSION()）
+    public struct PingInfo {
+        public var version: String?
+        public init(version: String?) { self.version = version }
+    }
+
+    /// 按【显式 settings】探活指定库：一次性短连接（不进池不占信号量）、
+    /// SELECT VERSION() 取真实版本、2s 超时；成功时清该库离线标记。
+    /// 与 ping(which:)（全局 provider）并存：设置页「测试连接」传草稿，运行链路不受影响。
+    public func ping(
+        which: String, settings: MySQLPoolSettings
+    ) async -> Result<PingInfo, Error> {
+        guard hasNetwork?() ?? true else {
+            return .failure(NoNetworkError("无网络连接 — 显示已缓存的本地数据"))
+        }
+        let conn: MySQLConnection
+        do {
+            conn = try await ConnFactory.connect(which, settings, on: group)
+        } catch {
+            return .failure(error)
+        }
+        do {
+            let rows = try await MySQLPool.raceQuery(conn, "SELECT VERSION()", timeoutSec: 2)
+            OfflineGate.clear(which)
+            let version = rows.first?.s("VERSION()") ?? ""
+            _ = try? await awaitFuture(conn.close())   // 正常路径立即关
+            return .success(PingInfo(version: version.isEmpty ? nil : version))
+        } catch {
+            if !(error is QueryTimeoutError) && !(error is CancellationError) {
+                _ = try? await awaitFuture(conn.close())
+            }
+            return .failure(error)
         }
     }
 
@@ -526,9 +645,10 @@ public final class MySQLPool {
     }
 
     /// 行规范化（列名用 label；同名列后写覆盖 —— Android LinkedHashMap 语义，
-    /// row.column() 只返回首个匹配，必须按位置取值）
+    /// row.column() 只返回首个匹配，必须按位置取值；A10/R10：列序写入 orderedKeys）
     static func normRow(_ row: MySQLRow) -> Row {
         var map: [String: SQLValue] = [:]
+        var ordered: [String] = []
         for (i, col) in row.columnDefinitions.enumerated() {
             let data = row.values[i].map {
                 MySQLData(
@@ -536,8 +656,9 @@ public final class MySQLPool {
                     isUnsigned: col.flags.contains(.COLUMN_UNSIGNED))
             }
             map[col.name] = normValue(data)
+            ordered.append(col.name)
         }
-        return Row(map)
+        return Row(map: map, orderedKeys: ordered)
     }
 
     static func normValue(_ d: MySQLData?) -> SQLValue {

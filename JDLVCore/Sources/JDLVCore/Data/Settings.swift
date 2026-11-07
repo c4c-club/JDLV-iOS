@@ -75,7 +75,7 @@ public struct AppSettings: Equatable {
     public var imageCacheMb: Int = 128           // S6：旧 256 → 128MB
     public var imageCacheDays: Int = 30          // 0 = 不过期
     public var semCand: Int = 3000               // A-21：旧硬编码 10000
-    public var connectTimeout: Int = 5           // A-23：旧死字段，已接进持久化
+    public var connectTimeout: Int = 8           // A-23：旧死字段已接进持久化；A10/R9：默认对齐 UI 档位 {4,8,15,30}
     public var queryTimeout: Int = 8             // S1：档位 {4,8,15,30}，档位外归一 8
     public var shadowLimitJdb: Int = 80000       // 0 = 不限；旧哨兵归一 0
     public var shadowLimitSht: Int = 150000      // 同上
@@ -147,8 +147,9 @@ public extension AppSettings {
     /// lock_secret 存 Keychain 的是 PBKDF2 哈希）
     static let secretStorageKeys: Set<String> = ["remote_pass", "local_pass", "lock_secret"]
 
-    /// 档位表（B.5 规则 1/2）
+    /// 档位表（B.5 规则 1/2 + A10/R9 connect_timeout 对齐 UI chips [4,8,15,30]）
     static let QUERY_TIMEOUT_OPTS: Set<Int> = [4, 8, 15, 30]
+    static let CONNECT_TIMEOUT_OPTS: Set<Int> = [4, 8, 15, 30]
     static let HOME_PER_OPTS: Set<Int> = [12, 18, 24, 36]
 }
 
@@ -164,19 +165,36 @@ public extension AppSettings {
     var jdbDb: String { dbSrc == "local" ? localJdb : remoteJdb }
     var shtDb: String { dbSrc == "local" ? localSht : remoteSht }
 
-    /// 首启引导判定（07 §A2）：remote → user 或 pass 空；local → localUser 空。
+    /// 首启引导判定（07 §A2 + A8/R8 加固）：
+    /// remote → host/port/jdb/sht/user/pass 合法（端口可解析且在 1..65535，字段非空）；
+    /// local  → localHost/localPort/jdb/sht/localUser 合法。
+    /// 不再「只看 user/pass 非空」—— 错误默认端口/空库名不放行进生产首页。
     var setupRequired: Bool {
-        dbSrc == "remote" ? (remoteUser.isEmpty || remotePass.isEmpty) : localUser.isEmpty
+        if dbSrc == "remote" {
+            return remoteUser.isEmpty || remotePass.isEmpty
+                || remoteHost.isEmpty || remoteJdb.isEmpty || remoteSht.isEmpty
+                || !Self.portValid(remotePort)
+        }
+        return localUser.isEmpty
+            || localHost.isEmpty || localJdb.isEmpty || localSht.isEmpty
+            || !Self.portValid(localPort)
+    }
+
+    private static func portValid(_ p: String) -> Bool {
+        guard let n = Int(p), n > 0, n <= 65535 else { return false }
+        return true
     }
 }
 
 // MARK: - 归一化（B.5 规则 1/2/3，flow 读取处）
 
 public extension AppSettings {
-    /// 读取归一：query_timeout/home_per 档位外回默认；上限旧哨兵 ≥ Int32.max/2 → 0（=不限）
+    /// 读取归一：query_timeout/connect_timeout 档位外回默认 8；home_per 档位外回默认；
+    /// 上限旧哨兵 ≥ Int32.max/2 → 0（=不限）
     func normalized() -> AppSettings {
         var s = self
         if !Self.QUERY_TIMEOUT_OPTS.contains(s.queryTimeout) { s.queryTimeout = 8 }
+        if !Self.CONNECT_TIMEOUT_OPTS.contains(s.connectTimeout) { s.connectTimeout = 8 }
         if !Self.HOME_PER_OPTS.contains(s.homePer) { s.homePer = 24 }
         s.shadowLimitJdb = LimitMath.normalizeStored(s.shadowLimitJdb)
         s.shadowLimitSht = LimitMath.normalizeStored(s.shadowLimitSht)

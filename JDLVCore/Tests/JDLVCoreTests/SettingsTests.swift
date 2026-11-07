@@ -82,7 +82,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(s.imageCacheMb, 128)
         XCTAssertEqual(s.imageCacheDays, 30)
         XCTAssertEqual(s.semCand, 3000)
-        XCTAssertEqual(s.connectTimeout, 5)
+        XCTAssertEqual(s.connectTimeout, 8)   // A10/R9：默认对齐 UI 档位 {4,8,15,30}（旧 5 档位外归一 8）
         XCTAssertEqual(s.queryTimeout, 8)
         XCTAssertEqual(s.shadowLimitJdb, 80000)
         XCTAssertEqual(s.shadowLimitSht, 150000)

@@ -47,12 +47,14 @@ public enum Db {
     }
 
     /// 标量：第一行第一列；Number→Long，否则字符串解析，兜底 0L；空结果 → 0L
+    /// （A10/R10：按结果集列定义首位取值，不再依赖无序字典 keys.first）
     public static func scalar(
         _ which: String, _ sql: String, _ params: [SQLValue?] = []
     ) async throws -> Int64 {
         let rows = try await query(which, sql, params)
         guard let first = rows.first else { return 0 }
-        guard let key = first.keys.first else { return 0 }
+        let key = first.orderedKeys.first ?? first.keys.first
+        guard let key else { return 0 }
         return first.i(key)
     }
 
@@ -76,27 +78,29 @@ public enum Db {
 
     /// 表名集合（SELECT TABLE_NAME t FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE()）
     public static func tables(_ which: String) async -> Set<String> {
+        try? await tablesStrict(which) ?? []
+    }
+
+    /// A10/R10：类型化 schema 探测 —— 「数据源未配置」等错误显式上抛，
+    /// 不再吞成空集（诊断路径用；Q 层继续用宽容版 tables/cols 兜底裸表名）。
+    public static func tablesStrict(_ which: String) async throws -> Set<String>? {
         schemaLock.lock()
         if let hit = tablesCache[which] {
             schemaLock.unlock()
             return hit
         }
         schemaLock.unlock()
-        do {
-            let rows = try await query(
-                which,
-                "SELECT TABLE_NAME t FROM information_schema.tables " +
-                    "WHERE TABLE_SCHEMA = DATABASE()")
-            let set = Set(rows.map { $0.s("t") })
-            if !set.isEmpty {
-                schemaLock.lock()
-                tablesCache[which] = set
-                schemaLock.unlock()
-            }
-            return set
-        } catch {
-            return []   // 失败不写缓存
+        let rows = try await query(
+            which,
+            "SELECT TABLE_NAME t FROM information_schema.tables " +
+                "WHERE TABLE_SCHEMA = DATABASE()")
+        let set = Set(rows.map { $0.s("t") })
+        if !set.isEmpty {
+            schemaLock.lock()
+            tablesCache[which] = set
+            schemaLock.unlock()
         }
+        return set
     }
 
     /// sht 库 threads → sht_threads（若存在）；jdb 库 movies 保持 movies

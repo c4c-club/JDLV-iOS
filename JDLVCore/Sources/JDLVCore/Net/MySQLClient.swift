@@ -24,7 +24,8 @@ public final class MySQLClient {
         let binds: [MySQLData] = params.map { MySQLPool.toMySQLData($0) }
         let ts = timeoutSec ?? settings.queryTimeout
         let box = OneShot<[Row]>(on: conn.eventLoop)
-        conn.query(sql, binds).whenComplete { r in
+        let fut = conn.query(sql, binds)
+        fut.whenComplete { r in
             switch r {
             case .success(let rows): box.succeed(rows.map(MySQLPool.normRow))
             case .failure(let e): box.fail(e)
@@ -34,7 +35,22 @@ public final class MySQLClient {
             in: .milliseconds(Int64(ts) * 1000)) {
             box.fail(QueryTimeoutError("statement timeout \(ts)s"))
         }
-        return try await awaitFuture(box.futureResult)
+        do {
+            return try await awaitFuture(box.futureResult)
+        } catch {
+            // R9/R5：与池同口径 —— 超时/取消时连接由 pinned 在底层 future 落定后关闭
+            if error is QueryTimeoutError || error is CancellationError {
+                MySQLPool.pinned.add(conn)
+                fut.whenComplete { [conn] _ in
+                    Task {
+                        _ = try? await awaitFuture(conn.close())
+                        MySQLPool.pinned.remove(conn)
+                    }
+                }
+            }
+            if Task.isCancelled { throw CancellationError() }
+            throw error
+        }
     }
 
     public func simpleQuery(_ sql: String) async throws -> [Row] {
@@ -55,8 +71,10 @@ public final class MySQLClient {
 
     deinit {
         if let conn, !conn.isClosed {
-            _ = try? conn.close().wait()
+            // R9/R5：deinit 不阻塞等待（close 走 fire-and-forget；正常路径由 close() 完成）
+            conn.close(promise: nil)
         }
+        conn = nil
         // 不做 group.syncShutdownGracefully（可能强关在途命令 channel → MySQLNIO 断言）
     }
 }

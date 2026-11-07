@@ -13,10 +13,23 @@ public enum SQLValue: Equatable {
 }
 
 /// 行 = 列名 → SQLValue（对齐 Android JRow = Map<String, Any?>）。
+/// A10/R10：额外记录列名顺序（normRow 按 columnDefinitions 首位写入）——
+/// scalar「第一行第一列」不再依赖无序字典的 keys.first。
 public struct Row: Equatable {
     public private(set) var map: [String: SQLValue]
+    /// 列名顺序（按结果集列定义；手工构造的 Row 为字典键序）
+    public private(set) var orderedKeys: [String]
 
-    public init(_ map: [String: SQLValue] = [:]) { self.map = map }
+    public init(_ map: [String: SQLValue] = [:]) {
+        self.map = map
+        self.orderedKeys = Array(map.keys)
+    }
+
+    /// normRow 专用：带列序构造
+    init(map: [String: SQLValue], orderedKeys: [String]) {
+        self.map = map
+        self.orderedKeys = orderedKeys
+    }
 
     public subscript(key: String) -> SQLValue? {
         get { map[key] }

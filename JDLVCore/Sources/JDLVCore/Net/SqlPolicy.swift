@@ -6,8 +6,22 @@ import Foundation
 public enum SqlPolicy {
     public static let TAG = "jdlv-sqlwarn"
 
-    /// 未登记 SQL 拒绝执行（与 Android 一致：enforce 恒为 true，无 debug/release 分支）
-    public static var enforce = true
+    /// 未登记 SQL 拒绝执行（与 Android 一致：enforce 恒为 true，无 debug/release 分支）。
+    /// R9/R7：收为私有常量 + 仅测试注入点 —— 运行期不可被随意改写（生产 SQL 准入不可绕过）。
+    private static var _enforce = true
+
+    /// 只读视图（guard_/check 使用）
+    public static var enforce: Bool { _enforce }
+
+    /// 仅测试可见注入点（Core 集成测试基建用例 / App 冒烟 fixture 准备）；
+    /// Release 构建为 no-op，生产 SQL 准入恒开启。
+    public static func setEnforceForTesting(_ v: Bool) {
+        #if DEBUG
+        _enforce = v
+        #else
+        _ = v
+        #endif
+    }
 
     public struct SqlPolicyViolation: Error, CustomStringConvertible {
         public let message: String

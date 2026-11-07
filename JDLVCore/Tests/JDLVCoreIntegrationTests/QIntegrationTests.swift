@@ -78,7 +78,7 @@ final class QIntegrationTests: XCTestCase {
 
     override func setUpWithError() throws {
         OfflineGate.reset(now: 0)
-        SqlPolicy.enforce = true
+        SqlPolicy.setEnforceForTesting(true)
     }
 
     override func tearDownWithError() throws {
