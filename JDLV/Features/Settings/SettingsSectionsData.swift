@@ -69,6 +69,13 @@ struct DataSourceCard: View {
 
             connFields(curSide)
 
+            // A7/R7：口令读取失败显式提示（绝不静默当空口令连库）
+            if store.secretReadFailed {
+                SettingsNote(text: "口令读取失败：\(store.secretReadMessage) — 请重新输入口令",
+                             topPad: 4, color: .red)
+                    .accessibilityIdentifier("settings_secret_read_failed")
+            }
+
             if editingOther {
                 SettingsNote(text: SettingsCopy.dsEditingOtherHint, topPad: 2)
             }
@@ -101,7 +108,8 @@ struct DataSourceCard: View {
 
             SettingsActionButton(title: SettingsCopy.dsTestButton,
                                  busyTitle: SettingsCopy.dsTestingText,
-                                 busy: testing) {
+                                 busy: testing,
+                                 id: "ds_test_button") {
                 runTest()
             }
 
@@ -215,16 +223,26 @@ struct DataSourceCard: View {
         testing = true
         testResult = SettingsCopy.dsTestingText
         Task {
-            let snapshot = store.settings
-            let r = await SettingsDiagnostics.testConnection(snapshot)
+            // A4/R4：先把 800ms 防抖链落盘，再用「卡片草稿 ∪ 落盘值」显式测试
+            await store.flushPendingEdits()
+            var draft = store.settings
+            draft.localHost = localHost
+            draft.localPort = localPort
+            draft.localUser = localUser
+            draft.localPass = localPass
+            draft.localJdb = localJdb
+            draft.localSht = localSht
+            draft.remoteHost = remoteHost
+            draft.remotePort = remotePort
+            draft.remoteUser = remoteUser
+            draft.remotePass = remotePass
+            draft.remoteJdb = remoteJdb
+            draft.remoteSht = remoteSht
+            draft.dbSrc = curSide
+            let r = await SettingsDiagnostics.testConnection(draft)
             testing = false
             testResult = r
-            if r.hasPrefix("✓") {
-                Db.clearOffline()
-                Db.reset()
-                store.bumpData()
-                AppServices.shared.showToast(SettingsCopy.dsTestSuccessToast)
-            }
+            await SettingsDiagnostics.applyConnTestOutcome(r, store: store)
         }
     }
 }
@@ -237,6 +255,8 @@ struct ProxyCard: View {
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
+    // A2/R2：数据库隧道生命周期（错误横显 + 端口可见性）
+    @ObservedObject private var tunnel = ProxyTunnelManager.shared
 
     @State private var loaded = false
     @State private var proxyHost = ""
@@ -289,11 +309,16 @@ struct ProxyCard: View {
 
             SettingsActionButton(title: SettingsCopy.proxyTestButton,
                                  busyTitle: SettingsCopy.dsTestingText,
-                                 busy: testing) {
+                                 busy: testing,
+                                 id: "proxy_test_button") {
                 runTest()
             }
             if !testResult.isEmpty {
                 SettingsNote(text: testResult, topPad: 6)
+            }
+            // A2/R2：隧道故障实时显示（保留旧配置语义由 Manager 保证）
+            if let tunnelErr = tunnel.lastError {
+                SettingsNote(text: tunnelErr, topPad: 6, color: .red)
             }
         }
         .onAppear {
@@ -321,10 +346,15 @@ struct ProxyCard: View {
         testing = true
         testResult = SettingsCopy.dsTestingText
         Task {
-            let snapshot = store.settings
-            let r = await SettingsDiagnostics.testConnection(snapshot)
+            // A4/R4：与 ① 数据源同一口径 —— flush 防抖链 + 显式草稿测试
+            await store.flushPendingEdits()
+            var draft = store.settings
+            draft.proxyHost = proxyHost
+            draft.proxyPort = proxyPort
+            let r = await SettingsDiagnostics.testConnection(draft)
             testing = false
             testResult = r
+            await SettingsDiagnostics.applyConnTestOutcome(r, store: store)
         }
     }
 }

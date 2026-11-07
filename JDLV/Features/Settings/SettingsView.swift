@@ -135,10 +135,10 @@ enum SettingsCopy {
     static let dsEditingOtherHint = "正在编辑另一数据源 (不影响当前连接)"
     static let dsEditOther = "编辑另一数据源…"
     static let dsBackCurrent = "返回当前数据源"
-    static let dsTestIsolationNote = "测试连接使用当前填写的代理，并与数据库建连串行执行（不会让并发查询串代理）；正式生效请先保存。"
+    static let dsTestIsolationNote = "测试连接直接使用上方当前填写的值（含未保存的编辑），不影响运行中的连接；正式生效仍需保存。"
     static let dsTestButton = "测试连接"
     static let dsTestingText = "测试中…"
-    static let dsTestSuccessToast = "✓ 连接成功，已生效"
+    static let dsTestSuccessToast = "✓ 连接成功（配置保存后运行链路即生效）"
     static let dsConnTimeoutLabel = "连接超时"   // connect_timeout 档位（任务补充键, 文档无此行）
 
     // MARK: ② 网络与代理（§3 逐字）
@@ -776,6 +776,7 @@ struct SettingsActionButton: View {
     var enabled: Bool = true
     var filled: Bool = false
     var minHeight: CGFloat = ComponentMetrics.buttonMin
+    var id: String? = nil
     let action: () -> Void
 
     @Environment(\.appTheme) private var theme
@@ -793,6 +794,7 @@ struct SettingsActionButton: View {
         .buttonStyle(.plain)
         .disabled(busy || !enabled)
         .opacity(busy || !enabled ? 0.55 : 1)
+        .accessibilityIdentifier(id ?? "")
     }
 
     private var fg: Color { filled ? .white : theme.accent }
@@ -839,9 +841,9 @@ struct SettingsView: View {
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
 
     @StateObject private var bus = SaveStateBus()
-    @State private var lastSeen: AppSettings?
 
     var body: some View {
         let s = store.settings
@@ -868,17 +870,18 @@ struct SettingsView: View {
         .accessibilityIdentifier("settings_page")
         .onAppear {
             SettingsIndexHub.shared.box.update(s)
-            lastSeen = s
             // A1/R1：CdnRewrite.settingsProvider 改由 AppBootstrap 启动时一次性注入，
             // 不再依赖 SettingsView.onAppear（首启门禁前 SettingsView 根本不存在）。
         }
-        // autoSave 副作用执行器（MainVm 锁外单消费者对位）
-        .onChange(of: store.settings) { nv in
-            if let old = lastSeen {
-                SettingsEffects.apply(old: old, new: nv, store: store)
+        // A3/R3：副作用全部收敛到 Store.onPersistedEffects（落盘成功才执行），
+        // 视图只负责把未落盘的防抖编辑及时 flush（切页/压后台不丢编辑）。
+        .onDisappear {
+            Task { await store.flushPendingEdits() }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .background {
+                Task { await store.flushPendingEdits() }
             }
-            SettingsIndexHub.shared.box.update(nv)
-            lastSeen = nv
         }
         // 三态结果 → 页面状态行（每卡底部 SaveStateLine 共用同一 bus）
         .onReceive(store.$lastSaveResult) { r in

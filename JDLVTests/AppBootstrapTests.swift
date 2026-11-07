@@ -12,8 +12,8 @@ import JDLVCore
 //  - injectRuntime：MySQLPool.shared.settingsProvider/hasNetwork 接的是快照盒与
 //    NetworkStateBox（网络标志随注入状态变化）；CdnRewrite 同源 + applyHostOnly；
 //  - nil provider：Db.query 抛「数据源未配置」、Db.check 返回 false；
-//  - wire(store:)：不挂载 SettingsView 时 store.$settings 变更 → provider 同步刷新 +
-//    db 侧变更触发 Db.reset（离线软标记被清）；非 db 变更不触发；
+//  - Store 级副作用单入口（A3/R3，R-V5）：不挂载 SettingsView 时 updateSettingsNow →
+//    provider 同步刷新 + Db.reset（离线标记清）+ bumpData；非 db 变更不触发 reset；
 //  - 真实 MySQL fixture（CI ios job 注入 JDLV_TEST_MYSQL_*；本地缺 env 时 XCTSkip）：
 //    Db.check 成功 + Db.query("select 1")（SqlPolicy admin.ping 模板）返回 1 行。
 //
@@ -145,6 +145,34 @@ final class AppBootstrapTests: XCTestCase {
         XCTAssertEqual(CdnRewrite.shtHost, "mirror.example")
     }
 
+    // MARK: 3b. CdnRewrite 启动注入（A6/R6：SettingsView 未出现也必须同源）
+
+    @MainActor
+    func testCdnInjectionBeforeAnySettingsView() {
+        var s = AppSettings()
+        s.jdbImgHost = "web"
+        s.shtMirror = "https://mirror.example"
+        s.shtMirrorHost = "mirror.example"
+        s.proxyCdnJdb = true
+        s.imageCacheMb = 256
+        AppBootstrap.box.update(s)
+        AppBootstrap.injectRuntime()
+
+        let cs = CdnRewrite.settings()
+        XCTAssertEqual(cs.jdbImgHost, "web")
+        XCTAssertEqual(cs.shtMirrorHost, "mirror.example")
+        XCTAssertTrue(cs.proxyCdnJdb)
+        XCTAssertEqual(cs.imageCacheMb, 256)
+        XCTAssertEqual(CdnRewrite.shtHost, "mirror.example", "applyHostOnly 必须在首帧前生效")
+
+        // 热更新（updateSettingsNow 改镜像 → effects 路径同样生效）
+        s.shtMirrorHost = "h2.example"
+        AppBootstrap.box.update(s)
+        AppBootstrap.injectRuntime()
+        XCTAssertEqual(CdnRewrite.settings().shtMirrorHost, "h2.example")
+        XCTAssertEqual(CdnRewrite.shtHost, "h2.example")
+    }
+
     // MARK: 4. nil provider：显式报「数据源未配置」+ check false
 
     @MainActor
@@ -161,43 +189,55 @@ final class AppBootstrapTests: XCTestCase {
         XCTAssertFalse(ok, "nil provider 时 ping 必须 false（且无错误对象可展示）")
     }
 
-    // MARK: 5. wire(store:)：不挂载 SettingsView 的 store 级热更新
+    // MARK: 5. Store 级副作用单入口（不挂载 SettingsView；A3/R3，R-V5）
 
     @MainActor
-    func testWireRefreshesProviderAndResetsOnDbChange() async {
-        var seed = fixtureSettings()
-        seed.remotePort = "3307"
-        let store = SettingsStore(defaults: freshDefaults("wire"))
-        _ = await store.updateSettingsNow { s in
-            s.remoteHost = seed.remoteHost
-            s.remotePort = seed.remotePort
-            s.remoteUser = seed.remoteUser
-            s.remotePass = seed.remotePass
-            s.remoteJdb = seed.remoteJdb
-            s.remoteSht = seed.remoteSht
+    func testStoreLevelEffectsDriveProviderAndResetWithoutView() async {
+        let store = SettingsStore(defaults: freshDefaults("effects"))
+        // 与 AppBootstrap.start 相同的注入方式（weak store 防环）
+        store.onPersistedEffects = { [weak store] old, new in
+            guard let store else { return }
+            SettingsEffects.apply(old: old, new: new, store: store)
         }
-        AppBootstrap.box.update(store.settings)
-        AppBootstrap.injectRuntime()
-        AppBootstrap.wire(store: store)
+        _ = await store.updateSettingsNow { s in
+            s.remoteHost = "10.1.2.3"
+            s.remotePort = "3307"
+            s.remoteUser = "u_it"
+            s.remotePass = "p_it"
+            s.remoteJdb = "jdb_it"
+            s.remoteSht = "sht_it"
+        }
+        // 前置：provider 指向持久化配置
+        XCTAssertEqual(MySQLPool.shared.settingsProvider?()?.port, 3307)
 
-        // db 侧变更 → provider 刷新 + Db.reset（离线软标记被清 = reset 的可观测副作用）
+        // db 侧变更 → provider 刷新 + Db.reset（离线标记清）+ bumpData
+        let e0 = store.dataEpoch
         Db.markOffline("jdb", ms: 60_000)
         XCTAssertTrue(Db.offlineJdb, "前置：离线标记已置位")
-        _ = await store.updateSettingsNow { s in s.remotePort = "3308" }
-        let p = MySQLPool.shared.settingsProvider?()
-        XCTAssertEqual(p?.port, 3308, "provider 必须与持久化配置同源")
+        _ = await store.autoSave { s in s.remotePort = "3308" }
+        XCTAssertEqual(store.lastSaveResult, .saved)
+        XCTAssertEqual(MySQLPool.shared.settingsProvider?()?.port, 3308,
+                       "provider 必须与持久化配置同源")
         XCTAssertFalse(Db.offlineJdb, "db 侧变更必须触发 Db.reset（离线标记清除）")
+        XCTAssertEqual(store.dataEpoch, e0 + 1, "db 变更必须 bumpData")
 
         // 非 db 侧变更（主题）→ 不触发 reset
         Db.markOffline("jdb", ms: 60_000)
         _ = await store.updateSettingsNow { s in s.themeName = "sepia" }
         XCTAssertTrue(Db.offlineJdb, "非 db 变更不得触发 Db.reset")
 
-        // 快照盒同步 + CdnRewrite.applyHostOnly 随动
+        // cdn 变更 → 快照盒同步 + applyHostOnly
         _ = await store.updateSettingsNow { s in s.shtMirrorHost = "new-mirror.example" }
         XCTAssertEqual(AppBootstrap.box.settings.shtMirrorHost, "new-mirror.example")
         XCTAssertEqual(CdnRewrite.shtHost, "new-mirror.example", "cdn 变更需 applyHostOnly")
         CdnRewrite.shtHost = nil
+
+        // pending chain（800ms 防抖未到）→ flushPendingEdits 立即落盘 + 副作用
+        store.edit { $0.remoteUser = "u_flush" }
+        store.edit { $0.remotePort = "3309" }
+        await store.flushPendingEdits()
+        XCTAssertEqual(MySQLPool.shared.settingsProvider?()?.user, "u_flush")
+        XCTAssertEqual(MySQLPool.shared.settingsProvider?()?.port, 3309)
     }
 
     // MARK: 6. 真实 MySQL fixture（CI 注入 env；本地无 env → Skip）

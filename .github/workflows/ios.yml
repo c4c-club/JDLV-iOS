@@ -123,10 +123,11 @@ jobs:
 
       - name: Test
         env:
-          JDLV_TEST_MYSQL_HOST: "127.0.0.1"
-          JDLV_TEST_MYSQL_PORT: "3306"
-          JDLV_TEST_MYSQL_USER: jdlv_it
-          JDLV_TEST_MYSQL_PASS: jdlv_it
+          # TEST_RUNNER_ 前缀：xcodebuild 转发进测试进程（剥前缀）；单测与 UI 测试 runner 都可见
+          TEST_RUNNER_JDLV_TEST_MYSQL_HOST: "127.0.0.1"
+          TEST_RUNNER_JDLV_TEST_MYSQL_PORT: "3306"
+          TEST_RUNNER_JDLV_TEST_MYSQL_USER: jdlv_it
+          TEST_RUNNER_JDLV_TEST_MYSQL_PASS: jdlv_it
         run: |
           set -eo pipefail
           xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test 2>&1 | tee build/test.log

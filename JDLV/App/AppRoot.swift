@@ -11,8 +11,15 @@ import JDLVCore
 // MARK: - 门禁（lock → ready → setup → 主界面）
 
 struct AppGate: View {
-    // DEBUG 演示模式：自带合成数据源，首启门禁无意义 → 直接进主页（UI 测试/截图依赖）
-    static let isDemoMode = ProcessInfo.processInfo.arguments.contains("-JDLV_DEMO")
+    // DEBUG 演示模式：自带合成数据源，首启门禁无意义 → 直接进主页（UI 测试/截图依赖）。
+    // A8/R8：唯一判定 LaunchMode（严格 -JDLV_DEMO 1）；Release 恒生产。
+    static var isDemoMode: Bool {
+        #if DEBUG
+        LaunchMode.current == .demo
+        #else
+        false
+        #endif
+    }
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.colorScheme) private var colorScheme
@@ -172,6 +179,10 @@ struct AppRoot: View {
         }
         .environmentObject(router)
         .environmentObject(services)
+        // A5/R5：进入主界面时把 Core 分库离线标记并入横幅（网络迁移路径之外的增量同步）
+        .onAppear {
+            services.syncOfflineFlags(networkOnline: NetworkMonitor.shared.online)
+        }
         // 全局 Toast（SnackbarHost 对位）
         .overlay { ToastHost(services: services) }
         .tint(theme.accent)

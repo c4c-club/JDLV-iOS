@@ -47,12 +47,25 @@ enum SettingsDiagnostics {
     private static let connGate = ConnTestGate()
 
     /// 测试连接入口。生产环境 Db 未配置时 ping 失败 → "远程库不可达：…" 原样展示。
+    /// A4/R4：`s` 是【显式草稿】（卡片 @State + 未落盘 chain 合并后的 AppSettings 快照），
+    /// 直接按它建连 —— 不读全局 provider（测试 B 不受全局 A 影响）。
     static func testConnection(_ s: AppSettings) async -> String {
         if isDemo {
-            // demo：假结果 + 演示模式标注
-            return "✓ 两库均连接成功 · 12 ms · 8.0.36（演示模式）"
+            // demo：不触碰 Db（不发任何网络/数据库调用），明示未发起连接
+            return "演示模式：未发起数据库连接"
         }
         return await connGate.run(s)
+    }
+
+    /// 两卡（① 数据源 / ② 代理）共用的成功/失败后续（A4：处理口径一致）：
+    /// ✓ → 清离线标记 + Db.reset + bumpData + Toast；✗ → 仅展示（文案由卡自持）。
+    @MainActor
+    static func applyConnTestOutcome(_ result: String, store: SettingsStore) {
+        guard result.hasPrefix("✓") else { return }
+        Db.clearOffline()
+        Db.reset()
+        store.bumpData()
+        AppServices.shared.showToast(SettingsCopy.dsTestSuccessToast)
     }
 
     /// 成功文案（逐字模板）：`✓ 两库均连接成功 · ${耗时 ms} ms · ${versions.firstOrNull() ?: "?"}`
@@ -209,30 +222,38 @@ enum SettingsDiagnostics {
     }
 }
 
-// MARK: - 测试连接串行门（actor）
+// MARK: - 测试连接串行门（actor；A4/R4 显式草稿直连）
 
 private actor ConnTestGate {
 
     func run(_ s: AppSettings) async -> String {
-        let t0 = Perf.nowMs()
-        var failed: String? = nil
-        // 两库各建连一次（SELECT VERSION() 的 Db.check 语义 —— 生产走 MySQLPool.ping）。
-        // 注：proxyDb 时 Android 包 DbPool.withSocks；iOS Socks5Tunnel 接线留 P13
-        // （本阶段测试连接直连, 不建隧道；connGate 串行保证与并发查询互不穿插）。
-        for which in ["jdb", "sht"] {
-            if await Db.check(which) == false {
-                failed = which
-                break
-            }
-        }
-        if let which = failed {
-            let host = s.host
-            let port = s.port
-            let layer = "远程库不可达：无法连接 \(host):\(port)（\(which == "jdb" ? s.jdbDb : s.shtDb)）"
+        // ① 草稿 → 连接参数（端口非法/host/user/pass 空 → 显式「数据源未配置」）
+        guard var ps = AppBootstrap.mysqlSettings(s) else {
+            let layer = "数据源未配置：主机/端口/账号/口令不完整（\(s.host):\(s.port)）"
             return SettingsDiagnostics.formatFailure(layers: [layer],
                                                      hint: SettingsDiagnostics.hintFor(layer))
         }
-        return SettingsDiagnostics.formatSuccess(elapsedMs: Perf.nowMs() - t0, versions: [])
+        // ② 代理意图随草稿：draft.proxyDb 且运行中隧道目标与草稿一致 → 走隧道（SNI 保留）；
+        //    否则直连（草稿尚未保存，隧道仍指旧目标）
+        ps = ProxyTunnelManager.effectiveSettings(ps, tunnel: s.proxyDb) ?? ps
+
+        let t0 = Perf.nowMs()
+        var versions: [String] = []
+        for which in ["jdb", "sht"] {
+            switch await MySQLPool.shared.ping(which: which, settings: ps) {
+            case .success(let info):
+                versions.append(info.version ?? "?")
+            case .failure(let e):
+                let layer = SettingsDiagnostics.layerOf(e)
+                let host = s.host
+                let port = s.port
+                let context = "无法连接 \(host):\(port)（\(which == "jdb" ? s.jdbDb : s.shtDb)）"
+                return SettingsDiagnostics.formatFailure(
+                    layers: [context, layer],
+                    hint: SettingsDiagnostics.hintFor(layer))
+            }
+        }
+        return SettingsDiagnostics.formatSuccess(elapsedMs: Perf.nowMs() - t0, versions: versions)
     }
 }
 
@@ -274,32 +295,35 @@ final class SettingsSnapshotBox: @unchecked Sendable {
     }
 }
 
-// MARK: - autoSave 副作用执行器（MainVm 锁外单消费者对位）
+// MARK: - autoSave 副作用执行器（A3/R3：Store 级单入口；MainVm 锁外单消费者对位）
 
 enum SettingsEffects {
 
-    /// 变更分类后执行副作用（db → Db.reset 内含 invalidateSchema；cdn → 图床热生效；
-    /// img → 测试图缓存清理；proxy → SocksTunnel 重建留 P13）。
+    /// 落盘成功后的副作用（由 SettingsStore.onPersistedEffects 调用；不再由
+    /// SettingsView.onChange 触发 —— 首启门禁期间 SettingsView 不存在也必须生效）：
+    /// - 快照盒同步：AppBootstrap.box（Db/CdnRewrite provider）+ SettingsIndexHub.box（warmSettings）
+    /// - db   → Db.reset（内含 invalidateSchema + 清离线软标记）+ PageCache 清理（QCache.clearDisk 对位）
+    /// - db/cdn → CdnRewrite.invalidate + applyHostOnly + bumpData
+    /// - img  → TestImages.clearCache（rebuildImageLoader 对位）
+    /// - proxy/隧道 → ProxyTunnelManager.reconcile（内部键比较：变化才 stop/start/原子替换+reset）
     @MainActor
     static func apply(old: AppSettings, new: AppSettings, store: SettingsStore) {
         let e = store.changesBetween(old, new)
+        AppBootstrap.box.update(new)
+        SettingsIndexHub.shared.box.update(new)
+        CdnRewrite.applyHostOnly()
         if e.db {
-            Db.reset()   // 内含 invalidateSchema + 清离线软标记
-            store.bumpData()
+            Db.reset()
+            SettingsDiagnostics.clearQueryCache()
         }
-        if e.cdn {
-            CdnRewrite.invalidate()     // rewritten 集/代理窗口/会话池
-            CdnRewrite.applyHostOnly()  // 内存 shtHost ← 快照
+        if e.db || e.cdn {
+            CdnRewrite.invalidate()
             store.bumpData()
         }
         if e.img {
-            // rebuildImageLoader 对位：测试图内存块清空, 下次加载按新设置重建
             TestImages.clearCache()
         }
-        if e.proxy {
-            // proxyChanged → 重建 SocksTunnel（数据库 SOCKS 隧道）：本阶段留接线注释,
-            // P13 与 Db.configure 一起接入（Socks5Tunnel.start() → 本地端口注入 MySQLPoolSettings）。
-        }
+        ProxyTunnelManager.shared.reconcile(new)
     }
 }
 

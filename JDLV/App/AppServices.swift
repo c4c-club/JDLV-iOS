@@ -39,6 +39,28 @@ final class AppServices: ObservableObject {
         return parts.joined(separator: " · ")
     }
 
+    // MARK: 离线合并（A5/R5）
+
+    /// 直接写横幅标志（NetworkMonitor 迁移路径用）
+    func setOffline(jdb: Bool, sht: Bool) {
+        offlineJdb = jdb
+        offlineSht = sht
+    }
+
+    /// 合并入口：网络不可用（全局）或某库 Core 离线标记命中 → 该库横幅；
+    /// 之前有任一库离线、现在全部恢复 → showRestored()（恢复横幅 + bumpNet 由
+    /// NetworkMonitor 迁移路径负责，此处只处理「Db 标记恢复」的增量）。
+    func syncOfflineFlags(networkOnline: Bool) {
+        let jdb = !networkOnline || Db.offlineJdb
+        let sht = !networkOnline || Db.offlineSht
+        let wasAny = offlineJdb || offlineSht
+        offlineJdb = jdb
+        offlineSht = sht
+        if wasAny && !jdb && !sht {
+            showRestored()
+        }
+    }
+
     // MARK: Toast
 
     /// 全局 Toast（Short ≈ 2s 自动清位）

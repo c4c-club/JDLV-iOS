@@ -25,11 +25,9 @@ import JDLVCore
 
 /// 启用开关（launch argument）。
 enum DemoDataSource {
-    /// `-JDLV_DEMO 1` 启用（其余值/缺失 = 关闭）。
+    /// `-JDLV_DEMO 1` 启用（其余值/缺失 = 关闭）—— A8/R8 起与 LaunchMode 共用唯一判定。
     static func enabled() -> Bool {
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-JDLV_DEMO"), i + 1 < args.count else { return false }
-        return args[i + 1] == "1"
+        LaunchMode.current == .demo
     }
 }
 

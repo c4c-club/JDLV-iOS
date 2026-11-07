@@ -26,7 +26,10 @@ final class ScreenshotsUITests: XCTestCase {
 
     private func launchDemo() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-JDLV_DEMO", "1"]
+        // A9/R8：独立 defaults suite + 独立 Keychain service（防 testImgMode 等跨用例持久污染）
+        app.launchArguments = ["-JDLV_DEMO", "1",
+                               "-JDLV_DEFAULTS_SUITE", "uitest_\(UUID().uuidString.prefix(8))",
+                               "-JDLV_KEYCHAIN_SERVICE", "ks_\(UUID().uuidString.prefix(8))"]
         app.launch()
         return app
     }

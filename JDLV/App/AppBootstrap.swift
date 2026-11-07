@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 import JDLVCore
 
 //
@@ -17,8 +16,9 @@ import JDLVCore
 //     内容经快照盒原子刷新（池/图片管线会在任意线程读 provider）；
 //  ③ 同刻注入 CdnRewrite.settingsProvider + applyHostOnly()（A6 启动口径，
 //     不再依赖 SettingsView.onAppear）；
-//  ④ 订阅 store.$settings：快照盒始终与持久化配置同源；db 侧字段变更 → Db.reset()
-//     （作废旧连接；副作用完整收口在 A3/R3 的 Store 级单一入口）。
+//  ④ 把 SettingsEffects.apply 挂到 store.onPersistedEffects（A3 单入口：落盘成功才
+//     执行快照盒刷新/Db.reset/隧道收敛/PageCache 清理/bumpData，不依赖任何视图）；
+//  ⑤ 按持久化配置收敛数据库 SOCKS5 隧道（A2/R2）。
 //  - hasNetwork 占位：NetworkStateBox（R5 换 NWPathMonitor 驱动同一盒子）。
 //
 
@@ -46,7 +46,6 @@ enum AppBootstrap {
     /// 网络状态盒（hasNetwork 闭包唯一数据源）
     static let network = NetworkStateBox()
 
-    private static var subscription: AnyCancellable?
     private static var started = false
 
     // MARK: App 入口（@main init；幂等）
@@ -55,41 +54,29 @@ enum AppBootstrap {
     static func start(store: SettingsStore) {
         guard !started else { return }
         started = true
+        box.update(store.settings)
         injectRuntime()
-        wire(store: store)
+        // A3/R3：副作用单入口挂到 Store（落盘成功才执行；不依赖任何视图）
+        store.onPersistedEffects = { [weak store] old, new in
+            guard let store else { return }
+            SettingsEffects.apply(old: old, new: new, store: store)
+        }
+        // A5/R5：NWPathMonitor → network 盒 + 离线/恢复横幅（UI 测试可用 -JDLV_FAKE_NETWORK 注入）
+        NetworkMonitor.shared.start(store: store)
+        // A2/R2：按持久化配置收敛数据库 SOCKS5 隧道（proxyDb 开 → 启动隧道）
+        ProxyTunnelManager.shared.reconcile(store.settings)
     }
 
     /// 注入核心（幂等：闭包实例不替换，只重放当前快照；单测直接调用）
     static func injectRuntime() {
         let snapshotBox = box
         Db.configure(
-            settingsProvider: { AppBootstrap.mysqlSettings(snapshotBox.settings) },
+            settingsProvider: {
+                ProxyTunnelManager.effectiveSettings(AppBootstrap.mysqlSettings(snapshotBox.settings))
+            },
             hasNetwork: { AppBootstrap.network.online })
         CdnRewrite.settingsProvider = { snapshotBox.cdnSettings }
         CdnRewrite.applyHostOnly()
-    }
-
-    /// 订阅设置变更（单测可独立调用；重复调用以最后一次为准）
-    @MainActor
-    static func wire(store: SettingsStore) {
-        subscription?.cancel()
-        subscription = store.$settings.sink { [weak store] newValue in
-            guard let store else { return }
-            refresh(newValue, store: store)
-        }
-    }
-
-    // MARK: 设置变更（@MainActor；store.$settings 同步回调）
-
-    @MainActor
-    private static func refresh(_ new: AppSettings, store: SettingsStore) {
-        let old = box.settings
-        box.update(new)
-        CdnRewrite.applyHostOnly()
-        // 数据源/库名/口令/超时/TLS 变更 → 作废全部旧连接（内含 invalidateSchema + 清离线软标记）
-        if store.changesBetween(old, new).db {
-            Db.reset()
-        }
     }
 
     // MARK: AppSettings → MySQLPoolSettings（① 纯映射）

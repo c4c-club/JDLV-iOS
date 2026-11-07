@@ -19,6 +19,7 @@
 
 import Foundation
 import SwiftUI
+import UIKit
 import JDLVCore
 
 /// 设置变换（等价 Android `{ it.copy(...) }`）
@@ -42,8 +43,31 @@ final class SettingsStore: ObservableObject {
     /// 最近一次 autoSave 结果（P12 设置页三态状态行：已保存 HH:mm:ss / 无变化 / 保存失败 (重试或检查存储)）
     @Published private(set) var lastSaveResult: SaveResult?
 
+    // MARK: A7/R7 Keychain 可观测
+
+    /// 口令读取失败（未解锁/访问被拒等）—— 不得静默当空口令连库
+    @Published private(set) var secretReadFailed = false
+    /// 口令读取失败的展示文案（UI 卡直接呈现）
+    @Published private(set) var secretReadMessage = ""
+    /// 最近一次写失败的状态文案（persist FAILED 时由 UI 呈现）
+    @Published private(set) var secretWriteMessage = ""
+    /// A-7 自愈发生（锁定残留被自动解除）—— UI 提示用
+    @Published private(set) var healedResidualLock = false
+
+    /// 首次解锁后系统通知：重试此前失败的口令读取
+    private var protectedDataObserver: NSObjectProtocol?
+
     /// 首启引导判定（07 §A2）
     var setupRequired: Bool { settings.setupRequired }
+
+    // MARK: - A3/R3 副作用单入口
+
+    /// 落盘【成功后】的运行时副作用（reconfigure/Db.reset/隧道收敛/CdnRewrite/
+    /// PageCache 清理/bumpData）。由组合根 AppBootstrap 注入 SettingsEffects.apply；
+    /// 单测可注入自己的执行器；nil = 不执行（纯逻辑测试）。所有写通道
+    /// （updateSettings / updateSettingsNow→autoSave→edit/editNow/flush /
+    /// LockView.applyLockChange / 离线上限 / 媒体嗅探落盘）都经这两个收敛点触发。
+    var onPersistedEffects: (@MainActor (AppSettings, AppSettings) -> Void)?
 
     // MARK: - 存储
 
@@ -65,20 +89,45 @@ final class SettingsStore: ObservableObject {
         case jsonEncode
     }
 
+    // MARK: - A9/R8 UI 测试隔离与种子
+
+    /// launch argument → 独立 UserDefaults suite（未指定 = standard）
+    static func defaultsForLaunch(_ args: [String]) -> UserDefaults {
+        guard let i = args.firstIndex(of: "-JDLV_DEFAULTS_SUITE"),
+              i + 1 < args.count else { return .standard }
+        return UserDefaults(suiteName: "jdlv_suite_\(args[i + 1])") ?? .standard
+    }
+
+    /// launch argument `-JDLV_SEED_SETTINGS <base64(JSON 存储字典)>` → 预写存储
+    /// （仅 DEBUG；ProductionSmokeUITests 用 —— 先种配置再载入，等价已保存的合法配置）
+    static func applySeedIfPresent(_ args: [String], defaults: UserDefaults) {
+        #if DEBUG
+        guard let i = args.firstIndex(of: "-JDLV_SEED_SETTINGS"),
+              i + 1 < args.count,
+              let data = Data(base64Encoded: args[i + 1]),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+        let s = AppSettings.fromStorage(dict)
+        guard let enc = AppSettings.encodeStorageJSON(s.storageWithoutSecrets) else { return }
+        defaults.set(enc, forKey: AppSettings.storageDefaultsKey)
+        #endif
+    }
+
     // MARK: - init（同步 load）
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        KeychainStore.applyLaunchArgFaults(ProcessInfo.processInfo.arguments)
         var s: AppSettings
         if let data = defaults.data(forKey: AppSettings.storageDefaultsKey) {
             s = AppSettings.fromStorageJSON(data)
         } else {
             s = AppSettings()
         }
-        // 口令走 Keychain（missing → 默认空串）
-        s.localPass = KeychainStore.get(SecretKey.localPass) ?? ""
-        s.remotePass = KeychainStore.get(SecretKey.remotePass) ?? ""
-        s.lockSecret = KeychainStore.get(SecretKey.lockSecret) ?? ""
+        // 口令走 Keychain（missing → 默认空串；读取失败 → 显式标记，绝不静默当空口令）
+        s.localPass = loadSecret(SecretKey.localPass)
+        s.remotePass = loadSecret(SecretKey.remotePass)
+        s.lockSecret = loadSecret(SecretKey.lockSecret)
         persistedLocalPass = s.localPass
         persistedRemotePass = s.remotePass
         persistedLockSecret = s.lockSecret
@@ -86,6 +135,66 @@ final class SettingsStore: ObservableObject {
         self.settings = s
         self.loaded = true
         self.healResidualLockIfNeeded()
+        observeProtectedDataAvailable()
+    }
+
+    /// 单键读取（A7/R7：失败 → 空串 + secretReadFailed 置位，区分 itemNotFound）
+    private func loadSecret(_ key: String) -> String {
+        switch KeychainStore.getResult(key) {
+        case .success(let v):
+            return v ?? ""
+        case .failure(let st):
+            secretReadFailed = true
+            secretReadMessage = st.message
+            return ""
+        }
+    }
+
+    /// protectedDataDidBecomeAvailable：重试此前失败的读取（锁屏首启场景）
+    private func observeProtectedDataAvailable() {
+        guard secretReadFailed, protectedDataObserver == nil else { return }
+        protectedDataObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.retrySecretLoads() }
+        }
+    }
+
+    /// 重试读取：全部成功 → 清失败态 + 刷新内存 + 移除观察者
+    func retrySecretLoads() {
+        guard secretReadFailed else { return }
+        var anyFail = false
+        var msgs: String = ""
+        let lp = readOrTrack(SecretKey.localPass, &anyFail, &msgs)
+        let rp = readOrTrack(SecretKey.remotePass, &anyFail, &msgs)
+        let ls = readOrTrack(SecretKey.lockSecret, &anyFail, &msgs)
+        guard !anyFail else {
+            secretReadMessage = msgs
+            return
+        }
+        secretReadFailed = false
+        secretReadMessage = ""
+        var s = settings
+        if lp != persistedLocalPass { s.localPass = lp; persistedLocalPass = lp }
+        if rp != persistedRemotePass { s.remotePass = rp; persistedRemotePass = rp }
+        if ls != persistedLockSecret { s.lockSecret = ls; persistedLockSecret = ls }
+        settings = s
+        if let o = protectedDataObserver {
+            NotificationCenter.default.removeObserver(o)
+            protectedDataObserver = nil
+        }
+    }
+
+    private func readOrTrack(_ key: String, _ anyFail: inout Bool, _ msgs: inout String) -> String {
+        switch KeychainStore.getResult(key) {
+        case .success(let v):
+            return v ?? ""
+        case .failure(let st):
+            anyFail = true
+            msgs = st.message
+            return ""
+        }
     }
 
     /// A-7 自愈：`lockEnabled && lockType != "biometric" && lockSecret 空`（切换认证方式残留）
@@ -100,6 +209,7 @@ final class SettingsStore: ObservableObject {
         do {
             try persist(fixed)
             settings = fixed
+            healedResidualLock = true
         } catch {
             // 自愈落盘失败不阻断启动（内存态已修正，下次保存会再写）
         }
@@ -109,24 +219,32 @@ final class SettingsStore: ObservableObject {
 
     /// 全量落盘：口令（remote_pass/local_pass/lock_secret）写 Keychain；
     /// 其余 69 键 JSON 编码后写 UserDefaults 单键 `jdlv_settings_v1`。
+    /// A7/R7：口令三键原子化 —— 预写校验，任一失败回滚已写键到 persisted* 旧值，
+    /// 抛 PersistError（绝不半写）；写失败文案入 secretWriteMessage。
     private func persist(_ s: AppSettings) throws {
-        if s.localPass != persistedLocalPass {
-            guard KeychainStore.set(s.localPass, forKey: SecretKey.localPass) else {
-                throw PersistError.keychainWrite(SecretKey.localPass)
+        var wrote: [(key: String, oldValue: String)] = []
+        do {
+            try writeSecret(s.localPass, forKey: SecretKey.localPass,
+                            persisted: &persistedLocalPass, wrote: &wrote)
+            try writeSecret(s.remotePass, forKey: SecretKey.remotePass,
+                            persisted: &persistedRemotePass, wrote: &wrote)
+            try writeSecret(s.lockSecret, forKey: SecretKey.lockSecret,
+                            persisted: &persistedLockSecret, wrote: &wrote)
+        } catch {
+            // 回滚已写键（尽力而为：恢复旧值与缓存，保持内存/磁盘一致）
+            for w in wrote {
+                _ = KeychainStore.setResult(w.oldValue, forKey: w.key)
+                switch w.key {
+                case SecretKey.localPass: persistedLocalPass = w.oldValue
+                case SecretKey.remotePass: persistedRemotePass = w.oldValue
+                case SecretKey.lockSecret: persistedLockSecret = w.oldValue
+                default: break
+                }
             }
-            persistedLocalPass = s.localPass
-        }
-        if s.remotePass != persistedRemotePass {
-            guard KeychainStore.set(s.remotePass, forKey: SecretKey.remotePass) else {
-                throw PersistError.keychainWrite(SecretKey.remotePass)
+            if case PersistError.keychainWrite(let msg) = error {
+                secretWriteMessage = msg
             }
-            persistedRemotePass = s.remotePass
-        }
-        if s.lockSecret != persistedLockSecret {
-            guard KeychainStore.set(s.lockSecret, forKey: SecretKey.lockSecret) else {
-                throw PersistError.keychainWrite(SecretKey.lockSecret)
-            }
-            persistedLockSecret = s.lockSecret
+            throw error
         }
         guard let data = AppSettings.encodeStorageJSON(s.storageWithoutSecrets) else {
             throw PersistError.jsonEncode
@@ -134,20 +252,46 @@ final class SettingsStore: ObservableObject {
         defaults.set(data, forKey: AppSettings.storageDefaultsKey)
     }
 
-    // MARK: - 写通道一：updateSettings（轻量，立即落盘，无副作用回调）
+    /// 单口令键写入：值未变跳过；失败抛 PersistError.keychainWrite(可读文案)
+    private func writeSecret(_ value: String, forKey key: String,
+                             persisted: inout String,
+                             wrote: inout [(key: String, oldValue: String)]) throws {
+        guard value != persisted else { return }
+        switch KeychainStore.setResult(value, forKey: key) {
+        case .success:
+            wrote.append((key, persisted))
+            persisted = value
+        case .failure(let st):
+            throw PersistError.keychainWrite(st.message)
+        }
+    }
+
+    // MARK: - 写通道一：updateSettings（轻量，立即落盘，无三态回调）
 
     /// 主题/视图/每页数量等纯展示设置用；落盘失败不阻断内存生效（下次保存重写）。
+    /// A3/R3：副作用只在【落盘成功】后经 onPersistedEffects 单入口执行。
     func updateSettings(_ transform: SettingsTransform) {
         var next = settings
         transform(&next)
         guard next != settings else { return }
-        try? persist(next)
+        var saved = false
+        do {
+            try persist(next)
+            saved = true
+        } catch {
+            // 落盘失败：内存生效（展示态），但不触发运行时副作用（A3：失败不触发）
+        }
+        let old = settings
         settings = next
+        if saved {
+            onPersistedEffects?(old, next)
+        }
     }
 
     // MARK: - 写通道二：updateSettingsNow（挂起等落盘；首启配置/上限对话框用）
 
     /// 值未变 → NO_CHANGE（不写盘）；落盘异常 → FAILED；否则 SAVED。
+    /// A3/R3：SAVED 才执行副作用（onPersistedEffects），FAILED 一律不触发。
     @discardableResult
     func updateSettingsNow(_ transform: @escaping SettingsTransform) async -> SaveResult {
         var next = settings
@@ -155,7 +299,9 @@ final class SettingsStore: ObservableObject {
         guard next != settings else { return .noChange }
         do {
             try persist(next)
+            let old = settings
             settings = next
+            onPersistedEffects?(old, next)
             return .saved
         } catch {
             return .failed
@@ -242,7 +388,7 @@ final class SettingsStore: ObservableObject {
     /// 注意 jdbSortAsc 不纳入 dbChanged（S11-P2：排序变化不触发全页重建连接）。
     func changesBetween(_ old: AppSettings, _ new: AppSettings) -> SaveEffect {
         var e = SaveEffect()
-        // dbChanged 15：db_src + 本地 6 + 远程 6 + db_ssl + query_timeout
+        // dbChanged 16：db_src + 本地 6 + 远程 6 + db_ssl + query_timeout + connect_timeout（A10/R9 纳入）
         e.db = old.dbSrc != new.dbSrc
             || old.localHost != new.localHost || old.localPort != new.localPort
             || old.localUser != new.localUser || old.localPass != new.localPass
@@ -251,6 +397,7 @@ final class SettingsStore: ObservableObject {
             || old.remoteUser != new.remoteUser || old.remotePass != new.remotePass
             || old.remoteJdb != new.remoteJdb || old.remoteSht != new.remoteSht
             || old.dbSsl != new.dbSsl || old.queryTimeout != new.queryTimeout
+            || old.connectTimeout != new.connectTimeout
         // cdnChanged 8：proxy_host/port + proxy_cdn(+jdb/sht) + jdb_img_host + sht_mirror(+host)
         e.cdn = old.proxyHost != new.proxyHost || old.proxyPort != new.proxyPort
             || old.proxyCdn != new.proxyCdn
