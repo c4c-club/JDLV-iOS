@@ -125,27 +125,31 @@ final class SettingsStore: ObservableObject {
             s = AppSettings()
         }
         // 口令走 Keychain（missing → 默认空串；读取失败 → 显式标记，绝不静默当空口令）
-        s.localPass = loadSecret(SecretKey.localPass)
-        s.remotePass = loadSecret(SecretKey.remotePass)
-        s.lockSecret = loadSecret(SecretKey.lockSecret)
+        var readFailed = false
+        var readMsg = ""
+        s.localPass = Self.loadSecretStatic(SecretKey.localPass, &readFailed, &readMsg)
+        s.remotePass = Self.loadSecretStatic(SecretKey.remotePass, &readFailed, &readMsg)
+        s.lockSecret = Self.loadSecretStatic(SecretKey.lockSecret, &readFailed, &readMsg)
         persistedLocalPass = s.localPass
         persistedRemotePass = s.remotePass
         persistedLockSecret = s.lockSecret
 
         self.settings = s
+        self.secretReadFailed = readFailed
+        self.secretReadMessage = readMsg
         self.loaded = true
         self.healResidualLockIfNeeded()
-        observeProtectedDataAvailable()
+        self.observeProtectedDataAvailable()
     }
 
-    /// 单键读取（A7/R7：失败 → 空串 + secretReadFailed 置位，区分 itemNotFound）
-    private func loadSecret(_ key: String) -> String {
+    /// 单键读取（A7/R7：失败 → 空串 + 失败标记，区分 itemNotFound；init 期静态版）
+    private static func loadSecretStatic(_ key: String, _ failed: inout Bool, _ msg: inout String) -> String {
         switch KeychainStore.getResult(key) {
         case .success(let v):
             return v ?? ""
         case .failure(let st):
-            secretReadFailed = true
-            secretReadMessage = st.message
+            failed = true
+            msg = st.message
             return ""
         }
     }
