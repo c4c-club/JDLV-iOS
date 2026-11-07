@@ -29,6 +29,8 @@ private final class FakeSocks5Server {
     private var _connects: [(String, UInt16)] = []
     private var _connCount = 0
     private var _events: [String] = []
+    /// 强持有连接处理器（否则创建即释放，状态回调永不触发）
+    private var _handlers: [FakeSocksConn] = []
 
     var connects: [(String, UInt16)] {
         lock.lock(); defer { lock.unlock() }
@@ -65,7 +67,9 @@ private final class FakeSocks5Server {
             listener.newConnectionHandler = { [weak self] conn in
                 guard let self else { return }
                 self.lock.lock(); self._connCount += 1; self._events.append("accept"); self.lock.unlock()
-                FakeSocksConn(conn: conn, server: self).start()
+                let handler = FakeSocksConn(conn: conn, server: self)
+                self.lock.lock(); self._handlers.append(handler); self.lock.unlock()
+                handler.start()
             }
             listener.start(queue: q)
             await ready.fulfillWait(timeout: 3)

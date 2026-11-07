@@ -83,8 +83,14 @@ final class ProductionSmokeUITests: XCTestCase {
         let settingsTab = app.descendants(matching: .any)["tab_settings"].firstMatch
         XCTAssertTrue(settingsTab.exists)
         settingsTab.tap()
+        // 数据源卡默认折叠（非 firstRun 且 user 非空）→ 先展开
+        let dbGroup = app.descendants(matching: .any)["settings_group_db"].firstMatch
+        XCTAssertTrue(dbGroup.waitForExistence(timeout: 15), "数据源分组卡未找到")
         let testButton = app.descendants(matching: .any)["ds_test_button"].firstMatch
-        XCTAssertTrue(testButton.waitForExistence(timeout: 15), "测试连接按钮未找到")
+        if !testButton.exists {
+            dbGroup.tap()   // 折叠中 → 展开分组
+        }
+        XCTAssertTrue(testButton.waitForExistence(timeout: 10), "测试连接按钮未找到")
         testButton.tap()
         let result = app.descendants(matching: .any)["settings_test_result"].firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 30), "测试结果未出现")
