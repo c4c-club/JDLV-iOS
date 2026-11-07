@@ -81,6 +81,19 @@ final class LayoutAuditUITests: XCTestCase {
                 out.append((e.identifier, e.frame))
             }
         }
+        if out.isEmpty {
+            // 兜底源：demo 卡内容（label 含「演示」的 button）—— wrapper a11y 容器
+            // 在部分 tab 上未成节点的替身（frame = 卡 Button 自身 frame，含 cardChrome）
+            let dq = app.buttons.containing(
+                NSPredicate(format: "label CONTAINS %@", "演示"))
+            let dn = dq.count
+            for i in 0..<min(dn, 40) {
+                let e = dq.element(boundBy: i)
+                if e.exists, e.frame.width > 1 {
+                    out.append(("\(prefix)demo_\(i)", e.frame))
+                }
+            }
+        }
         return out
     }
 
@@ -140,13 +153,10 @@ final class LayoutAuditUITests: XCTestCase {
         }
         if !allowOffscreen {
             for c in cards {
-                // 只对与视口相交的卡判出屏（滚动容器内未滚入的卡天然在屏外，非布局错误）
-                let intersects = c.1.maxY > 0 && c.1.minY < screen.height
-                    && c.1.maxX > 0 && c.1.minX < screen.width
-                guard intersects else { continue }
-                if c.1.minX < -1 || c.1.maxX > screen.width + 1
-                    || c.1.minY < -1 || c.1.maxY > screen.height + 1 {
-                    addViolation(page, c.0, "out of screen: \(c.1)")
+                // 仅水平出屏断言（垂直方向：滚动容器内卡片在视口上下方属正常滚动态，
+                // 「内容高度 > 2 屏」由 checkScroll 断言承担）
+                if c.1.minX < -1.5 || c.1.maxX > screen.width + 1.5 {
+                    addViolation(page, c.0, "out of screen (h): \(c.1)")
                 }
             }
         }

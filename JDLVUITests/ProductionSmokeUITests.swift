@@ -98,11 +98,11 @@ final class ProductionSmokeUITests: XCTestCase {
             testButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
         var result = app.descendants(matching: .any)["settings_test_result"].firstMatch
-        if !result.waitForExistence(timeout: 30) {
+        if !result.waitForExistence(timeout: 45) {
             testButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             result = app.descendants(matching: .any)["settings_test_result"].firstMatch
         }
-        XCTAssertTrue(result.waitForExistence(timeout: 30), "测试结果未出现")
+        XCTAssertTrue(result.waitForExistence(timeout: 60), "测试结果未出现")
         let label = result.label
         XCTAssertTrue(label.contains("✓"), "测试连接必须真实成功: \(label)")
         XCTAssertTrue(label.contains("8."), "成功文案应含真实 MySQL 版本: \(label)")

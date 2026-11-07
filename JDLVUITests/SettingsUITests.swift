@@ -93,16 +93,21 @@ final class SettingsUITests: XCTestCase {
             let on = app.switches.matching(NSPredicate(format: "value == %@", "1"))
             return on.count > 0
         }
-        var anchorFound = switchOn()
+        // anchor（✓ 测试图片模式生效中）为唯一准绳；switch value 因 Form 行 a11y 合并不可靠
+        let anchorQ = app.descendants(matching: .any)["testImageModeOn"].firstMatch
+        var anchorFound = anchorQ.exists
         if !anchorFound {
-            for _ in 0..<4 {
+            for _ in 0..<6 {
                 if sw.isHittable {
                     sw.tap()
                 } else {
                     sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
                 }
-                waitUntilShort(2) { switchOn() }
-                if switchOn() { anchorFound = true; break }
+                if anchorQ.waitForExistence(timeout: 4) { anchorFound = true; break }
+                // 兜底：点行文本（Form 行整行可点）
+                let rowText = app.staticTexts["测试图片模式（调试）"].firstMatch
+                if rowText.exists && rowText.isHittable { rowText.tap() }
+                if anchorQ.waitForExistence(timeout: 4) { anchorFound = true; break }
             }
         }
         XCTAssertTrue(anchorFound, "test image switch did not reach ON after taps")

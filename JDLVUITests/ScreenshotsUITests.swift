@@ -166,18 +166,18 @@ final class ScreenshotsUITests: XCTestCase {
         XCTAssertTrue(testSwitch.waitForExistence(timeout: 8), "about_testimg_switch not found (AboutView)")
         let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
         var anchorOn = anchor.exists
-        for _ in 0..<4 {
+        for _ in 0..<6 {
             if anchor.exists { anchorOn = true; break }
-            // 双路：Form 行内 Toggle 直点；未生效则点行中段（Toggle 行整行可点）
+            // 双路：Form 行内 Toggle 直点；未生效则点行文本（Form 行整行可点）
             if testSwitch.isHittable {
                 testSwitch.tap()
             } else {
                 testSwitch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             }
-            if anchor.waitForExistence(timeout: 2) { anchorOn = true; break }
-            app.staticTexts["测试图片模式（调试）"].firstMatch.exists
-                ? app.staticTexts["测试图片模式（调试）"].firstMatch.tap() : ()
-            if anchor.waitForExistence(timeout: 2) { anchorOn = true; break }
+            if anchor.waitForExistence(timeout: 3) { anchorOn = true; break }
+            let rowText = app.staticTexts["测试图片模式（调试）"].firstMatch
+            if rowText.exists && rowText.isHittable { rowText.tap() }
+            if anchor.waitForExistence(timeout: 3) { anchorOn = true; break }
         }
         XCTAssertTrue(anchorOn, "testImageModeOn anchor not found after toggle attempts")
         snap(app, "00-test-image-mode-on", anchor: "testImageModeOn")
