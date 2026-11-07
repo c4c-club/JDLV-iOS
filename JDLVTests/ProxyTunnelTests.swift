@@ -38,7 +38,7 @@ private final class FakeSocks5Server {
         let listener = try NWListener(using: params, on: .any)
         self.listener = listener
         let ready = expectation()
-        listener.stateUpdateHandler = { [weak ready] state in
+        listener.stateUpdateHandler = { [weak ready] (state: NWListener.State) in
             if case .ready = state { ready?() }
         }
         listener.newConnectionHandler = { [weak self] conn in
@@ -113,7 +113,7 @@ private final class FakeSocksConn {
     }
 
     func start() {
-        conn.stateUpdateHandler = { [weak self] state in
+        conn.stateUpdateHandler = { [weak self] (state: NWConnection.State) in
             switch state {
             case .ready: self?.receiveInbound()
             case .failed, .cancelled: self?.teardown()
@@ -161,11 +161,14 @@ private final class FakeSocksConn {
     }
 
     private func connectBackend(host: String, port: Int) {
-        guard let ep = NWEndpoint.Host(host) else { teardown(); return }
-        let be = NWConnection(host: ep, port: NWPort(rawValue: UInt16(clamping: port)),
-                              using: .tcp)
+        let ep = NWEndpoint.Host(host)
+        guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else {
+            teardown()
+            return
+        }
+        let be = NWConnection(host: ep, port: p, using: .tcp)
         backend = be
-        be.stateUpdateHandler = { [weak self] state in
+        be.stateUpdateHandler = { [weak self] (state: NWConnection.State) in
             switch state {
             case .ready: self?.receiveBackend()
             case .failed, .cancelled: self?.teardown()
@@ -217,9 +220,13 @@ final class ProxyTunnelTests: XCTestCase {
 
     /// 打开一条到隧道的原始 TCP（触发 tunnel→proxy 的 CONNECT），由调用方关闭
     private func probeTunnel(_ port: UInt16) async throws -> NWConnection {
-        let conn = NWConnection(host: "127.0.0.1", port: NWPort(rawValue: port), using: .tcp)
+        guard let p = NWEndpoint.Port(rawValue: port) else {
+            throw NSError(domain: "ProxyTunnelTests", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "bad port"])
+        }
+        let conn = NWConnection(host: NWEndpoint.Host("127.0.0.1"), port: p, using: .tcp)
         let gate = ProbeGate()
-        conn.stateUpdateHandler = { state in
+        conn.stateUpdateHandler = { (state: NWConnection.State) in
             if case .ready = state { gate.fire() }
         }
         conn.start(queue: .global())
