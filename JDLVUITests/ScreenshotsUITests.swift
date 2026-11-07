@@ -7,7 +7,7 @@ import XCTest
 //    或已配置直接就绪；
 //  - 进设置 tab → ⑧ 关于 → 开启「测试图片模式（调试）」→ 断言 accessibilityIdentifier
 //    "testImageModeOn" 出现（★ 铁律：截图前必须开启）；
-//  - 14 张固定顺序截图（01_首页 … 14_设置数据源），每页：锚点等待 + 1.5s 骨架静置 →
+//  - 14 张固定顺序截图（01-home … 14-settings-data），每页：锚点等待 + 1.5s 骨架静置 →
 //    XCTAttachment(lifetime: .keepAlways, name: "NN_页面名") → add；
 //  - 断言最少化：testImageModeOn + 末尾截图数 ≥ 12；其余交互一律 if-exists 守卫
 //    （元素不存在走 fallback 路径，绝不 force tap 不存在元素），保证截图集尽量完整；
@@ -214,11 +214,11 @@ final class ScreenshotsUITests: XCTestCase {
             add(d2)
         }
         XCTAssertTrue(anchorOn, "testImageModeOn anchor not found after toggle attempts")
-        snap(app, "00_测试图片模式开启")
+        snap(app, "00-test-image-mode-on")
 
         // 2) 14 页走查
         openTab(app, "搜索", "search")
-        snapPage(app, "01_首页", [app.buttons["entry_articles"], app.buttons["entry_hotreviews"],
+        snapPage(app, "01-home", [app.buttons["entry_articles"], app.buttons["entry_hotreviews"],
                                   app.buttons["viewall_recent"]])
 
         // 搜索态（搜索框被横幅/键盘遮挡时退化为首页态截图）
@@ -226,16 +226,16 @@ final class ScreenshotsUITests: XCTestCase {
         if field.exists, field.isHittable {
             _ = typeInto(field, "演示")
         }
-        snapPage(app, "02_搜索结果", [app.buttons["mode_fuzzy"], app.buttons["mode_exact"]])
+        snapPage(app, "02-search-results", [app.buttons["mode_fuzzy"], app.buttons["mode_exact"]])
         app.terminate()
         app.launch()
 
         openTab(app, "浏览", "browse")
-        snapPage(app, "03_浏览", [app.buttons["sht_filter_button"], app.buttons["browse_grid"],
+        snapPage(app, "03-browse", [app.buttons["sht_filter_button"], app.buttons["browse_grid"],
                                   app.buttons["tab_browse"]])
         let filterBtn = app.buttons["sht_filter_button"]
         _ = tapResilient(filterBtn)
-        snap(app, "04_筛选面板")
+        snap(app, "04-filter-panel")
         _ = tapResilient(filterBtn)   // 关面板（toggle）
 
         openTab(app, "搜索", "search")
@@ -244,26 +244,26 @@ final class ScreenshotsUITests: XCTestCase {
             // 横滑段首卡可能被滑出屏幕左侧（frame.minX < 0）→ 右滑拉回
             if !push.isHittable { app.swipeRight() }
             _ = tapResilient(push)
-            snapPage(app, "05_影片详情", [app.descendants(matching: .any)["secondary_page"].firstMatch])
+            snapPage(app, "05-movie-detail", [app.descendants(matching: .any)["secondary_page"].firstMatch])
             navBack(app)
         }
 
         openTab(app, "女优", "actors")
         // demo 模式所有女优卡 label 含"演示" → 无需搜索；搜索框可能被横幅遮挡（不 hittable）→ 跳过输入
-        snapPage(app, "06_女优列表", [app.descendants(matching: .any)["tab_root_actors"].firstMatch])
+        snapPage(app, "06-actors", [app.descendants(matching: .any)["tab_root_actors"].firstMatch])
         let actorCard = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示")).firstMatch
         if actorCard.exists {
             _ = tapResilient(actorCard)
-            snapPage(app, "07_女优详情", [app.descendants(matching: .any)["secondary_page"].firstMatch])
+            snapPage(app, "07-actor-detail", [app.descendants(matching: .any)["secondary_page"].firstMatch])
             navBack(app)
         }
 
         openTab(app, "98t", "sht")
-        snapPage(app, "08_98t列表", [app.descendants(matching: .any)["sht_filter_button"].firstMatch])
+        snapPage(app, "08-sht", [app.descendants(matching: .any)["sht_filter_button"].firstMatch])
         let shtRow = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示帖子")).firstMatch
         if shtRow.exists {
             _ = tapResilient(shtRow)
-            snapPage(app, "09_帖子详情", [app.navigationBars.firstMatch,
+            snapPage(app, "09-thread-detail", [app.navigationBars.firstMatch,
                                           app.descendants(matching: .any)["secondary_page"].firstMatch])
             navBack(app)
         }
@@ -272,29 +272,29 @@ final class ScreenshotsUITests: XCTestCase {
         let entryArticles = app.buttons["entry_articles"]
         if entryArticles.waitForExistence(timeout: 8) {
             _ = tapResilient(entryArticles)
-            snapPage(app, "10_资讯", [app.descendants(matching: .any)["articles_page"].firstMatch])
+            snapPage(app, "10-articles", [app.descendants(matching: .any)["articles_page"].firstMatch])
             navBack(app)
         }
         let entryHot = app.buttons["entry_hotreviews"]
         if entryHot.exists {
             _ = tapResilient(entryHot)
-            snapPage(app, "11_热评", [app.descendants(matching: .any)["hotreviews_page"].firstMatch])
+            snapPage(app, "11-hot-reviews", [app.descendants(matching: .any)["hotreviews_page"].firstMatch])
             navBack(app)
         }
         let viewallTop = app.buttons["viewall_top"]
         if viewallTop.exists {
             _ = tapResilient(viewallTop)
-            snapPage(app, "12_TOP250", [app.descendants(matching: .any)["top250_page"].firstMatch])
+            snapPage(app, "12-top250", [app.descendants(matching: .any)["top250_page"].firstMatch])
             navBack(app)
         }
 
         openTab(app, "收藏", "favs")
-        snapPage(app, "13_收藏", [app.descendants(matching: .any)["tab_root_favs"].firstMatch])
+        snapPage(app, "13-favs", [app.descendants(matching: .any)["tab_root_favs"].firstMatch])
 
         openTab(app, "设置", "settings")
         let dbGroup = app.descendants(matching: .any)["settings_group_db"].firstMatch
         scrollUntilVisible(app, dbGroup, maxSwipes: 12)
-        snapPage(app, "14_设置数据源", [dbGroup])
+        snapPage(app, "14-settings-data", [dbGroup])
 
         XCTAssertGreaterThanOrEqual(snapCount, 12, "expected ≥12 screenshots, got \(snapCount)")
     }

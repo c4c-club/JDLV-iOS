@@ -78,12 +78,13 @@ public enum Db {
 
     /// 表名集合（SELECT TABLE_NAME t FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE()）
     public static func tables(_ which: String) async -> Set<String> {
-        try? await tablesStrict(which) ?? []
+        guard let set = try? await tablesStrict(which) else { return [] }
+        return set
     }
 
     /// A10/R10：类型化 schema 探测 —— 「数据源未配置」等错误显式上抛，
     /// 不再吞成空集（诊断路径用；Q 层继续用宽容版 tables/cols 兜底裸表名）。
-    public static func tablesStrict(_ which: String) async throws -> Set<String>? {
+    public static func tablesStrict(_ which: String) async throws -> Set<String> {
         schemaLock.lock()
         if let hit = tablesCache[which] {
             schemaLock.unlock()
@@ -115,6 +116,12 @@ public enum Db {
 
     /// 列名集合（SHOW COLUMNS FROM `$table`；表名来自 tableOf，非用户输入）
     public static func cols(_ which: String, _ table: String) async -> Set<String> {
+        guard let set = try? await colsStrict(which, table) else { return [] }
+        return set
+    }
+
+    /// A10/R10：类型化列探测（同 tablesStrict 语义）
+    public static func colsStrict(_ which: String, _ table: String) async throws -> Set<String> {
         let key = "\(which).\(table)"
         schemaLock.lock()
         if let hit = colsCache[key] {
@@ -122,24 +129,20 @@ public enum Db {
             return hit
         }
         schemaLock.unlock()
-        do {
-            let rows = try await query(which, "SHOW COLUMNS FROM `\(table)`")
-            var set = Set<String>()
-            for r in rows {
-                if let f = r.map["Field"], case .string(let v) = f {
-                    set.insert(v)
-                } else if !r.s("Field").isEmpty {
-                    set.insert(r.s("Field"))
-                }
+        let rows = try await query(which, "SHOW COLUMNS FROM `\(table)`")
+        var set = Set<String>()
+        for r in rows {
+            if let f = r.map["Field"], case .string(let v) = f {
+                set.insert(v)
+            } else if !r.s("Field").isEmpty {
+                set.insert(r.s("Field"))
             }
-            if !set.isEmpty {
-                schemaLock.lock()
-                colsCache[key] = set
-                schemaLock.unlock()
-            }
-            return set
-        } catch {
-            return []   // 失败不写缓存
         }
+        if !set.isEmpty {
+            schemaLock.lock()
+            colsCache[key] = set
+            schemaLock.unlock()
+        }
+        return set
     }
 }
