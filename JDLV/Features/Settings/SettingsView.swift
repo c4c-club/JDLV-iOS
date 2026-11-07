@@ -466,21 +466,18 @@ struct SettingsGroupCard<Content: View>: View {
     var defaultExpanded: Bool = false
     /// 收起时标题下一行 12sp 摘要（maxLines 1 截断）
     var summary: String = ""
-    /// 卡底部保存三态行（任务 P12：每张卡底部显示 autoSave 结果）
-    var bus: SaveStateBus? = nil
     @ViewBuilder let content: Content
 
     @State private var expanded: Bool
     @Environment(\.appTheme) private var theme
 
     init(title: String, rememberKey: String, defaultExpanded: Bool = false,
-         summary: String = "", bus: SaveStateBus? = nil,
+         summary: String = "",
          @ViewBuilder content: () -> Content) {
         self.title = title
         self.rememberKey = rememberKey
         self.defaultExpanded = defaultExpanded
         self.summary = summary
-        self.bus = bus
         self.content = content()
         _expanded = State(initialValue: CollapsiblePref.isExpanded(rememberKey, default: defaultExpanded))
     }
@@ -491,7 +488,6 @@ struct SettingsGroupCard<Content: View>: View {
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
                     content
-                    if let bus { SaveStateLine(bus: bus) }
                 }
                 .padding(.top, 8)
             }
