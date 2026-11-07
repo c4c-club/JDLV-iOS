@@ -53,7 +53,7 @@ final class ProxyProbeTests: XCTestCase {
         MockURLProtocol.handler = { req in
             (200, ["Content-Type": "image/jpeg"], Data(repeating: 1, count: 128))
         }
-        let r = await probe(settings())
+        let r = await probe(settings)
         XCTAssertTrue(r.ok)
         XCTAssertTrue(r.message.hasPrefix("✓ 代理可访问图床"), "成功文案以图床开头：\(r.message)")
         XCTAssertTrue(r.message.contains("https://img.example.com"))
@@ -63,7 +63,7 @@ final class ProxyProbeTests: XCTestCase {
 
     func test403ProxyReachableImageHostDenied() async {
         MockURLProtocol.handler = { _ in (403, [:], nil) }
-        let r = await probe(settings())
+        let r = await probe(settings)
         XCTAssertFalse(r.ok)
         XCTAssertTrue(r.message.contains("代理可达但图床拒绝"), "403 = 代理可达图床拒绝：\(r.message)")
         XCTAssertTrue(r.message.contains("403"))
@@ -74,7 +74,7 @@ final class ProxyProbeTests: XCTestCase {
             if req.httpMethod == "HEAD" { return (405, [:], nil) }
             return (200, ["Content-Type": "image/png"], Data([1]))
         }
-        let r = await probe(settings())
+        let r = await probe(settings)
         XCTAssertTrue(r.ok)
         XCTAssertEqual(MockURLProtocol.lastRequest?.httpMethod, "GET",
                        "HEAD 405 → 回落 GET")
@@ -100,7 +100,7 @@ final class ProxyProbeTests: XCTestCase {
         XCTAssertNil(d["SOCKSProxy"], "非 1080 端口不加 SOCKS 键")
 
         let socks = ProxyProbe.proxyDictionary(host: "127.0.0.1", port: 1080)
-        XCTAssertEqual(socks[kCFNetworkProxiesSOCKSProxy as String] as? String, "127.0.0.1")
+        XCTAssertEqual(socks["SOCKSProxy"] as? String, "127.0.0.1")
     }
 
     func testTargetPriorityOrder() {
