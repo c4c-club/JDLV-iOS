@@ -184,7 +184,7 @@ public final class AsyncSemaphore {
 
 // MARK: - 连接构建
 
-enum ConnFactory {
+public enum ConnFactory {
     /// R9/R13：显式白名单（非 jdb/sht 一律类型化错误，不再默认映射 sht）
     public static func databaseName(_ which: String, _ s: MySQLPoolSettings) throws -> String {
         switch which {

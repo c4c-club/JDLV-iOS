@@ -92,7 +92,7 @@ final class ConnTestDraftTests: XCTestCase {
     func testWrongPasswordReportsAccessDenied() async throws {
         let f = try fixtureEnv()
         let draft = draftSettings(f, jdb: "jdlv_app_it", sht: "jdlv_app_it",
-                                  overridePass: "definitely-wrong-pass")
+                                  pass: "definitely-wrong-pass")
         let r = await SettingsDiagnostics.testConnection(draft)
         XCTAssertFalse(r.hasPrefix("✓"))
         XCTAssertTrue(r.contains("Access denied"), "错误链必须含 Access denied: \(r)")
