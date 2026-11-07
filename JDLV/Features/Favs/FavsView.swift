@@ -2,13 +2,12 @@ import SwiftUI
 import JDLVCore
 
 //
-//  FavsView.swift —— 收藏页（10 §7 FavsScreen 移植；底部导航 tab「收藏」）。
+//  FavsView.swift —— 收藏页（10 §7 FavsScreen 对位 + 13 §4.12 设计系统 v2）。
 //
-//  结构（本页未包 ListScaffold，无下拉刷新）：顶部行（右对齐「导出收藏」）→ TabRow 三 tab
-//  （「影片 (n)/帖子 (n)/女优 (n)」，默认选中 0）→ 内容区。loading → LoadingBox；
-//  rows 空 → EmptyBox「暂无收藏 — 在详情页点 ☆ 收藏」；行卡（标题 13pt Medium 2 行省略，
-//  空则「(无标题)」；时间 yyyy-MM-dd HH:mm 本地时区，ts<=0 →「时间未知」）。
-//  点击路由：movie → movie/{id}；sht → sht/{tid}；actor → actor/{id}。
+//  v2（问题 11）：navigationTitle("收藏") + Picker(.segmented) 三 tab（影片/帖子/女优，
+//  文案带数量）→ List 行卡 + swipeActions 删除（R3：FavsVM.remove → 取消收藏 + reload）+
+//  .refreshable；导出收藏 → toolbar。loading → LoadingBox；空 → EmptyBox「暂无收藏 —
+//  在详情页点 ☆ 收藏」。点击路由：movie → movie/{id}；sht → sht/{tid}；actor → actor/{id}。
 //  导出：文本组装（逐字格式）→ 系统分享面板（ActivityShareSheet 复用 ShtView 同模块实现）。
 //
 
@@ -29,13 +28,29 @@ struct FavsView: View {
     private var rows: [Row] { vm.rows(tab) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            topRow
-            tabBar
-            content
+        Group {
+            if vm.loading {
+                LoadingBox()
+            } else {
+                listContent
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.bg0.ignoresSafeArea())
+        .navigationTitle("收藏")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    exportPayload = vm.exportText()
+                    showExportShare = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("favs_export")
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) { tabBar }
         .onAppear { Task { await vm.reload() } }   // bind 即 reload（不随 dataEpoch 自动刷新）
         .sheet(isPresented: $showExportShare) {
             // ACTION_SEND text/plain 对位（chooser 标题「导出收藏」由系统面板承载）
@@ -44,78 +59,48 @@ struct FavsView: View {
         .accessibilityIdentifier("tab_root_favs")
     }
 
-    // MARK: 顶部行（右对齐「导出收藏」）
-
-    private var topRow: some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: 0)
-            Button {
-                exportPayload = vm.exportText()
-                showExportShare = true
-            } label: {
-                AppText(FavsCopy.exportButton, lvl: .bodyS, color: theme.accent,
-                        fontWeight: .medium)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 40)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("favs_export")
-        }
-        .padding(.horizontal, 8)
-    }
-
-    // MARK: TabRow 三 tab（文案带数量；默认选中 0）
+    // MARK: Tab（Picker .segmented 三 tab，文案带数量）
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(FavsCopy.tabs.enumerated()), id: \.offset) { i, t in
-                tabCell(t.label, kind: t.kind, selected: tab == t.kind)
-                if i < FavsCopy.tabs.count - 1 { Divider().frame(height: 20) }
+        Picker("收藏分类", selection: $tab) {
+            ForEach(Array(FavsCopy.tabs.enumerated()), id: \.offset) { _, t in
+                Text(FavsCopy.tabLabel(t.label, vm.count(t.kind))).tag(t.kind)
             }
         }
-        .frame(height: 46)
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.line).frame(height: 1) }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, ComponentMetrics.pageMargin)
+        .padding(.vertical, 6)
+        .background(theme.bg0)
+        .accessibilityIdentifier("favs_tabs")
     }
 
-    private func tabCell(_ label: String, kind: String, selected: Bool) -> some View {
-        Button {
-            tab = kind
-        } label: {
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                AppText(FavsCopy.tabLabel(label, vm.count(kind)), lvl: .bodyS,
-                        color: selected ? theme.accent : theme.text2,
-                        maxLines: 1, fontWeight: selected ? .semibold : .regular)
-                Spacer(minLength: 0)
-                Rectangle()
-                    .fill(selected ? theme.accent : Color.clear)
-                    .frame(height: 2)
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
-        .accessibilityIdentifier("favs_tab_\(kind)")
-    }
+    // MARK: 内容区（List 行卡 + swipeActions 删除 + .refreshable）
 
-    // MARK: 内容区（loading → LoadingBox；空 → EmptyBox；行卡列表）
-
-    @ViewBuilder
-    private var content: some View {
-        if vm.loading {
-            LoadingBox()
-        } else if rows.isEmpty {
-            EmptyBox(text: FavsCopy.emptyText)
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
+    private var listContent: some View {
+        Group {
+            if rows.isEmpty {
+                EmptyBox(text: FavsCopy.emptyText)
+            } else {
+                List {
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                         FavRowCard(row: r) {
                             tap(r)
                         }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                Task { await vm.remove(r) }
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     }
                 }
-                .padding(.vertical, 4)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .refreshable { await vm.reload() }
             }
         }
     }
@@ -155,7 +140,6 @@ struct FavRowCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.vertical, 4)
         .cardChrome()
         .accessibilityIdentifier("fav_row")
     }

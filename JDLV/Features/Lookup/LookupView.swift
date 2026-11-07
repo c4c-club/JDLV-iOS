@@ -27,52 +27,20 @@ struct LookupView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
+        Group {
             if vm.spec == nil {
                 // 解码失败兜底空态（两条文案逐字）
                 EmptyBox(text: AppCopy.lookupInvalid, hint: AppCopy.lookupInvalidHint)
             } else {
-                BrowseView(embedded: true, skipBind: true, vm: vm.browseVM)
+                BrowseView(embedded: true, skipBind: true, vm: vm.browseVM,
+                           title: vm.label.isEmpty ? "反查" : vm.label)
             }
         }
         .background(theme.bg0.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle(vm.label.isEmpty ? "反查" : vm.label)
         .navigationBarTitleDisplayMode(.inline)
         .task { await vm.applyOnce() }   // embedded/skipBind：首次 applyFilters（恒一次）
         .accessibilityIdentifier("secondary_page")
     }
-
-    // MARK: 顶栏（返回 + label 15pt 1 行省略 + ✕ 关闭；Row 最小高 48）
-
-    private var topBar: some View {
-        HStack(spacing: 4) {
-            Button {
-                router.pop()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 20))
-                    .foregroundColor(theme.text)
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("返回")
-            AppText(vm.label, lvl: .body, maxLines: 1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button {
-                router.pop()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15))
-                    .foregroundColor(theme.text2)
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("关闭")
-        }
-        .padding(.horizontal, 4)
-        .frame(minHeight: 48)
-    }
+}
 }

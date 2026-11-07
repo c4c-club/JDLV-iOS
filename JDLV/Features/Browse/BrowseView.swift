@@ -31,19 +31,23 @@ struct BrowseView: View {
     /// skipBind=true：不执行 bind（反查由独立 VM 自己 applyFilters）
     var skipBind: Bool = false
     private var externalVM: BrowseVM?
+    /// 覆盖导航标题（反查页传 spec.label；默认「浏览」）
+    var title: String = "浏览"
     @StateObject private var ownedVM = BrowseVM()
 
-    init(embedded: Bool = false, skipBind: Bool = false, vm: BrowseVM? = nil) {
+    init(embedded: Bool = false, skipBind: Bool = false, vm: BrowseVM? = nil,
+         title: String = "浏览") {
         self.embedded = embedded
         self.skipBind = skipBind
         self.externalVM = vm
+        self.title = title
     }
 
     var body: some View {
         if let vm = externalVM {
-            BrowseContent(vm: vm, embedded: embedded, skipBind: skipBind)
+            BrowseContent(vm: vm, embedded: embedded, skipBind: skipBind, title: title)
         } else {
-            BrowseContent(vm: ownedVM, embedded: embedded, skipBind: skipBind)
+            BrowseContent(vm: ownedVM, embedded: embedded, skipBind: skipBind, title: title)
         }
     }
 }
@@ -54,6 +58,7 @@ private struct BrowseContent: View {
     @ObservedObject var vm: BrowseVM
     var embedded: Bool
     var skipBind: Bool
+    var title: String
 
     @EnvironmentObject private var router: Router
     @EnvironmentObject private var services: AppServices
@@ -115,7 +120,7 @@ private struct BrowseContent: View {
                 grid
             }
         }
-        .navigationTitle("浏览")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(embedded ? .inline : .large)
         .toolbar { browseToolbar }
         .sheet(isPresented: $showFilter) {
