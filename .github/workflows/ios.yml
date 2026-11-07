@@ -104,7 +104,29 @@ jobs:
           mkdir -p build
           xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData build 2>&1 | tee build/build.log
 
+      - name: Start MySQL fixture (App unit tests use Db facade end-to-end)
+        run: |
+          set -e
+          brew install mysql@8.0
+          echo "$(brew --prefix)/opt/mysql@8.0/bin" >> "$GITHUB_PATH"
+          brew services start mysql@8.0
+          for i in $(seq 1 60); do
+            if mysql -uroot -e 'select 1' >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          mysql -uroot -e 'select 1'
+          mysql -uroot -e "CREATE DATABASE IF NOT EXISTS jdlv_app_it CHARACTER SET utf8mb4"
+          # 专用 fixture 账号 + mysql_native_password（明文信道可认证；生产为内网只读账号）
+          mysql -uroot -e "CREATE USER IF NOT EXISTS 'jdlv_it'@'%' IDENTIFIED WITH mysql_native_password BY 'jdlv_it'"
+          mysql -uroot -e "GRANT ALL ON jdlv_app_it.* TO 'jdlv_it'@'%'"
+          mysql -uroot -e "FLUSH PRIVILEGES"
+
       - name: Test
+        env:
+          JDLV_TEST_MYSQL_HOST: "127.0.0.1"
+          JDLV_TEST_MYSQL_PORT: "3306"
+          JDLV_TEST_MYSQL_USER: jdlv_it
+          JDLV_TEST_MYSQL_PASS: jdlv_it
         run: |
           set -eo pipefail
           xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test 2>&1 | tee build/test.log

@@ -869,7 +869,8 @@ struct SettingsView: View {
         .onAppear {
             SettingsIndexHub.shared.box.update(s)
             lastSeen = s
-            injectCdnProvider()
+            // A1/R1：CdnRewrite.settingsProvider 改由 AppBootstrap 启动时一次性注入，
+            // 不再依赖 SettingsView.onAppear（首启门禁前 SettingsView 根本不存在）。
         }
         // autoSave 副作用执行器（MainVm 锁外单消费者对位）
         .onChange(of: store.settings) { nv in
@@ -884,11 +885,5 @@ struct SettingsView: View {
             guard let r else { return }
             bus.apply(r)
         }
-    }
-
-    /// CdnRewrite.settingsProvider 注入（任意线程可读 → 捕获单例快照盒实例）
-    private func injectCdnProvider() {
-        let box = SettingsIndexHub.shared.box
-        CdnRewrite.settingsProvider = { box.cdnSettings }
     }
 }
