@@ -20,7 +20,6 @@ import JDLVCore
 
 struct BrowseSearchCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
 
@@ -30,7 +29,6 @@ struct BrowseSearchCard: View {
             title: SettingsCopy.groupBrowse,
             rememberKey: "browse",
             summary: SettingsCopy.summaryBrowse(s),
-            bus: bus
         ) {
             SettingsDropdownRow(label: SettingsCopy.viewModeLabel,
                                 options: [
@@ -126,7 +124,6 @@ struct BrowseSearchCard: View {
     }
 
     private func editNow(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         Task { await store.editNow(t) }
     }
 }
@@ -185,7 +182,6 @@ enum SemanticImport {
 
 struct SemanticModelCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
@@ -207,7 +203,6 @@ struct SemanticModelCard: View {
             title: SettingsCopy.groupSemantic,
             rememberKey: "semantic",
             summary: SettingsCopy.summarySemantic(installed: installed),
-            bus: bus
         ) {
             statusLine
 
@@ -242,7 +237,6 @@ struct SemanticModelCard: View {
                                         DropdownOption(label: SettingsCopy.semThreshold5, value: "5"), DropdownOption(label: SettingsCopy.semThreshold10, value: "10"), DropdownOption(label: SettingsCopy.semThreshold20, value: "20")],
                                     current: "\(s.semThreshold)") { v in
                     if let n = Int(v) {
-                        bus.markSaving()
                         store.updateSettings { $0.semThreshold = n }
                     }
                 }
@@ -252,7 +246,6 @@ struct SemanticModelCard: View {
                                         DropdownOption(label: "50 MB", value: "50"), DropdownOption(label: "100 MB", value: "100"), DropdownOption(label: "200 MB", value: "200"), DropdownOption(label: "不限", value: "0")],
                                     current: "\(s.embCacheMb)") { v in
                     if let n = Int(v) {
-                        bus.markSaving()
                         Task {
                             _ = await store.autoSave { $0.embCacheMb = n }
                             SettingsIndexHub.shared.applyEmbBudget(mb: n)
@@ -364,7 +357,6 @@ struct SemanticModelCard: View {
 
 struct CacheCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
 
@@ -374,7 +366,6 @@ struct CacheCard: View {
             title: SettingsCopy.groupCache,
             rememberKey: "cache",
             summary: SettingsCopy.summaryCache(s),
-            bus: bus
         ) {
             SettingsDropdownRow(label: SettingsCopy.homeTtlLabel,
                                 options: ttlOptions,
@@ -425,59 +416,9 @@ struct CacheCard: View {
 
     private func selectInt(_ v: String, _ set: @escaping (inout AppSettings, Int) -> Void) {
         guard let n = Int(v) else { return }
-        bus.markSaving()
         Task { await store.editNow { set(&$0, n) } }
     }
 }
 
 // MARK: - ⑧ 关于 — key `about`（§12 逐字）
 
-struct AboutCard: View {
-
-    @ObservedObject var bus: SaveStateBus
-
-    @EnvironmentObject private var store: SettingsStore
-    @Environment(\.appTheme) private var theme
-
-    private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-    }
-
-    var body: some View {
-        let s = store.settings
-        SettingsGroupCard(
-            title: SettingsCopy.groupAbout,
-            rememberKey: "about",
-            summary: SettingsCopy.summaryAbout,
-            bus: bus
-        ) {
-            AppText(SettingsCopy.aboutVersion(version), lvl: .bodyS)
-            SettingsNote(text: SettingsCopy.aboutDesc, topPad: 2)
-
-            // 测试图片模式（仅可调试构建显示）
-            #if DEBUG
-            AppSwitchRow(label: SettingsCopy.testImgLabel,
-                         checked: s.testImgMode,
-                         hint: SettingsCopy.testImgDesc) { v in
-                toggleTestImg(v)
-            }
-            .accessibilityIdentifier("about_testimg_switch")
-            if s.testImgMode {
-                // P13 截图前置锚点：测试图片模式开启即出现
-                AppText("✓ 测试图片模式生效中", lvl: .meta, color: theme.accent)
-                    .accessibilityIdentifier("testImageModeOn")
-            }
-            #endif
-        }
-    }
-
-    /// 开关副作用：清测试图缓存（rebuildImageLoader 对位）即时生效 + Toast 逐字
-    private func toggleTestImg(_ v: Bool) {
-        bus.markSaving()
-        Task {
-            _ = await store.editNow { $0.testImgMode = v }
-            TestImages.clearCache()
-            AppServices.shared.showToast(v ? SettingsCopy.testImgOnToast : SettingsCopy.testImgOffToast)
-        }
-    }
-}

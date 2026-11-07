@@ -18,7 +18,6 @@ import JDLVCore
 struct DataSourceCard: View {
 
     var firstRun: Bool = false
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
@@ -59,7 +58,6 @@ struct DataSourceCard: View {
             rememberKey: "db",
             defaultExpanded: firstRun || s.user.isEmpty,   // 唯一自动展开例外（§0.3）
             summary: SettingsCopy.summaryDb(s),
-            bus: bus
         ) {
             SettingsSegmented(label: SettingsCopy.dsLabelSource,
                               options: [("本地库", "local"), ("远程库", "remote")],
@@ -203,12 +201,10 @@ struct DataSourceCard: View {
     }
 
     private func editDebounced(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         store.edit(t)
     }
 
     private func editNow(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         Task { await store.editNow(t) }
     }
 
@@ -251,7 +247,6 @@ struct DataSourceCard: View {
 
 struct ProxyCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
@@ -270,7 +265,6 @@ struct ProxyCard: View {
             title: SettingsCopy.groupProxy,
             rememberKey: "proxy",
             summary: SettingsCopy.summaryProxy(s),
-            bus: bus
         ) {
             SettingsLabeledRow(label: SettingsCopy.proxyHostLabel) {
                 CompactField(text: $proxyHost,
@@ -330,7 +324,6 @@ struct ProxyCard: View {
     }
 
     private func editDebounced(_ host: String, _ port: String) {
-        bus.markSaving()
         store.edit { s in
             s.proxyHost = host
             s.proxyPort = port
@@ -338,7 +331,6 @@ struct ProxyCard: View {
     }
 
     private func editNow(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         Task { await store.editNow(t) }
     }
 

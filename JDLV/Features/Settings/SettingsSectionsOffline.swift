@@ -19,7 +19,6 @@ import JDLVCore
 
 struct OfflineIndexCard: View {
 
-    @ObservedObject var bus: SaveStateBus
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
@@ -51,7 +50,6 @@ struct OfflineIndexCard: View {
             title: SettingsCopy.groupShadow,
             rememberKey: "shadow",
             summary: SettingsCopy.summaryShadow(view),
-            bus: bus
         ) {
             settingsBlock(view)
             tagEstimateNote(view)
@@ -305,7 +303,6 @@ struct OfflineIndexCard: View {
         let lj = target == .jdb ? nv : prevM
         let ls = target == .sht ? nv : prevT
         let wasRunning = SettingsIndexHub.shared.sync?.isRunning() ?? false
-        bus.markSaving()
         if SettingsDiagnostics.isDemo {
             Task {
                 _ = await store.updateSettingsNow { s in
@@ -339,7 +336,6 @@ struct OfflineIndexCard: View {
     }
 
     private func editNow(_ t: @escaping SettingsTransform) {
-        bus.markSaving()
         Task { await store.editNow(t) }
     }
 }
