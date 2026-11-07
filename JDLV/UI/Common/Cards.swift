@@ -142,7 +142,8 @@ struct MovieCard: View {
         .padding(.horizontal, ComponentMetrics.cardPadding)
         .padding(.top, 6)
         .padding(.bottom, 4)
-        .frame(maxWidth: .infinity, height: height, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: height, alignment: .topLeading)
     }
 }
 
@@ -183,7 +184,8 @@ struct ShtCard: View {
                 }
                 .padding(.horizontal, ComponentMetrics.cardPadding)
                 .padding(.top, ComponentMetrics.cardPadding)
-                .frame(maxWidth: .infinity, height: 40, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: 40, alignment: .topLeading)
                 if coverUrl.isEmpty {
                     ShtCoverPlaceholder(t: t, ratio: coverRatio)
                 } else {
@@ -195,7 +197,8 @@ struct ShtCard: View {
                 AppText(metaText, lvl: .meta, maxLines: 1, tight: true)
                     .padding(.horizontal, ComponentMetrics.cardPadding)
                     .padding(.bottom, ComponentMetrics.cardPadding)
-                    .frame(maxWidth: .infinity, height: 28, alignment: .bottomLeading)
+                    .frame(maxWidth: .infinity, alignment: .bottomLeading)
+                    .frame(height: 28, alignment: .bottomLeading)
             }
             .contentShape(Rectangle())
         }
@@ -254,7 +257,8 @@ struct ActorCard: View {
                 .padding(.horizontal, ComponentMetrics.cardPadding)
                 .padding(.top, 4)
                 .padding(.bottom, ComponentMetrics.cardPadding)
-                .frame(maxWidth: .infinity, height: 44, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: 44, alignment: .topLeading)
             }
             .contentShape(Rectangle())
         }
