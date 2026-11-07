@@ -103,7 +103,6 @@ final class LayoutAuditUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if !collect(app, prefix: prefix).isEmpty { return true }
-            if hasDemoCards(app) { return true }   // 数据在（wrapper a11y 未成节点的兜底判定）
             Thread.sleep(forTimeInterval: 0.5)
         }
         snapDiag(app, "no-cards-\(page)")
