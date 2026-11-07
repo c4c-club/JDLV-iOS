@@ -1,4 +1,5 @@
 import XCTest
+import JDLVCore
 @testable import JDLV
 
 // R3 问题 2：图床代理探测单测（13 §6.1 ProxyProbeTests —— URLProtocol mock）。
