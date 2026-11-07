@@ -91,7 +91,7 @@ final class ScreenshotsUITests: XCTestCase {
         snap(app, name, anchor: anchors.first?.identifier ?? name)
     }
 
-    /// 关闭任何弹层：灯箱 ✕ → sheet「完成」→ swipeDown 兜底
+    /// 关闭任何弹层：灯箱 ✕ → sheet「完成」→ 通用「完成」→ swipeDown 兜底
     func dismissAnyModal(_ app: XCUIApplication) {
         let close = app.buttons["lightbox_close"]
         if close.exists {
@@ -103,11 +103,21 @@ final class ScreenshotsUITests: XCTestCase {
             done.tap()
             Thread.sleep(forTimeInterval: 0.6)
         }
-        // 通用 sheet 兜底：导航栏「完成」
+        // 通用 sheet：导航栏「完成」/ label「完成」（FiltersPanel 等）
         let navDone = app.navigationBars.buttons["完成"]
         if navDone.exists && navDone.isHittable {
             navDone.tap()
             Thread.sleep(forTimeInterval: 0.6)
+        }
+        let genericDone = app.buttons["完成"]
+        if genericDone.exists && genericDone.isHittable && genericDone.identifier != "sht_filter_done" {
+            genericDone.tap()
+            Thread.sleep(forTimeInterval: 0.6)
+        }
+        // 兜底：从屏幕上缘下滑关 sheet（无弹层时列表回弹，无害）
+        if app.sheets.count > 0 {
+            app.swipeDown(velocity: .fast)
+            Thread.sleep(forTimeInterval: 0.8)
         }
     }
 
