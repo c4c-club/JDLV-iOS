@@ -1,4 +1,5 @@
 import XCTest
+import JDLVCore
 @testable import JDLV
 
 // R3 问题 4：全局保存状态单测（13 §6.1 SaveStateTests）。
@@ -42,11 +43,13 @@ final class SaveStateTests: XCTestCase {
     func testUpdateSettingsNowAndAutoSaveExitSaving() async {
         let store = makeStore("now")
         let r1 = await store.updateSettingsNow { $0.perPage = 30 }
-        XCTAssertNotEqual(SaveResult.saving, r1, "updateSettingsNow 必须返回终态")
+        XCTAssertTrue([.saved, .noChange, .failed].contains(r1),
+                      "updateSettingsNow 必须返回终态，实际 \(r1)")
         if case .saving = store.saveState { XCTFail("updateSettingsNow 后不得停留 .saving") }
 
         let r2 = await store.autoSave { $0.perPage = 40 }
-        XCTAssertNotEqual(SaveResult.saving, r2, "autoSave 必须返回终态")
+        XCTAssertTrue([.saved, .noChange, .failed].contains(r2),
+                      "autoSave 必须返回终态，实际 \(r2)")
         if case .saving = store.saveState { XCTFail("autoSave 后不得停留 .saving") }
     }
 
@@ -65,7 +68,8 @@ final class SaveStateTests: XCTestCase {
     func testApplyLockChangeExitsSaving() async {
         let store = makeStore("lock")
         let r = await store.applyLockChange(enabled: false, type: "none", secretHash: "")
-        XCTAssertNotEqual(SaveResult.saving, r, "applyLockChange 必须返回终态")
+        XCTAssertTrue([.saved, .noChange, .failed].contains(r),
+                      "applyLockChange 必须返回终态，实际 \(r)")
         if case .saving = store.saveState { XCTFail("applyLockChange 后不得停留 .saving") }
     }
 
