@@ -199,6 +199,9 @@ final class AppBootstrapTests: XCTestCase {
             guard let store else { return }
             SettingsEffects.apply(old: old, new: new, store: store)
         }
+        // provider 注入（CdnRewrite 读 AppBootstrap.box —— 前序用例 tearDown 可能已重置为默认）
+        AppBootstrap.box.update(store.settings)
+        AppBootstrap.injectRuntime()
         _ = await store.updateSettingsNow { s in
             s.remoteHost = "10.1.2.3"
             s.remotePort = "3307"

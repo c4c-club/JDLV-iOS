@@ -27,31 +27,63 @@ private final class FakeSocks5Server {
 
     private let lock = NSLock()
     private var _connects: [(String, UInt16)] = []
+    private var _connCount = 0
+    private var _events: [String] = []
 
     var connects: [(String, UInt16)] {
         lock.lock(); defer { lock.unlock() }
         return _connects
     }
 
+    var connCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return _connCount
+    }
+
+    /// 诊断事件流（ready/accept/failed…；测试失败时随断言输出）
+    var events: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return _events
+    }
+
+    fileprivate func record(_ e: String) {
+        lock.lock(); _events.append(e); lock.unlock()
+    }
+
     func start() async throws {
-        let params = NWParameters.tcp
-        let listener = try NWListener(using: params, on: .any)
-        self.listener = listener
-        let ready = expectation()
-        listener.stateUpdateHandler = { [weak ready] (state: NWListener.State) in
-            if case .ready = state { ready?() }
+        // 首选显式回环 IPv4 绑定（避免 .any 双栈歧义 → NIO IPv4 connect 打不到监听）；
+        // 3s 未就绪则回退通配绑定
+        let paramsList: [NWParameters] = [Self.loopbackParams(), NWParameters.tcp]
+        for (idx, params) in paramsList.enumerated() {
+            let listener = try NWListener(using: params, on: .any)
+            self.listener = listener
+            let ready = ReadyGate()
+            listener.stateUpdateHandler = { [weak ready, weak self] (state: NWListener.State) in
+                if case .ready = state { ready?.fire() }
+                if case .failed(let e) = state { self?.record("listener-failed:\(e)") }
+            }
+            listener.newConnectionHandler = { [weak self] conn in
+                guard let self else { return }
+                self.lock.lock(); self._connCount += 1; self._events.append("accept"); self.lock.unlock()
+                FakeSocksConn(conn: conn, server: self).start()
+            }
+            listener.start(queue: q)
+            await ready.fulfillWait(timeout: 3)
+            if let p = listener.port?.rawValue, p > 0 {
+                port = p
+                record("ready(idx=\(idx)) port=\(p)")
+                return
+            }
+            listener.cancel()
         }
-        listener.newConnectionHandler = { [weak self] conn in
-            guard let self else { return }
-            FakeSocksConn(conn: conn, server: self).start()
-        }
-        listener.start(queue: q)
-        await ready.fulfillWait()
-        guard let p = listener.port?.rawValue, p > 0 else {
-            throw NSError(domain: "FakeSocks5Server", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "listener 未就绪"])
-        }
-        port = p
+        throw NSError(domain: "FakeSocks5Server", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "listener 未就绪: \(events.joined(separator: " | "))"])
+    }
+
+    private static func loopbackParams() -> NWParameters {
+        let p = NWParameters.tcp
+        p.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: .any)
+        return p
     }
 
     func stop() {
@@ -59,26 +91,19 @@ private final class FakeSocks5Server {
         listener = nil
     }
 
-    private func expectation() -> ReadyGate { ReadyGate() }
-
-    private func record(_ host: String, _ port: UInt16) {
+    fileprivate func recordConnect(_ host: String, _ port: UInt16) {
         lock.lock(); _connects.append((host, port)); lock.unlock()
     }
 
-    fileprivate func recordConnect(_ host: String, _ port: UInt16) { record(host, port) }
-
-    /// 等待门（NW 回调在自有 queue → 用 continuation 桥 async）
+    /// 等待门（NW 回调在自有 queue → 用 continuation 桥 async；带超时兜底防悬挂）
     private final class ReadyGate {
         private var cont: CheckedContinuation<Void, Never>?
         private let lock = NSLock()
         private var done = false
 
-        func fulfillWait() async {
-            let already: Bool = lock.withLock {
-                if done { return true }
-                return false
-            }
-            if already { return }
+        func fulfillWait(timeout: TimeInterval) async {
+            if lock.withLock({ done }) { return }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { self.timeoutFire() }
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                 lock.lock()
                 if done { lock.unlock(); c.resume(); return }
@@ -87,13 +112,24 @@ private final class FakeSocks5Server {
             }
         }
 
-        func callAsFunction() {
+        private func timeoutFire() {
             lock.lock()
+            let first = !done
             done = true
             let c = cont
             cont = nil
             lock.unlock()
-            c?.resume()
+            if first { c?.resume() }
+        }
+
+        func fire() {
+            lock.lock()
+            let first = !done
+            done = true
+            let c = cont
+            cont = nil
+            lock.unlock()
+            if first { c?.resume() }
         }
     }
 }
@@ -115,8 +151,14 @@ private final class FakeSocksConn {
     func start() {
         conn.stateUpdateHandler = { [weak self] (state: NWConnection.State) in
             switch state {
-            case .ready: self?.receiveInbound()
-            case .failed, .cancelled: self?.teardown()
+            case .ready:
+                self?.server.record("conn-ready")
+                self?.receiveInbound()
+            case .failed(let e):
+                self?.server.record("conn-failed:\(e)")
+                self?.teardown()
+            case .cancelled:
+                self?.teardown()
             default: break
             }
         }
@@ -306,9 +348,15 @@ final class ProxyTunnelTests: XCTestCase {
         // 一条入站连接 → tunnel 向假代理发 CONNECT（目标 = 真实 host:port）
         let probe = try await probeTunnel(try XCTUnwrap(listen))
         defer { probe.cancel() }
-        try await waitUntil(timeout: 5) { !fake.connects.isEmpty }
-        XCTAssertEqual(fake.connects.first?.0, "203.0.113.9")
-        XCTAssertEqual(fake.connects.first?.1, 3307)
+        if fake.connects.isEmpty {
+            try await waitUntil(timeout: 5) { !fake.connects.isEmpty }
+        }
+        guard let first = fake.connects.first else {
+            XCTFail("CONNECT 未到达假代理: connCount=\(fake.connCount) events=\(fake.events.joined(separator: " | "))")
+            return
+        }
+        XCTAssertEqual(first.0, "203.0.113.9")
+        XCTAssertEqual(first.1, 3307)
 
         // 关闭开关：override 清空 + 端口复位（destroy 语义）
         s.proxyDb = false
@@ -388,12 +436,22 @@ final class ProxyTunnelTests: XCTestCase {
         XCTAssertNil(mgr.lastError)
 
         let ok = await Db.check("jdb")
-        XCTAssertTrue(ok, "经回环隧道连真实 MySQL 失败（lastError=\(mgr.lastError ?? "-")）")
+        if !ok {
+            XCTFail("经回环隧道连真实 MySQL 失败（lastError=\(mgr.lastError ?? "-")；" +
+                    "fake connCount=\(fake.connCount) events=\(fake.events.joined(separator: " | "))）")
+            return
+        }
         let rows = try await Db.query("jdb", "select 1")
         XCTAssertEqual(rows.count, 1)
 
-        try await waitUntil(timeout: 5) { !fake.connects.isEmpty }
-        XCTAssertEqual(fake.connects.first?.0, host, "CONNECT 目标必须是真实 host")
-        XCTAssertEqual(fake.connects.first?.1, UInt16(port), "CONNECT 目标必须是真实 port")
+        if fake.connects.isEmpty {
+            try await waitUntil(timeout: 5) { !fake.connects.isEmpty }
+        }
+        guard let first = fake.connects.first else {
+            XCTFail("CONNECT 未到达假代理: connCount=\(fake.connCount) events=\(fake.events.joined(separator: " | "))")
+            return
+        }
+        XCTAssertEqual(first.0, host, "CONNECT 目标必须是真实 host")
+        XCTAssertEqual(first.1, UInt16(port), "CONNECT 目标必须是真实 port")
     }
 }

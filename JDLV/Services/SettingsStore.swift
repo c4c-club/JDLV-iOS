@@ -99,7 +99,8 @@ final class SettingsStore: ObservableObject {
     }
 
     /// launch argument `-JDLV_SEED_SETTINGS <base64(JSON 存储字典)>` → 预写存储
-    /// （仅 DEBUG；ProductionSmokeUITests 用 —— 先种配置再载入，等价已保存的合法配置）
+    /// （仅 DEBUG；ProductionSmokeUITests 用 —— 先种配置再载入，等价已保存的合法配置。
+    /// 口令键不进 UserDefaults（与生产一致）：remote_pass/local_pass/lock_secret 写 Keychain。）
     static func applySeedIfPresent(_ args: [String], defaults: UserDefaults) {
         #if DEBUG
         guard let i = args.firstIndex(of: "-JDLV_SEED_SETTINGS"),
@@ -110,6 +111,16 @@ final class SettingsStore: ObservableObject {
         let s = AppSettings.fromStorage(dict)
         guard let enc = AppSettings.encodeStorageJSON(s.storageWithoutSecrets) else { return }
         defaults.set(enc, forKey: AppSettings.storageDefaultsKey)
+        // 口令走 Keychain（与生产同路径；service 已被 -JDLV_KEYCHAIN_SERVICE 隔离）
+        if let v = dict["remote_pass"] as? String {
+            _ = KeychainStore.setResult(v, forKey: "settings:remote_pass")
+        }
+        if let v = dict["local_pass"] as? String {
+            _ = KeychainStore.setResult(v, forKey: "settings:local_pass")
+        }
+        if let v = dict["lock_secret"] as? String {
+            _ = KeychainStore.setResult(v, forKey: "lock_secret")
+        }
         #endif
     }
 

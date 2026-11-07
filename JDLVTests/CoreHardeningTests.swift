@@ -48,6 +48,9 @@ final class CoreHardeningTests: XCTestCase {
         AppBootstrap.box.update(s)
         AppBootstrap.injectRuntime()
 
+        // select 2 as b, 1 as a 不在 106 生产模板内 → 临时关 enforce（fixture 专用，用后恢复）
+        SqlPolicy.setEnforceForTesting(false)
+        defer { SqlPolicy.setEnforceForTesting(true) }
         // 旧实现 keys.first 依赖无序字典：b/a 命名顺序下可能取到 1；列序实现必须取 2
         let v = try await Db.scalar("jdb", "select 2 as b, 1 as a")
         XCTAssertEqual(v, 2, "scalar 必须取结果集第一列（b=2），而不是无序字典任意键")

@@ -58,12 +58,12 @@ final class KeychainLaunchTests: XCTestCase {
     func testWriteFailureFailsSaveWithoutMemoryChange() async {
         let store = SettingsStore(defaults: freshDefaults("writefault"))
         KeychainStore.fault.write = true
-        let r = await store.updateSettingsNow { s in
+        let r = await store.autoSave { s in
             s.remoteUser = "u2"
             s.remotePass = "new-pass"
         }
         XCTAssertEqual(r, .failed)
-        XCTAssertEqual(store.lastSaveResult, .failed)
+        XCTAssertEqual(store.lastSaveResult, .failed, "autoSave 必须把 FAILED 写进三态状态")
         XCTAssertEqual(store.settings.remotePass, "", "内存口令不得变成未落盘值")
         XCTAssertFalse(store.secretWriteMessage.isEmpty, "写失败必须有可读文案")
 

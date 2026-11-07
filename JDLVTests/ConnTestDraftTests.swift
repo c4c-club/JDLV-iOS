@@ -83,8 +83,10 @@ final class ConnTestDraftTests: XCTestCase {
         let r = await SettingsDiagnostics.testConnection(draft)
         XCTAssertFalse(r.hasPrefix("✓"))
         XCTAssertTrue(r.contains("nope_sht_db"), "失败文案必须点名 sht 草稿库: \(r)")
-        XCTAssertTrue(r.contains("Unknown database") || r.contains("数据库"),
-                      "应含 Unknown database 语义: \(r)")
+        // fixture 账号仅有 jdlv_app_it 的 GRANT：MySQL 8 在建连阶段即报
+        // ER_DBACCESS_DENIED(1044, Access denied ... to database)，先于 Unknown database(1049)
+        XCTAssertTrue(r.contains("Access denied") || r.contains("Unknown database"),
+                      "应含库不可达语义: \(r)")
     }
 
     // MARK: 错误口令 → Access denied + 提示
