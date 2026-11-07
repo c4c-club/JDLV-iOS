@@ -2,13 +2,13 @@ import SwiftUI
 import JDLVCore
 
 //
-//  ArticlesView.swift —— 资讯列表页（10 §2.2 ArticlesScreen 移植）。
+//  ArticlesView.swift —— 资讯列表页（10 §2.2 ArticlesScreen 对位 + 13 §4.8 设计系统 v2）。
 //
-//  结构：ListScaffold（骨架 1 列）内 header = SearchBarCompact（placeholder 逐字
-//  「搜索资讯标题 / 正文…」）+ 分类 chips（横向滚动；首项固定「全部」）+ ArticleCard 行卡；
-//  footer = LoadMoreFooter（per=24）；右下角 ListNavTools（goPage 本地 ceil 钳制）。
+//  v2：PageScaffold（单 ScrollView + 单 LazyVStack + .refreshable + overlay 页码）；
+//  header = SearchBarCompact（placeholder 逐字「搜索资讯标题 / 正文…」）+ 分类 chips
+//  （横向滚动；首项固定「全部」，仅 categories 非空才显示）；行卡 ArticleRow 96pt
+//  （缩略图 72×96、标题 2 行、元信息 1 行）；footer = LoadMoreFooter（per=24）。
 //  空态文案两处相同：「暂无资讯 (需抓取端跑资讯任务并上传)」。
-//  分类 chips 仅在 st.categories 非空才显示（远程库无分类 → 只剩列表）。
 //
 
 struct ArticlesView: View {
@@ -27,9 +27,8 @@ struct ArticlesView: View {
     private var items: [Row] { vm.items ?? [] }
 
     var body: some View {
-        ListScaffold(
-            refreshing: vm.refreshing,
-            onRefresh: { Task { await vm.refresh() } },
+        PageScaffold(
+            onRefresh: { await vm.refresh() },
             firstLoading: vm.loading,
             empty: items.isEmpty,
             error: vm.error,
@@ -80,7 +79,6 @@ struct ArticlesView: View {
                 categoryChips
             }
         }
-        .padding(.horizontal, 10)
         .padding(.top, 6)
     }
 
@@ -100,21 +98,21 @@ struct ArticlesView: View {
                     .accessibilityIdentifier("articles_cat_\(cid)")
                 }
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, ComponentMetrics.pageMargin)
         }
     }
 
-    // MARK: 行卡列表（MovieGrid viewMode=2 固定 1 列行式对位）
+    // MARK: 行卡列表（ArticleRow 96pt 固定行高）
 
     private var list: some View {
-        LazyVStack(spacing: 10) {
+        VStack(spacing: 10) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, a in
                 ArticleCard(a: a) {
                     router.push(.article(a.s("id")))
                 }
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, ComponentMetrics.pageMargin)
         .padding(.vertical, 6)
     }
 
@@ -123,7 +121,8 @@ struct ArticlesView: View {
     }
 }
 
-// MARK: - ArticleCard（10 §2.3：左图右文 128×96；无图分类首字/「资」占位；「N 字」元信息）
+// MARK: - ArticleCard（13 §4.8：ArticleRow 96pt——缩略图 72×96 全出血、标题 2 行、元信息 1 行；
+// 无图分类首字/「资」占位；「N 字」元信息）
 
 struct ArticleCard: View {
     let a: Row
@@ -148,35 +147,36 @@ struct ArticleCard: View {
         Button(action: onClick) {
             HStack(alignment: .top, spacing: 10) {
                 cover
+                    .frame(width: 72, height: 96)
                 VStack(alignment: .leading, spacing: 4) {
-                    AppText(title.isEmpty ? " " : title, lvl: .body,
-                            maxLines: 2, textAlign: .leading, fontWeight: .semibold)
-                    AppText(metaText, lvl: .meta, maxLines: 1)
+                    AppText(title.isEmpty ? " " : title, lvl: .bodyS,
+                            maxLines: 2, textAlign: .leading,
+                            fontWeight: .semibold, tight: true, reservesSpace: true)
+                    AppText(metaText, lvl: .meta, maxLines: 1, tight: true)
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+            .frame(height: 96, alignment: .top)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .cardChrome()
+        .clipShape(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner))
         .accessibilityIdentifier("article_card")
     }
 
-    // 左：封面 128×96（4:3）；无封面 → 同尺寸圆角占位块 + 分类首字/「资」
+    // 左：封面 72×96；无封面 → 同尺寸占位块 + 分类首字/「资」
     @ViewBuilder
     private var cover: some View {
         if coverUrl.isEmpty {
             ZStack {
-                RoundedRectangle(cornerRadius: ComponentMetrics.imageCorner).fill(theme.bg3)
+                Rectangle().fill(theme.bg3)
                 AppText(placeholderChar, lvl: .titleM, color: theme.text2)
             }
-            .frame(width: 128, height: 96)
-            .clipShape(RoundedRectangle(cornerRadius: ComponentMetrics.imageCorner))
         } else {
-            PosterImage(url: coverUrl)
-                .frame(width: 128, height: 96)
+            AspectImage(url: coverUrl, ratio: 72.0 / 96.0, radius: 0)
         }
     }
 }

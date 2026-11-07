@@ -42,9 +42,8 @@ struct HotReviewsView: View {
     }
 
     var body: some View {
-        ListScaffold(
-            refreshing: vm.refreshing,
-            onRefresh: { Task { await vm.refresh() } },
+        PageScaffold(
+            onRefresh: { await vm.refresh() },
             firstLoading: vm.loading,
             empty: items.isEmpty,
             error: vm.error,
@@ -197,8 +196,8 @@ struct HotReviewRow: View {
                     // 影片区（可点 → 跳影片详情）
                     Button(action: onMovie) {
                         HStack(alignment: .top, spacing: 8) {
-                            PosterImage(url: coverUrl)
-                                .frame(width: 56, height: 78)
+                            AspectImage(url: coverUrl, ratio: 56.0 / 76.0, radius: 8)
+                                .frame(width: 56, height: 76)
                             VStack(alignment: .leading, spacing: 4) {
                                 AppText(movieTitle.isEmpty ? " " : movieTitle, lvl: .bodyS,
                                         maxLines: 2, textAlign: .leading)
@@ -226,10 +225,10 @@ struct HotReviewRow: View {
                         AppText(row.s("user_name"), lvl: .meta, maxLines: 1)
                     }
                 }
-                if !row.s("content").isEmpty {
-                    AppText(content3Lines, lvl: .bodyS, maxLines: 3, textAlign: .leading)
-                        .padding(.top, 6)
-                }
+                // 13 §4.10：3 行正文恒占位（reservesSpace）→ 行高一致
+                AppText(content3Lines, lvl: .bodyS, maxLines: 3, textAlign: .leading,
+                        tight: true, reservesSpace: true)
+                    .padding(.top, 6)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
