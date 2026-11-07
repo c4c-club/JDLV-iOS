@@ -2,20 +2,16 @@ import SwiftUI
 import JDLVCore
 
 //
-//  ShtDetailView.swift —— 帖子详情（09 D 节 ShtDetailScreen 逐字移植）。
+//  ShtDetailView.swift —— 帖子详情（09 D 节 ShtDetailScreen 对位 + 13 §4.7 设计系统 v2）。
 //
-//  顶栏（D1）：标题「帖子详情」（1 行省略，不显示帖子标题）+「Aa」TextButton（14 Bold，
-//  打开阅读设置弹层）+ 收藏 icon（双态 tint）。返回用系统导航返回（对位「返回」icon）。
-//
-//  页面状态（D2）：loading → LoadingBox；error → ErrorBox(error, onRetry = load)；
-//  d == null → EmptyBox「远程库未收录该帖」。iOS 侧 VM 生命周期由 @StateObject 随视图
-//  销毁释放（对位 Android 离开页面 release()；不挂 onDisappear —— 防压栈返回闪空）。
-//
-//  正文（D5 三分支）：useReaderBody → ReaderBody（阅读设置全生效）；否则 blocks 普通渲染。
-//  磁力/ED2K/视频区块（D6 LinkCard）：标题逐字 + 单击复制 Toast 逐字。
-//  图片贴/截图（D7）：自拍图片区通栏（宽高比 1.5）/其他帖 ThumbGrid（110pt、1.5、间距 8）
-//  → 灯箱（UI/Lightbox.swift）。
-//  空信息兜底（D8）：四类全空且非文学帖 → 逐字文案；末尾 30pt Spacer 收尾。
+//  v2 结构（问题 10 修复）：
+//  - 容器：单 ScrollView + 单 LazyVStack（PageScaffold 四态直挂；ReaderBody 已改普通
+//    VStack，不再多层 lazy 嵌套）。
+//  - 解析：ShtThreadData.parse 多形态（blocks [[String:Any]]/JSON String/[String]；
+//    images [String]/[[String:Any]]；magnets 字典/裸链；article 纯文本分段；HTML entity）。
+//  - 正文：Text+AttributedString（textSelection）；磁力/ED2K/视频卡 lineLimit(nil)
+//    + textSelection + 复制按钮（不再 2 行截断）；图片 AspectImage(fit) 全宽。
+//  - 顶栏（D1）：标题「帖子详情」+ Aa + 收藏。灯箱 fullScreenCover。
 //
 
 // MARK: - ShtDetailView
@@ -83,16 +79,17 @@ struct ShtDetailView: View {
                 Task { await vm.load(tid) }
             }
         }
+        .accessibilityIdentifier("sht_detail_page")
     }
 
     private var data: ShtThreadData { vm.d ?? ShtThreadData.placeholder }
 
-    // MARK: 正文（ScrollViewReader + 进度锚点）
+    // MARK: 正文（单 ScrollView + 单 LazyVStack + 进度锚点）
 
     private var content: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     titleBlock
                         .padding(.bottom, 10)
                     readerOrPlain
@@ -105,6 +102,7 @@ struct ShtDetailView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
+                .id("sht_detail_top")
             }
             .onAppear { restoreProgress(proxy) }
             .onDisappear {
@@ -140,10 +138,16 @@ struct ShtDetailView: View {
                 ForEach(data.blocks.indices, id: \.self) { i in
                     let b = data.blocks[i]
                     if b.isImage {
-                        PosterImage(url: b.i ?? "", aspect: 1.5)
+                        AspectImage(url: b.i ?? "", ratio: 1.5, fill: false)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                let urls = data.blocks.compactMap { $0.isImage ? $0.i : nil }
+                                if let u = b.i, let idx = urls.firstIndex(of: u) {
+                                    lightbox = LightboxState(urls: urls, index: idx)
+                                }
+                            }
                     } else if b.isText {
-                        AppText(b.t ?? " ", lvl: .bodyS,
-                                textAlign: .leading, fontWeight: b.isBold ? .bold : nil)
+                        textParagraph(b.t ?? " ", bold: b.isBold)
                     }
                 }
             }
@@ -151,7 +155,18 @@ struct ShtDetailView: View {
         }
     }
 
-    // MARK: 磁力 / ED2K / 视频区块（D6 LinkCard）
+    /// 正文段落（textSelection + 粗体；13 §4.7）
+    private func textParagraph(_ text: String, bold: Bool) -> some View {
+        Text(text)
+            .font(.system(size: 13))
+            .fontWeight(bold ? .bold : .regular)
+            .foregroundColor(theme.text)
+            .lineSpacing(3)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: 磁力 / ED2K / 视频区块（D6 LinkCard；v2 长链接不截断）
 
     @ViewBuilder
     private var linkSections: some View {
@@ -181,23 +196,23 @@ struct ShtDetailView: View {
         }
     }
 
-    /// 磁力卡：主行 link（等宽 12sp 最多 2 行省略）+ 次行 name.take(46) ·「N 个文件」+ 角标 fmtSize
+    /// 磁力卡：主行 link（不截断、可选中）+ 次行 name ·「N 个文件」+ 角标 fmtSize + 复制按钮
     private func magnetCard(_ m: ShtMagnet) -> some View {
-        let secondary = [String(m.name.prefix(46)),
-                         m.filesCount > 0 ? "\(m.filesCount) 个文件" : ""]
-            .filter { !$0.isEmpty }
+        let secondary = [m.name.isEmpty ? nil : m.name,
+                         m.filesCount > 0 ? "\(m.filesCount) 个文件" : nil]
+            .compactMap { $0 }
             .joined(separator: " · ")
         return linkCard(
             primary: m.displayLink, secondary: secondary, badge: Fmt.fmtSize(m.size),
-            monospaced: true, maxPrimaryLines: 2) {
+            monospaced: true) {
             vm.copyMagnet(m)
         }
     }
 
-    /// LinkCard 通用卡（整卡可点复制；surface 底圆角 10）
+    /// LinkCard 通用卡（v2：主行 lineLimit(nil) + textSelection；整卡可点复制 + 显式复制钮）
     private func linkCard(
         primary: String, secondary: String, badge: String,
-        monospaced: Bool = false, maxPrimaryLines: Int = 1,
+        monospaced: Bool = false,
         onTap: @escaping () -> Void
     ) -> some View {
         Button(action: onTap) {
@@ -208,8 +223,9 @@ struct ShtDetailView: View {
                               ? .system(size: 12, weight: .regular, design: .monospaced)
                               : .system(size: 12))
                         .foregroundColor(theme.text)
-                        .lineLimit(maxPrimaryLines)
-                        .truncationMode(.middle)
+                        .lineLimit(nil)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                     if !secondary.isEmpty {
                         AppText(secondary, lvl: .meta, maxLines: 1)
                     }
@@ -218,6 +234,9 @@ struct ShtDetailView: View {
                 if !badge.isEmpty {
                     AppText(badge, lvl: .meta, color: theme.text2)
                 }
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 14))
+                    .foregroundColor(theme.accent)
             }
             .padding(10)
             .background(RoundedRectangle(cornerRadius: ComponentMetrics.imageCorner)
@@ -237,7 +256,7 @@ struct ShtDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: 图片贴 / 截图（D7）→ 灯箱
+    // MARK: 图片贴 / 截图（D7；v2 AspectImage fit 全宽）→ 灯箱
 
     @ViewBuilder
     private var imageSections: some View {
@@ -245,20 +264,17 @@ struct ShtDetailView: View {
             sectionTitle("图片 (共 \(data.images.count) 张, 点击放大)")
             VStack(spacing: 8) {
                 ForEach(data.images.indices, id: \.self) { i in
-                    // 整帖通栏（宽满、宽高比 1.5）
-                    PosterImage(url: data.images[i], aspect: 1.5, radius: 0)
+                    // 整帖通栏（宽满、宽高比 1.5、fit 不裁切）
+                    AspectImage(url: data.images[i], ratio: 1.5, fill: false, radius: 0)
                         .contentShape(Rectangle())
                         .onTapGesture { openLightbox(i) }
                 }
             }
         } else if !data.images.isEmpty {
             sectionTitle("截图 (\(data.images.count) 张, 点击放大)")   // 注意：无「共」字
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 110), spacing: 8)],
-                alignment: .leading, spacing: 8
-            ) {
+            VStack(spacing: 8) {
                 ForEach(data.images.indices, id: \.self) { i in
-                    PosterImage(url: data.images[i], aspect: 1.5)
+                    AspectImage(url: data.images[i], ratio: 1.5, fill: false)
                         .contentShape(Rectangle())
                         .onTapGesture { openLightbox(i) }
                 }
@@ -285,7 +301,7 @@ struct ShtDetailView: View {
         guard !progressRestored, data.useReaderBody,
               let a = ReaderProgress.load(tid: tid), a > 0 else { return }
         progressRestored = true
-        // 等首帧布局完成再滚（LazyVStack 惰性挂载）
+        // 等首帧布局完成再滚
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             proxy.scrollTo("rd_blk_\(a)", anchor: .top)
         }

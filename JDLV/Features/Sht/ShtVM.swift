@@ -617,8 +617,26 @@ final class ShtVM: ObservableObject {
         await refetch()
     }
 
+    /// setType：page=1 + reload
     func setType(_ v: String) async {
         type = v
+        page = 1
+        await refetch()
+    }
+
+    /// clearFilters（R3 FilterSheet「重置」）：主版清空（级联清 cat+type）+ 关磁力开关 +
+    /// 模糊/语义关闭，page=1 + reload
+    func clearFilters() async {
+        main = ""
+        cat = ""
+        type = ""
+        if hasMagnet {
+            hasMagnet = false
+            store?.updateSettings { $0.shtHasMagnet = false }
+        }
+        fuzzy = false
+        semantic = false
+        anchors.removeAll()
         page = 1
         await refetch()
     }

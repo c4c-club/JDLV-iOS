@@ -409,6 +409,7 @@ final class QIntegrationTests: XCTestCase {
                 "'[{\"t\":\"第一段正文\"},{\"i\":\"https://img/x1.jpg\",\"sz\":120}]')," +
                 "(1002,'Demo Magnet Post Two','有码原创','tc','亚洲无码原创','磁力链接','2025-05-20 10:00:00','2025-05-21 09:00:00',1,300,0,'userB','普通文本正文')," +
                 "(1003,'国产精选合集','国产原创',NULL,'国产原创','磁力链接','2025-05-15 09:00:00','2025-05-16 09:00:00',2,200,0,'userC','')," +
+                "(1007,'Empty Board Fallback','国产原创','','国产原创','图片区','2025-05-14 09:00:00',NULL,0,60,0,'userG',NULL)," +
                 "(1004,'Photo Thread Four','台湾论坛','tw','台湾论坛','图片区','2025-04-10 08:00:00',NULL,0,50,0,'userD',NULL)," +
                 "(1005,'字幕发布 Five','有码原创','tc','亚洲无码原创','字幕','2025-03-20 07:00:00','2025-03-21 07:00:00',0,80,0,'userE','字幕说明文本')," +
                 "(1006,'Euro Collection Six','欧洲原创','eu','欧洲原创','磁力链接','2025-02-01 06:00:00','2025-07-01 10:00:00',5,150,0,'userF',NULL)",
@@ -1045,16 +1046,28 @@ final class QIntegrationTests: XCTestCase {
         XCTAssertEqual(cats.first?.i("c"), 3)
         let subs = rowsOf(res, "subs")
         let subMap = Dictionary(subs.map { ($0.s("main"), $0.i("c")) }, uniquingKeysWith: { a, _ in a })
-        XCTAssertEqual(subMap, ["tc": 3, "tw": 1, "eu": 1], "board NULL 的帖子不入 subs")
+        // R3 问题 9：main=COALESCE(NULLIF(TRIM(board),''),cat_name) —— board NULL(1003)/
+        // 空串(1007) 均按 cat_name '国产原创' 归入 subs/mains（旧口径 board 非空才聚合会漏）
+        XCTAssertEqual(subMap, ["tc": 3, "国产原创": 2, "tw": 1, "eu": 1],
+                       "board NULL/空串按 cat_name 归入 subs")
         let mains = res["mains"] as? [[String: Any]] ?? []
-        XCTAssertEqual(mains.count, 3)
+        XCTAssertEqual(mains.count, 4)
         XCTAssertEqual(mains.first?["name"] as? String, "tc", "Kotlin 侧按 c 降序")
         XCTAssertEqual(mains.first?["c"] as? Int64, 3)
+        // mains 聚合计数 = subs 求和（R3 问题 9 一致性）
+        let mainsSum: Int64 = mains.reduce(0) { acc, m in
+            if let v = m["c"] as? Int64 { return acc + v }
+            if let v = m["c"] as? Int { return acc + Int64(v) }
+            return acc
+        }
+        let subsSum = subs.reduce(Int64(0)) { $0 + $0.i("c") }
+        XCTAssertEqual(mainsSum, subsSum, "mains 计数与 subs 求和一致")
         let types = rowsOf(res, "types")
         let typeMap = Dictionary(types.map { ($0.s("sub") + "|" + $0.s("name"), $0.i("c")) }, uniquingKeysWith: { a, _ in a })
         XCTAssertEqual(typeMap["亚洲无码原创|磁力链接"], 2)
         XCTAssertEqual(typeMap["亚洲无码原创|字幕"], 1)
         XCTAssertEqual(typeMap["台湾论坛|图片区"], 1)
+        XCTAssertEqual(typeMap["国产原创|图片区"], 1, "1007 空串 board 行 type 入聚合")
         XCTAssertEqual(res["approx"] as? Bool, true)
         let total = int64Of(res, "total")
         XCTAssertGreaterThanOrEqual(total, 6, "information_schema 估算（异常才 -1）")
@@ -1067,7 +1080,7 @@ final class QIntegrationTests: XCTestCase {
         try await boot()
         let res = try await Q.shtBrowse()
         let items = rowsOf(res, "items")
-        XCTAssertEqual(items.map { $0.s("tid") }, ["1001", "1002", "1003", "1004", "1005", "1006"], "post_date DESC, tid DESC")
+        XCTAssertEqual(items.map { $0.s("tid") }, ["1001", "1002", "1003", "1004", "1005", "1007", "1006"], "post_date DESC, tid DESC")
         XCTAssertEqual(int64Of(res, "total"), -1)
         XCTAssertEqual(res["approx"] as? Bool, true)
         XCTAssertEqual(res["derived"] as? String, "")
@@ -1104,17 +1117,21 @@ final class QIntegrationTests: XCTestCase {
         try await boot()
         let main = try await Q.shtBrowse(main: "tc")
         XCTAssertEqual(rowsOf(main, "items").map { $0.s("tid") }, ["1001", "1002", "1005"])
+        // R3 问题 9：COALESCE(NULLIF(TRIM(board),''), cat_name) —— board NULL/空串均回落 cat_name
         let nullBoard = try await Q.shtBrowse(main: "国产原创")
-        // (board = ? OR (board IS NULL AND cat_name = ?)) → board NULL 回落 cat_name
-        XCTAssertEqual(rowsOf(nullBoard, "items").map { $0.s("tid") }, ["1003"])
+        XCTAssertEqual(rowsOf(nullBoard, "items").map { $0.s("tid") }, ["1003", "1007"],
+                       "board NULL(1003) 与空串(1007) 均按 cat_name 命中主版")
         let cat = try await Q.shtBrowse(cat: "国产原创")
-        XCTAssertEqual(rowsOf(cat, "items").map { $0.s("tid") }, ["1003"])
+        XCTAssertEqual(rowsOf(cat, "items").map { $0.s("tid") }, ["1003", "1007"])
         let type = try await Q.shtBrowse(type: "字幕")
         XCTAssertEqual(rowsOf(type, "items").map { $0.s("tid") }, ["1005"])
         let magnet = try await Q.shtBrowse(hasMagnet: true)
         XCTAssertEqual(rowsOf(magnet, "items").map { $0.s("tid") }, ["1001", "1002", "1003", "1006"])
         let none = try await Q.shtBrowse(main: "tc", type: "图片区")
         XCTAssertTrue(rowsOf(none, "items").isEmpty, "组合无命中 → 空页")
+        // 主版不命中：其他主版名不应带出 tc 的行
+        let other = try await Q.shtBrowse(main: "欧洲原创")
+        XCTAssertEqual(rowsOf(other, "items").map { $0.s("tid") }, ["1006"])
     }
 
     func test_Q_shtBrowse_updatedSortDerived() async throws {

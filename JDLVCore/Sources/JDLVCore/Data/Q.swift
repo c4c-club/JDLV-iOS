@@ -997,12 +997,14 @@ public enum Q {
     public static func shtCategories() async throws -> [String: Any] {
         let tt = await Db.tableOf("sht", "threads")
         let win = 80000   // ★ P3.9：20000 → 80000 帖
+        // R3 问题 9：main 用 COALESCE(NULLIF(TRIM(board),''), cat_name) 归一化
+        // （与 ShtSearch.list/count/shtExport 同口径）；board_name 仍副版、type 仍分类。
         let subs = try await Db.query(
             "sht",
-            "SELECT board main, board_name name, COUNT(*) c FROM " +
-                "(SELECT board, board_name FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
-                "WHERE board IS NOT NULL AND board != '' AND board_name IS NOT NULL " +
-                "GROUP BY board, board_name")
+            "SELECT COALESCE(NULLIF(TRIM(board), ''), cat_name) main, board_name name, COUNT(*) c FROM " +
+                "(SELECT board, board_name, cat_name FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
+                "WHERE board_name IS NOT NULL " +
+                "GROUP BY main, board_name")
         let cats = try await Db.query(
             "sht",
             "SELECT cat_name name, COUNT(*) c FROM " +
@@ -1170,8 +1172,8 @@ public enum Q {
         var ws: [String] = ["1=1"]
         var params: [SQLValue?] = []
         if !main.isEmpty {
-            ws.append("(t.board = ? OR (t.board IS NULL AND t.cat_name = ?))")
-            params.append(.string(main))
+            // R3 问题 9：与 ShtSearch.list/count 同口径（COALESCE 主版归一化）。
+            ws.append("COALESCE(NULLIF(TRIM(t.board), ''), t.cat_name) = ?")
             params.append(.string(main))
         }
         if !cat.isEmpty {
