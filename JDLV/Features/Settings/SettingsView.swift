@@ -155,7 +155,7 @@ enum SettingsCopy {
     static let proxyShtLabel = "98t 图床走代理 (HTTP)"
     static let proxyShtDesc = "98t 图床 = 论坛图片 (帖子截图/贴图); 两者可分别指定, 互不影响"
     static let proxyOverlayNote = "图床替换 (下方) 与代理可叠加使用; 代理/图床变更保存后立即生效 (无需重启)"
-    static let proxyTestButton = "测试当前连接"
+    static let proxyTestButton = "测试代理（图床）"   // R3 问题 2：测图床不是数据库
 
     // MARK: ③ jdb 图床（§4 逐字）
 

@@ -336,17 +336,17 @@ struct ProxyCard: View {
 
     private func runTest() {
         testing = true
-        testResult = SettingsCopy.dsTestingText
+        // R3 问题 2：代理测试 = 图床探测（ProxyProbe），与数据库测试（数据源卡）分离
+        testResult = "正在经代理探测图床…"
         Task {
-            // A4/R4：与 ① 数据源同一口径 —— flush 防抖链 + 显式草稿测试
             await store.flushPendingEdits()
             var draft = store.settings
             draft.proxyHost = proxyHost
             draft.proxyPort = proxyPort
-            let r = await SettingsDiagnostics.testConnection(draft)
+            let r = await ProxyProbe.test(draft)
             testing = false
-            testResult = r
-            await SettingsDiagnostics.applyConnTestOutcome(r, store: store)
+            testResult = r.message
+            AppServices.shared.showToast(r.ok ? "✓ 图床可达" : "✗ 图床不可达")
         }
     }
 }
