@@ -19,3 +19,5 @@ Payload/
 *.zip
 *.xcarchive
 *.xcresult
+__pycache__/
+*.pyc

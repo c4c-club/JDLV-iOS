@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-"""P13 截图像素校验：纯色测试块特征。
+"""P13 截图像素校验：纯色测试块特征（C8 修正版口径）。
 
-- 至少出现 3 种测试色（#4F7CF7/#F76F4F/#4FBF7C/#B84FF7/#F7C84F/#4FD2F7）；
-- 每种测试色像素数 ≥ 5000（纯色块特征；不用"唯一色数"，避免文字抗锯齿误伤）。
+- 单页：≥1 种测试色像素 ≥5000（纯色块特征；不用"唯一色数"，避免文字抗锯齿误伤）；
+  以 00_ 开头的无图页面（设置页）豁免单页要求；
+- 整套截图：≥3 种测试色各 ≥5000 像素分布（证明测试图片模式全局生效）。
+测试色（#4F7CF7/#F76F4F/#4FBF7C/#B84FF7/#F7C84F/#4FD2F7）。
 用法: python -I scripts/verify_screenshots.py <shot1.png> [shot2.png ...]
 退出码 0 = 全部通过；1 = 有不达标截图（打印 FAIL 行）。
 """
@@ -10,6 +12,11 @@ import sys
 import os
 import struct
 import zlib
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def read_png_rgba(path):
@@ -84,12 +91,15 @@ TEST_COLORS = [
 ]
 TOL = 6          # 通道容差
 MIN_PIXELS = 5000
-MIN_COLORS = 3
+MIN_COLORS_SET = 3   # 整套截图：≥3 种测试色各 ≥5000（证明测试图片模式全局生效）
+
+# 无图片内容的页面（设置页）：单页不要求测试色块
+# 规范 ASCII 截图名以 "00-" 开头（00-test-image-mode-on.png）；兼容 "00_" 变体。
+IMAGELESS_PREFIXES = ("00-", "00_")
 
 
 def verify(path):
     w, h, px = read_png_rgba(path)
-    # 容差分组计数
     counts = [0] * len(TEST_COLORS)
     for (r, g, b) in px:
         for i, (tr, tg, tb) in enumerate(TEST_COLORS):
@@ -97,7 +107,9 @@ def verify(path):
                 counts[i] += 1
                 break
     found = sum(1 for c in counts if c * 4 >= MIN_PIXELS)   # 采样×4 还原
-    ok = found >= MIN_COLORS
+    base = os.path.basename(path)
+    imageless = base.startswith(IMAGELESS_PREFIXES)
+    ok = imageless or found >= 1   # 单页：≥1 种测试色 ≥5000（或为无图设置页）
     return ok, w, h, [c * 4 for c in counts]
 
 
@@ -107,6 +119,7 @@ def main():
         print("usage: verify_screenshots.py <png...>")
         return 1
     all_ok = True
+    set_colors = [0] * len(TEST_COLORS)
     for a in args:
         try:
             ok, w, h, counts = verify(a)
@@ -114,10 +127,17 @@ def main():
             print("FAIL %s (%s)" % (a, e))
             all_ok = False
             continue
+        for i, c in enumerate(counts):
+            set_colors[i] += c
         status = "OK  " if ok else "FAIL"
         print("%s %s (%dx%d) test-color pixels=%s" % (status, os.path.basename(a), w, h, counts))
         if not ok:
             all_ok = False
+    set_found = sum(1 for c in set_colors if c >= MIN_PIXELS)
+    set_ok = set_found >= MIN_COLORS_SET
+    print("SET: %d/%d test colors >= %d px" % (set_found, len(TEST_COLORS), MIN_PIXELS))
+    if not set_ok:
+        all_ok = False
     print("RESULT:", "PASS" if all_ok else "FAIL")
     return 0 if all_ok else 1
 
