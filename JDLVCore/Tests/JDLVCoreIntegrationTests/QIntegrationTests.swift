@@ -1060,7 +1060,7 @@ final class QIntegrationTests: XCTestCase {
             if let v = m["c"] as? Int { return acc + Int64(v) }
             return acc
         }
-        let subsSum = subs.reduce(Int64(0)) { $0 + $0.i("c") }
+        let subsSum = subs.reduce(Int64(0)) { $0 + $1.i("c") }
         XCTAssertEqual(mainsSum, subsSum, "mains 计数与 subs 求和一致")
         let types = rowsOf(res, "types")
         let typeMap = Dictionary(types.map { ($0.s("sub") + "|" + $0.s("name"), $0.i("c")) }, uniquingKeysWith: { a, _ in a })
