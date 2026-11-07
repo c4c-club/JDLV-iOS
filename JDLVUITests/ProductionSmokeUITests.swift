@@ -106,7 +106,8 @@ final class ProductionSmokeUITests: XCTestCase {
         bar.tap()
         Thread.sleep(forTimeInterval: 1.0)
         var typed = false
-        let field = app.textFields.firstMatch
+        // 6 栈常驻：隐藏 Tab 的字段也在 AX 树里 → 必须按搜索栏容器作用域查询
+        let field = app.descendants(matching: .any)["home_searchbar"].descendants(matching: .textField).firstMatch
         if field.waitForExistence(timeout: 5) {
             do {
                 try field.typeText("冒烟影片")

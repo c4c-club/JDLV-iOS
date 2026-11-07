@@ -196,8 +196,11 @@ private final class FakeSocksConn {
     private func process() {
         switch phase {
         case .greeting:
+            // RFC 1928：VER(1) + NMETHODS(1) + METHODS(N) —— 隧道发 [05 01 00] 共 3 字节
             guard buf.count >= 2 else { return }
-            buf.removeFirst(2)
+            let nMethods = Int(buf[1])
+            guard buf.count >= 2 + nMethods else { return }
+            buf.removeFirst(2 + nMethods)
             sendInbound(Data([0x05, 0x00]))
             phase = .connect
         case .connect:
