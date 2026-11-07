@@ -41,6 +41,10 @@ jobs:
             git check-ignore -q docs/ || { echo 'guard FAIL: docs/ not gitignored'; exit 1; }
           fi
           grep -q 'MARKETING_VERSION: 1.6.0' project.yml || { echo 'guard FAIL: version'; exit 1; }
+          # R3 门禁：键盘 API 审计（问题 1 —— asciiCapable/inputView/UIKeyInput 禁用）
+          kb_hits=$(grep -R -E "asciiCapable|inputView|UIKeyInput" JDLV --include='*.swift' || true)
+          [ -z "$kb_hits" ] || { echo 'guard FAIL: banned keyboard API (issue 1 audit)'; echo "$kb_hits"; exit 1; }
+          echo 'keyboard audit: 0 hits'
           echo 'guard OK'
 
   core-linux:
