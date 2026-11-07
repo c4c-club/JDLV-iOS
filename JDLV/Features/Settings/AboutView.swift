@@ -17,11 +17,11 @@ struct AboutView: View {
     var body: some View {
         Form {
             Section("版本信息") {
-                LabeledRow("版本", versionText)
-                LabeledRow("构建", buildText)
-                LabeledRow("设备", UIDevice.current.model)
-                LabeledRow("系统", "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
-                LabeledRow("数据源", dataSourceSummary)
+                LabeledRow(label: "版本", value: versionText)
+                LabeledRow(label: "构建", value: buildText)
+                LabeledRow(label: "设备", value: UIDevice.current.model)
+                LabeledRow(label: "系统", value: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
+                LabeledRow(label: "数据源", value: dataSourceSummary)
             }
             #if DEBUG
             Section("调试") {
