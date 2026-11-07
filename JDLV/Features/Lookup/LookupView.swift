@@ -43,4 +43,3 @@ struct LookupView: View {
         .accessibilityIdentifier("secondary_page")
     }
 }
-}
