@@ -304,7 +304,8 @@ private struct BrowseContent: View {
         default: cardH = CardLayout.movieSmallH(cellW: cellW)
         }
         return CardGrid(items: items.indices.map { ($0, items[$0]) },
-                        columns: cols, cellWidth: cellW, cellHeight: cardH) { pair in
+                        columns: cols, cellWidth: cellW, cellHeight: cardH,
+                        idPrefix: "card_browse") { pair in
             let (i, m) = pair
             return Group {
                 if vm.viewMode == 2 {
@@ -321,7 +322,6 @@ private struct BrowseContent: View {
                 }
             }
             // 触底加载：可见末项进入倒数 3 项内触发（去重由 VM 的 loadingMore/hasMore 把关）
-            .accessibilityIdentifier("card_browse_\(i)")
             .onAppear {
                 if i >= items.count - 3 {
                     Task { await vm.loadNext() }

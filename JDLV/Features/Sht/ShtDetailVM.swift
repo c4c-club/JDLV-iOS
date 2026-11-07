@@ -198,13 +198,14 @@ struct ShtThreadData: Equatable {
     static func decodeEntities(_ s: String) -> String {
         guard s.contains("&") else { return s }
         var out = s
+        // &amp; 必须最后替换（先解其他实体，防止 "&amp;lt;" 被双重解码为 "<"）
         out = out.replacingOccurrences(of: "&nbsp;", with: " ")
-        out = out.replacingOccurrences(of: "&amp;", with: "&")
         out = out.replacingOccurrences(of: "&lt;", with: "<")
         out = out.replacingOccurrences(of: "&gt;", with: ">")
         out = out.replacingOccurrences(of: "&quot;", with: "\"")
         out = out.replacingOccurrences(of: "&#39;", with: "'")
         out = out.replacingOccurrences(of: "&apos;", with: "'")
+        out = out.replacingOccurrences(of: "&amp;", with: "&")
         return out
     }
 

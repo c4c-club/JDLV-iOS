@@ -62,17 +62,16 @@ final class SettingsUITests: XCTestCase {
         // 必须点头行文本按钮（title "⑧ 关于"）
         // 卡 identifier 把整卡合并为单个 a11y 元素（子头行按钮被合并进卡片）→
         // 点卡片顶部条带（header 区，dy≈0.08）切换展开
-        let aboutGroup = group(app, "about")
-        scrollUntilVisible(app, aboutGroup, maxSwipes: 12)
-        XCTAssertTrue(aboutGroup.waitForExistence(timeout: 5), "关于 card not found")
-        // CollapsiblePref 记忆展开态（前序用例可能已展开）→ 先探 switch，收起中才点头行
-        var sw = app.descendants(matching: .any)["about_testimg_switch"].firstMatch
-        if !sw.waitForExistence(timeout: 3) {
-            aboutGroup.tap()   // 收起中 → 切换展开
-            _ = waitUntilShort(3) { sw.exists }
+        // R3 问题 4：关于改为 AboutView 子页（NavigationLink）—— 测试图开关在子页 Form 内
+        let aboutLink = app.buttons["settings_about_link"].firstMatch
+        scrollUntilVisible(app, aboutLink, maxSwipes: 14)
+        XCTAssertTrue(aboutLink.waitForExistence(timeout: 6), "settings_about_link not found")
+        if aboutLink.isHittable { aboutLink.tap() } else {
+            aboutLink.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
-        XCTAssertTrue(sw.exists, "about_testimg_switch not found (DEBUG build expected)")
-        scrollUntilVisible(app, sw, maxSwipes: 24)
+        var sw = app.switches["about_testimg_switch"].firstMatch
+        XCTAssertTrue(sw.waitForExistence(timeout: 8), "about_testimg_switch not found (DEBUG build expected)")
+        scrollUntilVisible(app, sw, maxSwipes: 10)
 
         // 锚点可能已挂（前序 UI 测试持久化 testImgMode=true）→ 先查再点，避免 ON→OFF 抖动
         let anchorQuery = app.descendants(matching: .any)["testImageModeOn"].firstMatch
@@ -107,6 +106,12 @@ final class SettingsUITests: XCTestCase {
             }
         }
         XCTAssertTrue(anchorFound, "test image switch did not reach ON after taps")
+
+        // 返回设置主页（R3：测试图开关在 About 子页；11 组走查在主页进行）
+        app.navigationBars.buttons.firstMatch.exists
+            ? app.navigationBars.buttons.firstMatch.tap()
+            : ()
+        Thread.sleep(forTimeInterval: 0.8)
 
         // 11 张分组卡逐组展开走查（无崩溃）—— 只点头行条带（卡片中心 = 展开内容，
         // 中心 tap 会误触行控件：开关/文本框），头行条带 = 切换展开/收起

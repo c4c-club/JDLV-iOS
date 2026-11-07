@@ -3,9 +3,10 @@ import XCTest
 //
 //  LayoutAuditUITests.swift —— 全页面卡片布局审计（R3 §6.2；13 §2.5–2.7 验收）。
 //
-//  每页：收集 card_*（或行卡固定 id）元素 frame → 按 minY 分组（±1）→ 断言
-//  组内等宽/等高/minY（差 ≤0.5）、相邻 minX 间距 = gridSpacing ±0.5、无重叠、
-//  全部在屏幕内；列表页 swipeUp 后内容上移（可滚动）。
+//  每页：收集 card_*（CardGrid 外层 wrapper id —— frame = cellW×cellH 精确值）或
+//  行卡固定 id 元素 frame → 按 minY 分组（±1）→ 断言组内等宽/等高/minY（差 ≤0.5）、
+//  相邻 minX 间距 = spacing ±1、无重叠；固定网格页断言不出屏；横滑段豁免出屏
+//  （首卡被视口裁切属正常交互）；列表页 swipeUp 后内容上移（可滚动）。
 //  违规明细写 layout-report.json（XCTAttachment，CI verify_layout.py 消费）。
 //
 final class LayoutAuditUITests: XCTestCase {
@@ -31,6 +32,13 @@ final class LayoutAuditUITests: XCTestCase {
             a.lifetime = .keepAlways
             add(a)
         }
+    }
+
+    private func snapDiag(_ app: XCUIApplication, _ name: String) {
+        let a = XCTAttachment(screenshot: app.screenshot())
+        a.name = "diag-\(name)"
+        a.lifetime = .keepAlways
+        add(a)
     }
 
     // MARK: 启动
@@ -76,11 +84,27 @@ final class LayoutAuditUITests: XCTestCase {
         return out
     }
 
-    /// 分组断言：同 minY 行（±1）内等宽/等高/minY；相邻卡间距 spacing ±0.5；无重叠；不出屏
+    /// 等待首卡出现（demo 数据 bind 异步；30s 内未出现 → 诊断截图 + violation）
+    private func waitFirstCard(_ app: XCUIApplication, page: String, prefix: String,
+                               timeout: TimeInterval = 30) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if !collect(app, prefix: prefix).isEmpty { return true }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        snapDiag(app, "no-cards-\(page)")
+        addViolation(page, prefix, "no cards found after \(Int(timeout))s")
+        return false
+    }
+
+    /// 分组断言：同 minY 行（±1）内等宽/等高/minY；相邻卡间距 spacing ±1；无重叠；
+    /// allowOffscreen=true 时跳过出屏检查（横滑首卡被视口裁切属正常）。
     private func audit(_ app: XCUIApplication, page: String, prefix: String,
-                       columns: Int, spacing: CGFloat, checkScroll: Bool) {
+                       columns: Int, spacing: CGFloat, checkScroll: Bool,
+                       allowOffscreen: Bool = false) {
         var cards = collect(app, prefix: prefix)
         if cards.isEmpty {
+            // 已由 waitFirstCard 报告；此处兜底
             addViolation(page, prefix, "no cards found")
             return
         }
@@ -88,7 +112,6 @@ final class LayoutAuditUITests: XCTestCase {
 
         let screen = app.frame
         let rows = groupByRow(cards)
-        // 每组数量 ≤ 列数（最后一行可少）
         for (idx, row) in rows.enumerated() {
             if row.count > columns {
                 addViolation(page, "row\(idx)", "row has \(row.count) cards > expected columns \(columns)")
@@ -105,7 +128,6 @@ final class LayoutAuditUITests: XCTestCase {
             if let y0 = minys.first, minys.contains(where: { abs($0 - y0) > 1.0 }) {
                 addViolation(page, "row\(idx)", "minY mismatch: \(minys)")
             }
-            // 相邻 minX 间距 + 无重叠
             for j in 1..<row.count {
                 let gap = row[j].1.minX - row[j - 1].1.maxX
                 if gap < -0.5 {
@@ -115,19 +137,20 @@ final class LayoutAuditUITests: XCTestCase {
                 }
             }
         }
-        // 出屏（允许 1pt 误差；横滑首卡可被裁 → 横滑段跳过 minX 出屏检查由调用方传 allowOffscreen）
-        for c in cards {
-            if c.1.minX < -1 || c.1.maxX > screen.width + 1 || c.1.minY < -1 || c.1.maxY > screen.height + 1 {
-                addViolation(page, c.0, "out of screen: \(c.1)")
+        if !allowOffscreen {
+            for c in cards {
+                if c.1.minX < -1 || c.1.maxX > screen.width + 1
+                    || c.1.minY < -1 || c.1.maxY > screen.height + 1 {
+                    addViolation(page, c.0, "out of screen: \(c.1)")
+                }
             }
         }
-        // 可滚动：swipeUp 后最后一张 minY 上移或出现新卡
         if checkScroll, cards.count >= 2 {
             let before = cards.map { $0.1.minY }
             app.swipeUp()
             Thread.sleep(forTimeInterval: 0.6)
             let after = collect(app, prefix: prefix).map { $0.1.minY }
-            let moved = after.max() ?? 0 < (before.max() ?? 0) - 10
+            let moved = (after.max() ?? 0) < (before.max() ?? 0) - 10
             let more = after.count > before.count
             if !moved && !more {
                 addViolation(page, prefix, "not scrollable (minY unchanged, no new cards)")
@@ -156,57 +179,60 @@ final class LayoutAuditUITests: XCTestCase {
         let app = launchDemo()
         XCTAssertTrue(app.buttons["tab_search"].waitForExistence(timeout: 20))
 
-        // 1) 首页三段横滑（160×289 单行；不查滚动 —— 段内容固定）
-        audit(app, page: "home-recent", prefix: "home_recent_", columns: 6, spacing: 12, checkScroll: false)
-        audit(app, page: "home-hot", prefix: "home_hot_", columns: 6, spacing: 12, checkScroll: false)
-        audit(app, page: "home-top", prefix: "home_top_", columns: 6, spacing: 12, checkScroll: false)
+        // 1) 首页三段横滑（160×289 单行；横滑豁免出屏；不查滚动 —— 段内容固定）
+        audit(app, page: "home-recent", prefix: "home_recent_", columns: 6, spacing: 12,
+              checkScroll: false, allowOffscreen: true)
+        audit(app, page: "home-hot", prefix: "home_hot_", columns: 6, spacing: 12,
+              checkScroll: false, allowOffscreen: true)
+        audit(app, page: "home-top", prefix: "home_top_", columns: 6, spacing: 12,
+              checkScroll: false, allowOffscreen: true)
 
-        // 2) 浏览（2 列）
+        // 2) 浏览（2 列；demo bind 异步 → 30s 等首卡）
         openTab(app, "browse")
-        _ = app.descendants(matching: .any)["browse_grid"].firstMatch.waitForExistence(timeout: 15)
-        Thread.sleep(forTimeInterval: 1.5)
+        waitFirstCard(app, page: "browse", prefix: "card_browse_")
+        Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "browse", prefix: "card_browse_", columns: 2, spacing: 12, checkScroll: true)
 
         // 3) 女优（3 列）
         openTab(app, "actors")
-        _ = app.descendants(matching: .any)["card_actors_0"].firstMatch.waitForExistence(timeout: 15)
-        Thread.sleep(forTimeInterval: 1.5)
+        waitFirstCard(app, page: "actors", prefix: "card_actors_")
+        Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "actors", prefix: "card_actors_", columns: 3, spacing: 12, checkScroll: true)
 
         // 4) 98t（2 列）
         openTab(app, "sht")
-        _ = app.descendants(matching: .any)["card_sht_0"].firstMatch.waitForExistence(timeout: 15)
-        Thread.sleep(forTimeInterval: 1.5)
+        waitFirstCard(app, page: "sht", prefix: "card_sht_")
+        Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "sht", prefix: "card_sht_", columns: 2, spacing: 12, checkScroll: true)
 
         // 5) 资讯（1 列行卡 96）
         openTab(app, "search")
         _ = tapIfExist(app.buttons["entry_articles"])
-        _ = app.descendants(matching: .any)["article_card"].firstMatch.waitForExistence(timeout: 15)
-        Thread.sleep(forTimeInterval: 1.5)
+        waitFirstCard(app, page: "articles", prefix: "article_card")
+        Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "articles", prefix: "article_card", columns: 1, spacing: 10, checkScroll: true)
-        app.navigationBars.buttons.firstMatch.exists ? navBack(app) : ()
+        navBack(app)
 
         // 6) 热评（1 列行卡）
         openTab(app, "search")
         _ = tapIfExist(app.buttons["entry_hotreviews"])
-        _ = app.descendants(matching: .any)["hot_review_row"].firstMatch.waitForExistence(timeout: 15)
-        Thread.sleep(forTimeInterval: 1.5)
+        waitFirstCard(app, page: "hot-reviews", prefix: "hot_review_row")
+        Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "hot-reviews", prefix: "hot_review_row", columns: 1, spacing: 8, checkScroll: true)
         navBack(app)
 
         // 7) TOP250（1 列行卡 112）
         openTab(app, "search")
         _ = tapIfExist(app.buttons["viewall_top"])
-        _ = app.descendants(matching: .any)["top250_row"].firstMatch.waitForExistence(timeout: 15)
-        Thread.sleep(forTimeInterval: 1.5)
+        waitFirstCard(app, page: "top250", prefix: "top250_row")
+        Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "top250", prefix: "top250_row", columns: 1, spacing: 10, checkScroll: true)
         navBack(app)
 
         // 8) 收藏（1 列行卡）
         openTab(app, "favs")
-        _ = app.descendants(matching: .any)["fav_row"].firstMatch.waitForExistence(timeout: 15)
-        Thread.sleep(forTimeInterval: 1.5)
+        waitFirstCard(app, page: "favs", prefix: "fav_row")
+        Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "favs", prefix: "fav_row", columns: 1, spacing: 8, checkScroll: false)
 
         flushReport()

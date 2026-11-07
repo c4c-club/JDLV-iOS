@@ -217,7 +217,8 @@ private struct ShtContent: View {
             ? CardLayout.shtLargeH(cellW: cellW)
             : CardLayout.shtSmallH(cellW: cellW)
         return CardGrid(items: items.indices.map { ($0, items[$0]) },
-                        columns: cols, cellWidth: cellW, cellHeight: cardH) { pair in
+                        columns: cols, cellWidth: cellW, cellHeight: cardH,
+                        idPrefix: "card_sht") { pair in
             let (i, t) = pair
             return ShtCard(
                 t: t,
@@ -227,7 +228,6 @@ private struct ShtContent: View {
                 fav: vm.favIds.contains(t.s("tid")),
                 onClick: { router.push(.shtThread(t.s("tid"))) }   // nav("sht/{tid}")
             )
-            .accessibilityIdentifier("card_sht_\(i)")
             .onAppear {
                 if i >= items.count - 3 {
                     Task { await vm.loadNext() }

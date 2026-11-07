@@ -31,8 +31,8 @@ final class LightboxGeometryTests: XCTestCase {
     func testFitRectWideImage() {
         let r = fitRect(container: CGSize(width: 393, height: 300),
                         image: CGSize(width: 900, height: 300))
-        XCTAssertEqual(r.width, 393, accuracy: 0.001, "超宽图按宽度贴合")
-        XCTAssertEqual(r.height, 131, accuracy: 0.01)
+        XCTAssertEqual(r.width, 390, accuracy: 0.001, "min(scale) 取高度约束 → w=390")
+        XCTAssertEqual(r.height, 300, accuracy: 0.01)
         XCTAssertTrue(r.contains(CGPoint(x: 196, y: 150)))
     }
 

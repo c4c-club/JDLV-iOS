@@ -302,14 +302,14 @@ struct HomeView: View {
                 ? CardLayout.movieLargeH(cellW: cellW)
                 : CardLayout.movieSmallH(cellW: cellW)
             CardGrid(items: items.indices.map { ($0, items[$0]) },
-                     columns: cols, cellWidth: cellW, cellHeight: cardH) { pair in
+                     columns: cols, cellWidth: cellW, cellHeight: cardH,
+                     idPrefix: "card_search") { pair in
                 let (i, m) = pair
                 return MovieCard(m: m, viewMode: vm.viewMode,
                                  read: vm.readIds.contains(m.s("id")),
                                  fav: vm.favIds.contains(m.s("id")),
                                  onClick: { router.push(.movie(m.s("id"))) })
                     .id("s_\(m.s("id"))_\(i)")
-                    .accessibilityIdentifier("card_search_\(i)")
             }
             .padding(.horizontal, ComponentMetrics.pageMargin)
             .padding(.vertical, 6)

@@ -60,10 +60,10 @@ final class DesignTokenTests: XCTestCase {
         XCTAssertEqual(ComponentMetrics.searchBarBlockHeight, 52)
         XCTAssertEqual(ComponentMetrics.searchBarRadius, 22)
         XCTAssertEqual(ComponentMetrics.searchClearButton, 36)
-        // chips / 下拉 36pt；最小触控 36（按钮 48）
+        // chips / 下拉 36pt；最小触控 44（R3 HIG 对齐，13 §3.2）；按钮 48
         XCTAssertEqual(ComponentMetrics.chipHeight, 36)
         XCTAssertEqual(ComponentMetrics.dropdownHeight, 36)
-        XCTAssertEqual(ComponentMetrics.touchMin, 36)
+        XCTAssertEqual(ComponentMetrics.touchMin, 44)
         XCTAssertEqual(ComponentMetrics.buttonMin, 48)
         // 卡片：1pt 描边 + 2pt 投影 + 内边距 8pt；容器圆角 12
         XCTAssertEqual(ComponentMetrics.cardStroke, 1)

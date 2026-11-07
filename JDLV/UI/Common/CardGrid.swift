@@ -73,6 +73,9 @@ struct CardGrid<Item, Cell: View>: View {
     let cellHeight: CGFloat
     /// true = 内部 LazyVStack（独立顶层使用）；false = 普通 VStack（PageScaffold content 内）
     var lazy: Bool = false
+    /// 外层 wrapper 的 accessibility 前缀（"card_browse" → card_browse_0…；
+    /// 打在含固定 frame 的 wrapper 上 —— LayoutAudit 读到的 frame = cellW×cellH 精确值）
+    var idPrefix: String = ""
     @ViewBuilder var cell: (Item) -> Cell
 
     var body: some View {
@@ -95,13 +98,17 @@ struct CardGrid<Item, Cell: View>: View {
         ForEach(chunked.indices, id: \.self) { r in
             HStack(alignment: .top, spacing: ComponentMetrics.gridSpacing) {
                 ForEach(chunked[r].indices, id: \.self) { c in
-                    if let item = chunked[r][c] {
-                        cell(item)
-                            .frame(width: cellWidth, height: cellHeight, alignment: .top)
-                    } else {
-                        Color.clear
-                            .frame(width: cellWidth, height: cellHeight)
+                    let idx = r * columns + c
+                    Group {
+                        if let item = chunked[r][c] {
+                            cell(item)
+                                .frame(width: cellWidth, height: cellHeight, alignment: .top)
+                        } else {
+                            Color.clear
+                                .frame(width: cellWidth, height: cellHeight)
+                        }
                     }
+                    .accessibilityIdentifier(idPrefix.isEmpty ? "" : "\(idPrefix)_\(idx)")
                 }
             }
         }

@@ -84,10 +84,11 @@ final class ShtDetailParseTests: XCTestCase {
                                 "blocks": [["t": "正文"]]]
         var p = ShtThreadData.parse(d, tid: "6")
         XCTAssertTrue(p.useReaderBody)
-        // 图片贴（自拍图片区 + images）→ ReaderBody
+        // 图片贴（自拍图片区 + images）：isImagePost=true 但 isLiterature=false → 不吃 ReaderBody（D5）
         d = ["cat_name": "自拍图片区", "images": ["https://img/a.jpg"]]
         p = ShtThreadData.parse(d, tid: "7")
-        XCTAssertTrue(p.useReaderBody)
+        XCTAssertTrue(p.isImagePost)
+        XCTAssertFalse(p.useReaderBody)
         // 普通磁力贴 → 非 ReaderBody（blocks 普通渲染/无 blocks）
         d = ["cat_name": "色花帖区", "magnets": [["hash": "h1"]]]
         p = ShtThreadData.parse(d, tid: "8")
