@@ -21,14 +21,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: repo hygiene guard
+        # R10/C5/C9：与 scripts/guard_repo.sh 共用同一段逻辑（原样复制，禁止两处各写一套）。
+        # 统一强模式：只认「引号包裹的口令字面量」；显式判空（不用 `! grep … | grep -q .` 假绿）。
+        # CI checkout 无 docs/，`if [ -d docs ]` 自动跳过本地分支；`git ls-files docs` 恒为 0。
         run: |
-          set -e
-          test ! -f README.md
-          ! find . -name '*.md' -not -path './.git/*' | grep -q .
-          ! find . \( -name '*.kt' -o -name '*.gradle*' \) | grep -q .
-          ! grep -ril 'JDLV-Mobile/app/sr[c]' . --exclude-dir=.git
-          ! grep -rilE 'store[P]assword|key[P]assword|password[[:space:]]*=' . --exclude-dir=.git
-          grep -q 'MARKETING_VERSION: 1.6.0' project.yml
+          set -euo pipefail
+          PAT="(PASSWORD|PASS|password|store[P]assword|key[P]assword)[[:space:]]*[:=][[:space:]]*[\"']"
+          DOC_RE='(^|/)(README|CHANGELOG|LICENSE)|\.(md|txt|kt|gradle.*)$|(^|/)docs/'
+          doc_hits=$(git ls-files | grep -Ei "$DOC_RE" || true)
+          [ -z "$doc_hits" ] || { echo 'guard FAIL: tracked doc files'; echo "$doc_hits"; exit 1; }
+          [ "$(git ls-files docs | wc -l)" -eq 0 ] || { echo 'guard FAIL: docs tracked'; exit 1; }
+          android_hits=$(git ls-files | grep -E 'JDLV-Mobile/app/sr[c]' || true)
+          [ -z "$android_hits" ] || { echo 'guard FAIL: Android sources'; echo "$android_hits"; exit 1; }
+          cred_hits=$(git grep -IlE "$PAT" -- . || true)
+          [ -z "$cred_hits" ] || { echo 'guard FAIL: credential literals in tracked tree'; echo "$cred_hits"; exit 1; }
+          if [ -d docs ]; then
+            doccred=$(grep -rIlE "$PAT" docs --exclude-dir=07_证据 || true)
+            [ -z "$doccred" ] || { echo 'guard FAIL: credential literals in local docs/'; echo "$doccred"; exit 1; }
+            git check-ignore -q docs/ || { echo 'guard FAIL: docs/ not gitignored'; exit 1; }
+          fi
+          grep -q 'MARKETING_VERSION: 1.6.0' project.yml || { echo 'guard FAIL: version'; exit 1; }
           echo 'guard OK'
 
   core-linux:
@@ -43,6 +55,7 @@ jobs:
           swift test --package-path JDLVCore --skip JDLVCoreIntegrationTests
 
   core-mysql:
+    needs: [guard]
     runs-on: ubuntu-latest
     container: swift:6.0-noble
     timeout-minutes: 20
@@ -69,7 +82,8 @@ jobs:
           swift test --package-path JDLVCore --filter IntegrationTests
 
   ios:
-    needs: [guard, core-linux]
+    # R10/C2：MySQL 集成为强制门 —— core-mysql 红 = ios 不执行（needs 闭环，防带红发布）
+    needs: [guard, core-linux, core-mysql]
     # macos-26 在 2026-11-04 起持续 "not acquired by Runner"（容量）→ 按规划 §2 兜底退 macos-15。
     # destination 由 simctl 动态解析（任意可用 iPhone），不写死机型。
     runs-on: macos-15
@@ -151,7 +165,8 @@ jobs:
           mkdir -p Payload
           cp -R build/JDLV.xcarchive/Products/Applications/JDLV.app Payload/
           zip -qry JDLV-unsigned.ipa Payload
-          otool -l Payload/JDLV.app/JDLV | grep -q 'minos 16.0'
+          # R10：grep 不带 -q —— minos 16.0 行必须进 CI 日志（set -e 下不命中仍失败），供证据抓行
+          otool -l Payload/JDLV.app/JDLV | grep 'minos 16.0'
 
       - name: Upload simulator zip
         uses: actions/upload-artifact@v4
@@ -193,7 +208,8 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [ios]
+    # R10/C2：等全部 4 个 job 成功才发布（不再只 needs ios）
+    needs: [guard, core-linux, core-mysql, ios]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

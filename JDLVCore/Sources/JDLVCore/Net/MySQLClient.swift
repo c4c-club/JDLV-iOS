@@ -72,7 +72,7 @@ public final class MySQLClient {
     deinit {
         if let conn, !conn.isClosed {
             // R9/R5：deinit 不阻塞等待（close 走 fire-and-forget；正常路径由 close() 完成）
-            conn.close(promise: nil)
+            _ = conn.close()
         }
         conn = nil
         // 不做 group.syncShutdownGracefully（可能强关在途命令 channel → MySQLNIO 断言）

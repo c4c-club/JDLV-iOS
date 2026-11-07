@@ -186,7 +186,7 @@ public final class AsyncSemaphore {
 
 enum ConnFactory {
     /// R9/R13：显式白名单（非 jdb/sht 一律类型化错误，不再默认映射 sht）
-    static func databaseName(_ which: String, _ s: MySQLPoolSettings) throws -> String {
+    public static func databaseName(_ which: String, _ s: MySQLPoolSettings) throws -> String {
         switch which {
         case "jdb": return s.jdbDb
         case "sht": return s.shtDb
