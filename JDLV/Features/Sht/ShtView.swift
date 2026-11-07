@@ -227,6 +227,7 @@ private struct ShtContent: View {
                 fav: vm.favIds.contains(t.s("tid")),
                 onClick: { router.push(.shtThread(t.s("tid"))) }   // nav("sht/{tid}")
             )
+            .accessibilityIdentifier("card_sht_\(i)")
             .onAppear {
                 if i >= items.count - 3 {
                     Task { await vm.loadNext() }

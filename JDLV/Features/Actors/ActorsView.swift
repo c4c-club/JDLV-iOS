@@ -130,11 +130,14 @@ struct ActorsView: View {
 
     private var grid: some View {
         let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: 3)
-        return CardGrid(items: items, columns: 3,
-                        cellWidth: cellW, cellHeight: CardLayout.actorH(cellW: cellW)) { a in
-            ActorCard(a: a) {
+        return CardGrid(items: items.indices.map { ($0, items[$0]) },
+                        columns: 3, cellWidth: cellW,
+                        cellHeight: CardLayout.actorH(cellW: cellW)) { pair in
+            let (i, a) = pair
+            return ActorCard(a: a) {
                 router.push(.actor(a.s("id")))
             }
+            .accessibilityIdentifier("card_actors_\(i)")
         }
         .padding(.horizontal, ComponentMetrics.pageMargin)
         .padding(.vertical, 6)

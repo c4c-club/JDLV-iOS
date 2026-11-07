@@ -309,6 +309,7 @@ struct HomeView: View {
                                  fav: vm.favIds.contains(m.s("id")),
                                  onClick: { router.push(.movie(m.s("id"))) })
                     .id("s_\(m.s("id"))_\(i)")
+                    .accessibilityIdentifier("card_search_\(i)")
             }
             .padding(.horizontal, ComponentMetrics.pageMargin)
             .padding(.vertical, 6)

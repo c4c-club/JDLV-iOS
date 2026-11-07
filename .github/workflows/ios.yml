@@ -152,6 +152,23 @@ jobs:
           mkdir -p build/attachments
           xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/attachments || echo 'no attachments (non-blocking evidence export)'
 
+      - name: Verify screenshots (R3 gate)
+        if: always()
+        run: |
+          set -eo pipefail
+          cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
+          MANIFEST=$(ls *creenshots-manifest*.json 2>/dev/null | head -1 || true)
+          python3 -I "$GITHUB_WORKSPACE/scripts/verify_screenshots.py" ./*.png ${MANIFEST:+--manifest "$MANIFEST"}
+
+      - name: Verify layout report (R3 gate)
+        if: always()
+        run: |
+          set -eo pipefail
+          cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
+          REPORT=$(ls *ayout-report*.json 2>/dev/null | head -1 || true)
+          if [ -z "$REPORT" ]; then echo 'FAIL layout-report.json missing (LayoutAuditUITests did not run)'; exit 1; fi
+          python3 -I "$GITHUB_WORKSPACE/scripts/verify_layout.py" "$REPORT"
+
       - name: Package simulator app
         run: |
           set -e

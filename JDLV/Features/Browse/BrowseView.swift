@@ -321,6 +321,7 @@ private struct BrowseContent: View {
                 }
             }
             // 触底加载：可见末项进入倒数 3 项内触发（去重由 VM 的 loadingMore/hasMore 把关）
+            .accessibilityIdentifier("card_browse_\(i)")
             .onAppear {
                 if i >= items.count - 3 {
                     Task { await vm.loadNext() }
