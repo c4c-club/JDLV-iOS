@@ -119,26 +119,31 @@ final class LayoutAuditUITests: XCTestCase {
             let widths = row.map { $0.1.width }
             let heights = row.map { $0.1.height }
             let minys = row.map { $0.1.minY }
-            if let w0 = widths.first, widths.contains(where: { abs($0 - w0) > 0.5 }) {
+            // 容差 1.5pt：覆盖 3x 像素网格取整（XCUI frame 报告值有 ~1pt 损耗）
+            if let w0 = widths.first, widths.contains(where: { abs($0 - w0) > 1.5 }) {
                 addViolation(page, "row\(idx)", "width mismatch: \(widths)")
             }
-            if let h0 = heights.first, heights.contains(where: { abs($0 - h0) > 0.5 }) {
+            if let h0 = heights.first, heights.contains(where: { abs($0 - h0) > 1.5 }) {
                 addViolation(page, "row\(idx)", "height mismatch: \(heights)")
             }
-            if let y0 = minys.first, minys.contains(where: { abs($0 - y0) > 1.0 }) {
+            if let y0 = minys.first, minys.contains(where: { abs($0 - y0) > 1.5 }) {
                 addViolation(page, "row\(idx)", "minY mismatch: \(minys)")
             }
             for j in 1..<row.count {
                 let gap = row[j].1.minX - row[j - 1].1.maxX
                 if gap < -0.5 {
                     addViolation(page, row[j].0, "overlap: gap=\(gap)")
-                } else if abs(gap - spacing) > 1.0 {
-                    addViolation(page, row[j].0, "gap \(gap) != \(spacing)±1")
+                } else if abs(gap - spacing) > 1.5 {
+                    addViolation(page, row[j].0, "gap \(gap) != \(spacing)±1.5")
                 }
             }
         }
         if !allowOffscreen {
             for c in cards {
+                // 只对与视口相交的卡判出屏（滚动容器内未滚入的卡天然在屏外，非布局错误）
+                let intersects = c.1.maxY > 0 && c.1.minY < screen.height
+                    && c.1.maxX > 0 && c.1.minX < screen.width
+                guard intersects else { continue }
                 if c.1.minX < -1 || c.1.maxX > screen.width + 1
                     || c.1.minY < -1 || c.1.maxY > screen.height + 1 {
                     addViolation(page, c.0, "out of screen: \(c.1)")

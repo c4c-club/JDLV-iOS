@@ -91,8 +91,17 @@ final class ProductionSmokeUITests: XCTestCase {
             dbGroup.tap()   // 折叠中 → 展开分组
         }
         XCTAssertTrue(testButton.waitForExistence(timeout: 10), "测试连接按钮未找到")
-        testButton.tap()
-        let result = app.descendants(matching: .any)["settings_test_result"].firstMatch
+        // resilient tap：转场/遮挡下中心坐标兜底，未出结果重试一次
+        if testButton.isHittable {
+            testButton.tap()
+        } else {
+            testButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        var result = app.descendants(matching: .any)["settings_test_result"].firstMatch
+        if !result.waitForExistence(timeout: 30) {
+            testButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            result = app.descendants(matching: .any)["settings_test_result"].firstMatch
+        }
         XCTAssertTrue(result.waitForExistence(timeout: 30), "测试结果未出现")
         let label = result.label
         XCTAssertTrue(label.contains("✓"), "测试连接必须真实成功: \(label)")

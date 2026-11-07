@@ -53,10 +53,9 @@ enum GridMath {
         var i = 0
         while i < items.count {
             let end = min(i + columns, items.count)
-            var row: [T?] = Array(items[i..<end])
-            if row.count < columns {
-                row.append(contentsOf: Array(repeating: nil, count: columns - row.count))
-            }
+            var row: [T?] = []
+            for k in i..<end { row.append(items[k]) }   // 逐个 append（显式 T -> T?）
+            while row.count < columns { row.append(nil) }
             rows.append(row)
             i = end
         }
@@ -99,15 +98,17 @@ struct CardGrid<Item, Cell: View>: View {
             HStack(alignment: .top, spacing: ComponentMetrics.gridSpacing) {
                 ForEach(chunked[r].indices, id: \.self) { c in
                     let idx = r * columns + c
-                    Group {
+                    ZStack {
                         if let item = chunked[r][c] {
                             cell(item)
-                                .frame(width: cellWidth, height: cellHeight, alignment: .top)
                         } else {
                             Color.clear
-                                .frame(width: cellWidth, height: cellHeight)
                         }
                     }
+                    .frame(width: cellWidth, height: cellHeight, alignment: .top)
+                    // 显式 a11y 容器（children: .contain）—— 保证 XCUI 以 card_<page>_<idx>
+                    // 查询到精确 cellW×cellH 的 wrapper frame（Group+identifier 不保证成节点）
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier(idPrefix.isEmpty ? "" : "\(idPrefix)_\(idx)")
                 }
             }

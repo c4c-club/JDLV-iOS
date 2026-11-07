@@ -31,8 +31,8 @@ final class LightboxGeometryTests: XCTestCase {
     func testFitRectWideImage() {
         let r = fitRect(container: CGSize(width: 393, height: 300),
                         image: CGSize(width: 900, height: 300))
-        XCTAssertEqual(r.width, 390, accuracy: 0.001, "min(scale) 取高度约束 → w=390")
-        XCTAssertEqual(r.height, 300, accuracy: 0.01)
+        XCTAssertEqual(r.width, 393, accuracy: 0.001, "超宽图按宽度贴合 → w=393")
+        XCTAssertEqual(r.height, 131, accuracy: 0.01)
         XCTAssertTrue(r.contains(CGPoint(x: 196, y: 150)))
     }
 
@@ -40,7 +40,7 @@ final class LightboxGeometryTests: XCTestCase {
         // 小图 fit 也会放大到贴合（UIScrollView aspectFit 语义 = 完整显示可放大）
         let r = fitRect(container: CGSize(width: 393, height: 300),
                         image: CGSize(width: 39, height: 30))
-        XCTAssertEqual(r.width, 393, accuracy: 0.001)
+        XCTAssertEqual(r.width, 390, accuracy: 0.001, "min(scale) 取高度约束 → w=390")
     }
 
     // MARK: 指标约束
