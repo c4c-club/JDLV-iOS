@@ -2,23 +2,24 @@ import SwiftUI
 import JDLVCore
 
 //
-//  ActorDetailView.swift —— 女优详情页（09 B 节 ActorDetailScreen 移植）。
+//  ActorDetailView.swift —— 女优详情页（09 B 节 ActorDetailScreen 对位
+//  + 13 §4.5 设计系统 v2）。
 //
 //  - 状态四态（B2）：loading && actor==null → LoadingBox；error && actor==null → ErrorBox；
 //    actor==null → EmptyBox「未找到该女优」；否则内容。
-//  - 头部信息区（B3，网格首行跨全行）：头像 96pt 1:1 + 右侧列（姓名 Bold 17 / name_zht 次级灰
-//    / InfoRow 7 标签：别名/影片数/生日/身高/人气/均分/推特）。
-//  - 出演影片区（B4）：「出演影片 (共 N 部)」 + 固定 3 列 400:520 右半封面单元格
-//    （番号 + 标题空回落番号 + ★ 评分）。
-//  - 排序 × 方向 × 标签筛选（B5）：sort=id 显示「库内无更新时间列，已按收录顺序排序」；
-//    标签面板 FilterDropdown + CollapsibleSection「按标签筛选 (该女优影片聚合)」，
-//    TAG_LIMIT=60 + 「加载更多标签（已显示 N）」全角括号 + 「完成」。
-//  - 分页（B7）：触底自动加载 + PageChip 跳页；收藏 FavButton（toolbar）。
+//  - 头部信息区（B3）：头像 96×96（AspectImage 1:1 不拉伸）+ 右侧列（姓名 Bold 17 /
+//    name_zht 次级灰 / InfoRow 7 标签：别名/影片数/生日/身高/人气/均分/推特）。
+//  - 作品区（B4/B5，13 §4.5）：「出演影片 (共 N 部)」+ CardGrid 2 列 MovieCard 小图
+//    （等宽等高）+ LoadMoreFooter + PageChip overlay。
+//  - 排序 × 方向 × 标签筛选（B5）：sort/id 提示逐字；标签面板 FilterDropdown → .sheet
+//    （TAG_LIMIT=60 + 「加载更多标签（已显示 N）」全角括号 + 「完成」）。
 //
 
 struct ActorDetailView: View {
     @EnvironmentObject private var router: Router
     @Environment(\.appTheme) private var theme
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.containerWidth) private var envWidth
     let aid: String
 
     @StateObject private var vm: ActorDetailVM
@@ -32,11 +33,7 @@ struct ActorDetailView: View {
     // MARK: 派生
 
     private var name: String { vm.actor?.s("name") ?? "" }
-
-    /// 3 列网格（contentPadding 12，间距 10）
-    private var columns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
-    }
+    private var pageWidth: CGFloat { resolvedContainerWidth(envWidth, hSize: hSize) }
 
     var body: some View {
         Group {
@@ -64,13 +61,16 @@ struct ActorDetailView: View {
                 .padding(.trailing, 12)
                 .padding(.bottom, 16)
         }
-        .overlay { tagPanel }
+        .sheet(isPresented: $showTagPanel) {
+            NavigationStack { tagSheet }
+                .presentationDetents([.large])
+        }
         .onAppear { Task { await vm.bind(aid: aid) } }
         .onDisappear { vm.release() }
         .accessibilityIdentifier("secondary_page")
     }
 
-    // MARK: 正文
+    // MARK: 正文（单 ScrollView + 单 LazyVStack）
 
     private var content: some View {
         ScrollView {
@@ -84,12 +84,12 @@ struct ActorDetailView: View {
         }
     }
 
-    // MARK: B3 头部信息区（头像 96pt 1:1 + 右侧列）
+    // MARK: B3 头部信息区（头像 96×96 AspectImage + 右侧列）
 
     private var headerBlock: some View {
         HStack(alignment: .top, spacing: 12) {
-            PosterImage(url: MovieImg.actorAvatar(vm.actor?.s("avatar_url") ?? ""),
-                        aspect: 1, radius: 10)
+            AspectImage(url: MovieImg.actorAvatar(vm.actor?.s("avatar_url") ?? ""),
+                        ratio: 1, radius: 10)
                 .frame(width: 96, height: 96)
             VStack(alignment: .leading, spacing: 2) {
                 AppText(name.isEmpty ? " " : name, lvl: .titleM, maxLines: 2, fontWeight: .bold)
@@ -139,7 +139,7 @@ struct ActorDetailView: View {
         AppText("\(label): \(value)", lvl: .meta, maxLines: 1)
     }
 
-    // MARK: B4/B5 出演影片区（排序/方向/标签 + 3 列网格）
+    // MARK: B4/B5 出演影片区（排序/方向/标签 + CardGrid 2 列 MovieCard 小图）
 
     private var moviesBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -155,12 +155,13 @@ struct ActorDetailView: View {
                 AppText(ActorDetailCopy.emptyMovies, lvl: .meta)
                     .padding(.top, 12)
             } else {
-                LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(Array(vm.items.enumerated()), id: \.offset) { _, mv in
-                        ActorMovieCell(mv: mv) {
-                            router.push(.movie(mv.s("id")))
-                        }
-                    }
+                let cellW = GridMath.cellWidth(pageWidth: pageWidth - 24, columns: 2)
+                CardGrid(items: vm.items, columns: 2,
+                         cellWidth: cellW,
+                         cellHeight: CardLayout.movieSmallH(cellW: cellW)) { mv in
+                    MovieCard(m: mv, viewMode: 0, onClick: {
+                        router.push(.movie(mv.s("id")))
+                    })
                 }
                 LoadMoreFooter(config: LoadMoreConfig(
                     loaded: vm.items.count, total: vm.total,
@@ -173,7 +174,7 @@ struct ActorDetailView: View {
         .padding(.top, 16)
     }
 
-    /// 排序/方向/标签入口行（B5）
+    /// 排序/方向/标签入口行（B5：DropdownBox 保留——既有 36pt 控件、B21 口径）
     private var toolbarRow: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -230,92 +231,55 @@ struct ActorDetailView: View {
         .padding(.vertical, 2)
     }
 
-    // MARK: 标签筛选面板（B5：FilterDropdown + 折叠分区 + chips + 加载更多 + 完成）
+    // MARK: 标签筛选 sheet（B5：chips + 加载更多 + 完成）
 
-    @ViewBuilder
-    private var tagPanel: some View {
-        FilterDropdown(expanded: showTagPanel, onDismiss: { showTagPanel = false }) {
-            CollapsibleSection(title: ActorDetailCopy.tagsPanelTitle, initiallyExpanded: true) {
-                VStack(alignment: .leading, spacing: 8) {
-                    // chips：全部（tagId 空）+ 每标签 "{name} ({count})"；点选即查询，再点取消
-                    FlowHStack(spacing: 8) {
-                        AppToggleChip(label: ActorDetailCopy.tagsAll, selected: vm.tagId.isEmpty) {
-                            Task { await vm.setTag("") }
-                        }
-                        ForEach(Array(vm.tags.enumerated()), id: \.offset) { _, t in
-                            AppToggleChip(
-                                label: "\(t.s("name")) (\(t.i("c")))",
-                                selected: vm.tagId == t.s("id")) {
-                                Task { await vm.setTag(t.s("id")) }
-                            }
+    private var tagSheet: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                AppText(ActorDetailCopy.tagsPanelTitle, lvl: .bodyS, fontWeight: .bold)
+                // chips：全部（tagId 空）+ 每标签 "{name} ({count})"；点选即查询，再点取消
+                FlowHStack(spacing: 8) {
+                    AppToggleChip(label: ActorDetailCopy.tagsAll, selected: vm.tagId.isEmpty) {
+                        Task { await vm.setTag("") }
+                    }
+                    ForEach(Array(vm.tags.enumerated()), id: \.offset) { _, t in
+                        AppToggleChip(
+                            label: "\(t.s("name")) (\(t.i("c")))",
+                            selected: vm.tagId == t.s("id")) {
+                            Task { await vm.setTag(t.s("id")) }
                         }
                     }
-                    // 加载更多标签（仅 tagsHasMore；全角括号逐字）
-                    if vm.tagsHasMore {
-                        Button {
-                            Task { await vm.loadMoreTags() }
-                        } label: {
-                            AppText(vm.tagsLoading
-                                    ? ActorDetailCopy.tagsLoadingMore
-                                    : ActorDetailCopy.tagsLoadMore(vm.tags.count),
-                                    lvl: .meta, color: theme.accent)
-                                .frame(minHeight: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(vm.tagsLoading)
-                    }
-                    // 底部确认按钮「完成」（≥48）
+                }
+                // 加载更多标签（仅 tagsHasMore；全角括号逐字）
+                if vm.tagsHasMore {
                     Button {
-                        showTagPanel = false
+                        Task { await vm.loadMoreTags() }
                     } label: {
-                        AppText(ActorDetailCopy.done, lvl: .bodyS, color: .white,
-                                textAlign: .center, fontWeight: .medium)
-                            .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent))
+                        AppText(vm.tagsLoading
+                                ? ActorDetailCopy.tagsLoadingMore
+                                : ActorDetailCopy.tagsLoadMore(vm.tags.count),
+                                lvl: .meta, color: theme.accent)
+                            .frame(minHeight: ComponentMetrics.touchMin)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(vm.tagsLoading)
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
-            }
-        }
-    }
-}
-
-// MARK: - ActorMovieCell（B4：400:520 右半封面 + 番号 + 标题空回落番号 + ★评分）
-
-struct ActorMovieCell: View {
-    let mv: Row
-    var onClick: () -> Void
-
-    @Environment(\.appTheme) private var theme
-
-    private var number: String { mv.s("number") }
-    /// 影片标题空回落番号
-    private var displayTitle: String {
-        let t = mv.s("title")
-        return t.isEmpty ? number : t
-    }
-
-    var body: some View {
-        Button(action: onClick) {
-            VStack(alignment: .leading, spacing: 0) {
-                PosterImage(url: MovieImg.movieCover(mv.s("cover_url"), mv.s("id")),
-                            half: true, aspect: 400.0 / 520.0, radius: 10)
-                AppText(number, lvl: .meta, color: theme.accent, maxLines: 1,
-                        fontWeight: .medium)
-                    .padding(.top, 4)
-                AppText(displayTitle.isEmpty ? " " : displayTitle, lvl: .meta, maxLines: 1)
-                    .padding(.top, 1)
-                if mv.d("score") > 0 {
-                    AppText("★ \(Fmt.score(mv.d("score")))", lvl: .meta, color: theme.accent2)
-                        .padding(.top, 1)
+                // 底部确认按钮「完成」（≥48）
+                Button {
+                    showTagPanel = false
+                } label: {
+                    AppText(ActorDetailCopy.done, lvl: .bodyS, color: .white,
+                            textAlign: .center, fontWeight: .medium)
+                        .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
+                        .background(RoundedRectangle(cornerRadius: Radius.card).fill(theme.accent))
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
-            .contentShape(Rectangle())
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
+        .background(theme.bg1.ignoresSafeArea())
     }
 }
