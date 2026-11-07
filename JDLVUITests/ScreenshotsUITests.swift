@@ -162,7 +162,10 @@ final class ScreenshotsUITests: XCTestCase {
         let aboutLink = app.buttons["settings_about_link"]
         scrollUntilVisible(app, aboutLink, maxSwipes: 14)
         XCTAssertTrue(tapIfExist(aboutLink, 6), "settings_about_link not found")
-        let testSwitch = app.switches["about_testimg_switch"].firstMatch
+        // AppSwitchRow：id 在整行 Button 上 → 双路查询
+        let testSwitch0 = app.buttons["about_testimg_switch"].firstMatch
+        let testSwitch = testSwitch0.exists ? testSwitch0
+            : app.switches["about_testimg_switch"].firstMatch
         XCTAssertTrue(testSwitch.waitForExistence(timeout: 8), "about_testimg_switch not found (AboutView)")
         let anchor = app.descendants(matching: .any)["testImageModeOn"].firstMatch
         var anchorOn = anchor.exists

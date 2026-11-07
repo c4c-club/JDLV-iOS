@@ -69,7 +69,9 @@ final class SettingsUITests: XCTestCase {
         if aboutLink.isHittable { aboutLink.tap() } else {
             aboutLink.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
-        var sw = app.switches["about_testimg_switch"].firstMatch
+        // AppSwitchRow：id 在整行 Button 上（内层 Toggle id = switch_<label>）→ 双路查询
+        var sw = app.buttons["about_testimg_switch"].firstMatch
+        if !sw.exists { sw = app.switches["about_testimg_switch"].firstMatch }
         XCTAssertTrue(sw.waitForExistence(timeout: 8), "about_testimg_switch not found (DEBUG build expected)")
         scrollUntilVisible(app, sw, maxSwipes: 10)
 

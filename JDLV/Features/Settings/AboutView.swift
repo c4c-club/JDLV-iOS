@@ -93,17 +93,16 @@ struct AboutView: View {
 
     #if DEBUG
     private var testImgToggle: some View {
-        Toggle("测试图片模式（调试）", isOn: Binding(
-            get: { store.settings.testImgMode },
-            set: { v in
-                // 同步写（updateSettings 立即落盘 + saveState 状态机）；异步 Task 会让
-                // UI 测试的 anchor 等待与开关回读产生竞态
-                store.updateSettings { $0.testImgMode = v }
-                TestImages.clearCache()
-                AppServices.shared.showToast(v ? SettingsCopy.testImgOnToast
-                                               : SettingsCopy.testImgOffToast)
-            }))
-            .accessibilityIdentifier("about_testimg_switch")
+        AppSwitchRow(label: SettingsCopy.testImgLabel,
+                     checked: store.settings.testImgMode,
+                     hint: SettingsCopy.testImgDesc) { v in
+            // 同步写（updateSettings 立即落盘 + saveState 状态机覆盖）
+            store.updateSettings { $0.testImgMode = v }
+            TestImages.clearCache()
+            AppServices.shared.showToast(v ? SettingsCopy.testImgOnToast
+                                           : SettingsCopy.testImgOffToast)
+        }
+        .accessibilityIdentifier("about_testimg_switch")
     }
     #endif
 
