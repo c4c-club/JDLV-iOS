@@ -31,7 +31,7 @@ extension EnvironmentValues {
 }
 
 /// 页面侧取容器宽度：注入值 > 0 用之；否则回退水平 size class 估算（首帧）
-func resolvedContainerWidth(_ envWidth: CGFloat, hSize: HorizontalSizeClass) -> CGFloat {
+func resolvedContainerWidth(_ envWidth: CGFloat, hSize: UserInterfaceSizeClass?) -> CGFloat {
     if envWidth > 0 { return envWidth }
     return hSize == .regular ? 768 : 393
 }
