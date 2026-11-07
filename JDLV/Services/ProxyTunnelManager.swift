@@ -55,15 +55,15 @@ final class ProxyTunnelManager: ObservableObject {
 
     private init() {}
 
-    // MARK: 生效设置合并（provider 唯一入口；任意线程）
+    // MARK: 生效设置合并（provider 唯一入口；任意线程 → nonisolated）
 
     /// base = AppBootstrap 快照映射；隧道启用时原子叠加传输三元组。
-    static func effectiveSettings(_ base: MySQLPoolSettings?) -> MySQLPoolSettings? {
+    nonisolated static func effectiveSettings(_ base: MySQLPoolSettings?) -> MySQLPoolSettings? {
         effectiveSettings(base, tunnel: true)
     }
 
     /// `tunnel=false`（草稿测试直连）或草稿目标 ≠ 运行中隧道目标 → 不叠加 override。
-    static func effectiveSettings(
+    nonisolated static func effectiveSettings(
         _ base: MySQLPoolSettings?, tunnel: Bool
     ) -> MySQLPoolSettings? {
         guard var s = base else { return nil }

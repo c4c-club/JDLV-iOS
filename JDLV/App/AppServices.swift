@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import JDLVCore
 
 //
 //  AppServices.swift —— App 壳全局状态（07 A5：横幅与 Toast；MainVm.showToast 对位）。
