@@ -72,6 +72,15 @@ final class LayoutAuditUITests: XCTestCase {
         }
     }
 
+    /// 下滑直到元素可点（首页三段区在视口下方时用）
+    private func scrollUntilVisible(_ app: XCUIApplication, _ el: XCUIElement, maxSwipes: Int = 14) {
+        var i = 0
+        while !(el.exists && el.isHittable) && i < maxSwipes {
+            app.swipeUp()
+            i += 1
+        }
+    }
+
     private func tapIfExist(_ el: XCUIElement, _ timeout: TimeInterval = 5) -> Bool {
         guard el.waitForExistence(timeout: timeout) else { return false }
         if el.isHittable { el.tap() } else {
