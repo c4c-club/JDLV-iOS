@@ -101,7 +101,9 @@ TEST_COLORS = [
 TOL = 6
 MIN_PIXELS = 5000
 MIN_COLORS_SET = 3
-IMAGELESS_PREFIXES = ("00-", "00_")
+# 无图位页面（无任何图片槽 → 不可能有测试色块）：00 开关页、04 筛选 Form、
+# 14 设置卡、15 关于 Form（13 收藏 demo 有封面、16 灯箱有测试图不豁免）
+IMAGELESS_PREFIXES = ("00-", "00_", "04-", "04_", "14-", "14_", "15-", "15_")
 
 
 def verify(path):

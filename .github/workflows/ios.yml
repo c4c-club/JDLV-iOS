@@ -155,6 +155,34 @@ jobs:
         run: |
           mkdir -p build/attachments
           xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/attachments || echo 'no attachments (non-blocking evidence export)'
+          # 附件重命名：xcresulttool 以 UUID 落盘 → 按 manifest.json 还原真实附件名
+          # （NN-页面名.png / layout-report.json / screenshots-manifest.json）
+          python3 - <<'PYRENAME'
+          import json, os, re
+          d = "build/attachments"
+          mp = os.path.join(d, "manifest.json")
+          if not os.path.exists(mp):
+              print("no xcresult manifest.json; keep UUID names")
+          else:
+              entries = json.load(open(mp, encoding="utf-8"))
+              ren = 0
+              for e in entries:
+                  src = e.get("exportedFileName")
+                  name = e.get("suggestedHumanReadableName") or e.get("attachmentName") or ""
+                  if not src or not name:
+                      continue
+                  sp = os.path.join(d, src)
+                  if not os.path.exists(sp):
+                      continue
+                  base = re.sub(r'[^A-Za-z0-9._-]', '_', name)
+                  if not base.lower().endswith(('.png', '.json', '.txt', '.mp4')):
+                      base += '.txt'
+                  dst = os.path.join(d, base)
+                  if dst != sp and not os.path.exists(dst):
+                      os.replace(sp, dst)
+                      ren += 1
+              print("renamed %d attachments" % ren)
+          PYRENAME
 
       - name: Verify screenshots (R3 gate)
         if: always()
@@ -170,7 +198,7 @@ jobs:
         run: |
           set -eo pipefail
           cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
-          REPORT=$(ls *ayout-report*.json 2>/dev/null | head -1 || true)
+          REPORT=$(ls layout-report.json 2>/dev/null || ls *ayout-report*.json *ayout-report*.txt 2>/dev/null | head -1 || true)
           if [ -z "$REPORT" ]; then echo 'FAIL layout-report.json missing (LayoutAuditUITests did not run)'; exit 1; fi
           python3 -I "$GITHUB_WORKSPACE/scripts/verify_layout.py" "$REPORT"
 
