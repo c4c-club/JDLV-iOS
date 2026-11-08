@@ -268,14 +268,23 @@ final class ScreenshotsUITests: XCTestCase {
             _ = tapIfExist(viewallTop)
         let top250Opened = app.buttons["t250row_0"].firstMatch.waitForExistence(timeout: 15)
         if !top250Opened {
-            // demo bind 竞态（6 tab 常驻）→ 重启 app 重试 push
+            // demo 懒建表竞态 → 重启 app + 期间点「重试」自愈 + 重试 push
             app.terminate()
             app.launch()
             _ = app.buttons["tab_search"].waitForExistence(timeout: 20)
             _ = app.descendants(matching: .any)["home_push_movie"].firstMatch
                 .waitForExistence(timeout: 25)
             _ = tapIfExist(app.buttons["viewall_top"], 15)
-            _ = app.buttons["t250row_0"].firstMatch.waitForExistence(timeout: 20)
+            let deadline = Date().addingTimeInterval(25)
+            let row = app.buttons["t250row_0"].firstMatch
+            while Date() < deadline, !row.exists {
+                let retry = app.buttons["重试"].firstMatch
+                if retry.exists && retry.isHittable { retry.tap() }
+                Thread.sleep(forTimeInterval: 2)
+                if !row.exists && !retry.exists {
+                    _ = tapIfExist(app.buttons["viewall_top"], 5)
+                }
+            }
         }
             snapPage(app, "12-top250",
                      [app.buttons["t250row_0"].firstMatch,

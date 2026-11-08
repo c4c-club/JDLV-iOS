@@ -34,6 +34,18 @@ final class LayoutAuditUITests: XCTestCase {
         }
     }
 
+    /// demo 懒建表竞态自愈：等待期间每 2s 检查错误态并点「重试」（ErrorBox）
+    private func waitHealing(_ app: XCUIApplication, _ el: XCUIElement,
+                             timeout: TimeInterval) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if el.exists { return }
+            let retry = app.buttons["重试"].firstMatch
+            if retry.exists && retry.isHittable { retry.tap() }
+            Thread.sleep(forTimeInterval: 2)
+        }
+    }
+
     private func snapDiag(_ app: XCUIApplication, _ name: String) {
         let a = XCTAttachment(screenshot: app.screenshot())
         a.name = "diag-\(name)"
@@ -231,7 +243,9 @@ final class LayoutAuditUITests: XCTestCase {
             app.launch()
             _ = app.buttons["tab_sht"].waitForExistence(timeout: 20)
             openTab(app, "sht")
-            waitFirstCard(app, page: "sht", prefix: "shtcard_", timeout: 25)
+            // demo 懒建表竞态：bind 可能先于 seed 命中「表不存在」→ 点重试自愈
+            waitHealing(app, app.descendants(matching: .any)["shtcard_0"].firstMatch,
+                        timeout: 25)
         }
         Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "sht", prefix: "shtcard_", columns: 2, spacing: 12, checkScroll: true)
@@ -263,7 +277,7 @@ final class LayoutAuditUITests: XCTestCase {
             _ = app.descendants(matching: .any)["home_push_movie"].firstMatch
                 .waitForExistence(timeout: 25)
             _ = tapIfExist(app.buttons["viewall_top"], 15)
-            waitFirstCard(app, page: "top250", prefix: "t250row_", timeout: 25)
+            waitHealing(app, app.buttons["t250row_0"].firstMatch, timeout: 25)
         }
         Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "top250", prefix: "t250row_", columns: 1, spacing: 10, checkScroll: true)
