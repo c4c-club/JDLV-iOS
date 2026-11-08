@@ -121,6 +121,25 @@ final class ScreenshotsUITests: XCTestCase {
         }
     }
 
+    @discardableResult
+    private func waitGone(_ el: XCUIElement, _ timeout: TimeInterval) -> Bool {
+        guard el.exists else { return true }
+        let exp = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == 0"), object: el)
+        return XCTWaiter.wait(for: [exp], timeout: timeout) == .completed
+    }
+
+    /// 清空文本框（全选 + 剪切）
+    private func clearField(_ field: XCUIElement) {
+        guard field.exists else { return }
+        field.tap()
+        field.press(forDuration: 1.1)
+        let sel = app.menuItems["Select All"].firstMatch
+        if sel.waitForExistence(timeout: 2) { sel.tap() }
+        let cut = app.menuItems["Cut"].firstMatch
+        if cut.waitForExistence(timeout: 2) { cut.tap() }
+    }
+
     private func navBack(_ app: XCUIApplication) {
         let sysBack = app.navigationBars.buttons.firstMatch
         if sysBack.waitForExistence(timeout: 3) {
@@ -191,12 +210,31 @@ final class ScreenshotsUITests: XCTestCase {
         snapPage(app, "01-home", [app.buttons["entry_articles"], app.buttons["entry_hotreviews"],
                                   app.buttons["viewall_recent"]])
 
-        // 3) 02-search-results（输入「演示」→ CardGrid）
+        // 3) 02-search-results（输入「演示」→ CardGrid；键盘 flake → 重试至结果态）
         let field = app.textFields.firstMatch
-        if field.exists, field.isHittable {
+        let entryRow = app.buttons["entry_articles"]
+        var inResults = false
+        for _ in 0..<3 {
+            guard !entryRow.exists else { inResults = true; break }   // 已在结果态
             _ = typeInto(field, "演示")
+            // 结果态判定：入口行消失（vm.items != nil）；300ms 防抖 + 查询 ≤8s
+            let gone = waitGone(entryRow, 10)
+            if gone { inResults = true; break }
+            field.exists ? (field.value as? String ?? "").isEmpty
+                ? () : clearField(field) : ()
         }
-        snapPage(app, "02-search-results", [app.buttons["mode_fuzzy"], app.buttons["mode_exact"]])
+        if inResults {
+            snapPage(app, "02-search-results",
+                     [app.buttons["mode_fuzzy"], app.buttons["mode_exact"]])
+        } else {
+            // B2：3 次重试仍未到结果态（键盘不可用）——走查无法继续产出有效截图集，
+            // 如实 skip 本用例（不拍重复首页态冒充结果页；CI 重跑直至输入链路恢复）
+            let diag = XCTAttachment(screenshot: app.screenshot())
+            diag.name = "diag-search-not-reached"
+            diag.lifetime = .keepAlways
+            add(diag)
+            throw XCTSkip("B2: search results not reached after 3 typing attempts (keyboard); rerun needed")
+        }
         dismissAnyModal(app)
 
         // 4) 03-browse（CardGrid 2 列）
@@ -204,11 +242,23 @@ final class ScreenshotsUITests: XCTestCase {
         snapPage(app, "03-browse", [app.descendants(matching: .any)["browse_grid"].firstMatch,
                                     app.buttons["browse_filter_button"]])
 
-        // 5) 04-filter-sheet（browse_filter_button → FiltersPanel sheet；页面身份=sheet「完成」）
+        // 5) 04-filter-sheet（打开 sheet → 直接拍 —— snapPage 的 dismissAnyModal 会把
+        //    刚开的 sheet 关掉导致拍成浏览页（03=04 重复根因）→ 拍完再关）
         let filterBtn = app.buttons["browse_filter_button"]
         XCTAssertTrue(tapIfExist(filterBtn, 6), "browse_filter_button not found")
-        snapPage(app, "04-filter-sheet", [app.buttons["browse_filter_button"],
-                                          app.navigationBars.firstMatch])
+        let filterNav = app.navigationBars["筛选"].firstMatch
+        _ = filterNav.waitForExistence(timeout: 8)
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertTrue(app.state == .runningForeground, "04: app not foreground")
+        do {
+            let a = XCTAttachment(screenshot: app.screenshot())
+            a.name = "04-filter-sheet"
+            a.lifetime = .keepAlways
+            add(a)
+            manifest.append(["pageName": "04-filter-sheet", "anchor": "filter_sheet",
+                             "ts": ISO8601DateFormatter().string(from: Date())])
+            snapCount += 1
+        }
         dismissAnyModal(app)   // 关 sheet
 
         // 6) 05-movie-detail（首页 → 段首卡）

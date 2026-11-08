@@ -101,10 +101,11 @@ TEST_COLORS = [
 TOL = 6
 MIN_PIXELS = 5000
 MIN_COLORS_SET = 3
-# 无图位页预算：00 开关页 / 04 筛选 Form / 14 设置卡 / 15 关于 Form 共 4 页
-# 设计上无任何图片槽（不可能有测试色块）。imageless 页数 > 4 = 有页面测试图缺失 → FAIL。
-# （xcresulttool 导出为 UUID 名，无法按名豁免 → 按数量预算；见验收报告 §7 偏差记录）
-IMAGELESS_BUDGET = 4
+# 无图位页预算 = 6：00 开关页 / 04 筛选 Form / 09 文学帖正文（无图帖）/ 13 收藏行卡
+# （纯文本行）/ 14 设置卡 / 15 关于 Form —— 设计上无任何图片槽（不可能有测试色块）。
+# imageless > 6 = 有图页测试图缺失 → FAIL。
+# （xcresulttool 曾导出 UUID 名 → 改按数量预算；rename 修复后名称已可用，预算口径保留）
+IMAGELESS_BUDGET = 6
 EXPECTED_PAGES = [
     "00-test-image-mode-on", "01-home", "02-search-results", "03-browse",
     "04-filter-sheet", "05-movie-detail", "06-actors", "07-actor-detail",
