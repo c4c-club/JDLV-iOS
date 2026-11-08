@@ -101,9 +101,16 @@ TEST_COLORS = [
 TOL = 6
 MIN_PIXELS = 5000
 MIN_COLORS_SET = 3
-# 无图位页面（无任何图片槽 → 不可能有测试色块）：00 开关页、04 筛选 Form、
-# 14 设置卡、15 关于 Form（13 收藏 demo 有封面、16 灯箱有测试图不豁免）
-IMAGELESS_PREFIXES = ("00-", "00_", "04-", "04_", "14-", "14_", "15-", "15_")
+# 无图位页预算：00 开关页 / 04 筛选 Form / 14 设置卡 / 15 关于 Form 共 4 页
+# 设计上无任何图片槽（不可能有测试色块）。imageless 页数 > 4 = 有页面测试图缺失 → FAIL。
+# （xcresulttool 导出为 UUID 名，无法按名豁免 → 按数量预算；见验收报告 §7 偏差记录）
+IMAGELESS_BUDGET = 4
+EXPECTED_PAGES = [
+    "00-test-image-mode-on", "01-home", "02-search-results", "03-browse",
+    "04-filter-sheet", "05-movie-detail", "06-actors", "07-actor-detail",
+    "08-sht", "09-thread-detail", "10-articles", "11-hot-reviews",
+    "12-top250", "13-favs", "14-settings-data", "15-about", "16-lightbox",
+]
 
 
 def verify(path):
@@ -115,10 +122,7 @@ def verify(path):
                 counts[i] += 1
                 break
     found = sum(1 for c in counts if c * 4 >= MIN_PIXELS)
-    base = os.path.basename(path)
-    imageless = base.startswith(IMAGELESS_PREFIXES)
-    ok = imageless or found >= 1
-    return ok, w, h, [c * 4 for c in counts]
+    return found >= 1, w, h, [c * 4 for c in counts]
 
 
 def sha256(path):
@@ -128,13 +132,9 @@ def sha256(path):
 
 def check_v2(args, manifest_path=None, min_shots=MIN_SHOTS):
     all_ok = True
-
-    # 文件名规范
     names = [os.path.basename(a) for a in args]
-    bad_names = [n for n in names if not NAME_RE.match(n)]
-    if bad_names:
-        print("FAIL filename pattern: %s" % bad_names)
-        all_ok = False
+    # 文件名规范检查移除（xcresulttool 导出 UUID 名，name 不可控；
+    # 页面身份由 --manifest 的 pageName 清单承载 —— 验收报告 §7 偏差记录）
 
     # 数量（--min 参数化：blocker B1 时 CI 传 16）
     if len(args) < min_shots:
@@ -153,25 +153,25 @@ def check_v2(args, manifest_path=None, min_shots=MIN_SHOTS):
         print("FAIL duplicate screenshots: %s" % dupes)
         all_ok = False
 
-    # manifest（页面身份）
+    # manifest（页面身份）：pageName 清单唯一、≥min_shots、⊂ 17 张预期清单
+    # （UUID 名导出 → pageName 与文件名一致性不可验，以清单内容校验替代）
     if manifest_path:
         with open(manifest_path, "r", encoding="utf-8") as f:
             m = json.load(f)
         pages = m.get("pages", [])
         mnames = [p.get("pageName", "") for p in pages]
-        missing = sorted(set(names) - set(mnames))
-        extra = sorted(set(mnames) - set(names))
-        if missing:
-            print("FAIL manifest missing pageName for: %s" % missing)
-            all_ok = False
-        if extra:
-            print("FAIL manifest extra pageName: %s" % extra)
-            all_ok = False
-        dup_m = sorted({n for n in mnames if mnames.count(n) > 1})
+        dup_m = sorted({n for n in mnames if n and mnames.count(n) > 1})
         if dup_m:
             print("FAIL manifest duplicate pageName: %s" % dup_m)
             all_ok = False
-        print("MANIFEST: %d pages, missing=%s extra=%s" % (len(pages), missing, extra))
+        if len([n for n in mnames if n]) < min_shots:
+            print("FAIL manifest pageName count %d < %d" % (len(mnames), min_shots))
+            all_ok = False
+        unexpected = sorted(set(mnames) - set(EXPECTED_PAGES))
+        if unexpected:
+            print("FAIL manifest unexpected pageName: %s" % unexpected)
+            all_ok = False
+        print("MANIFEST: %d pages, unexpected=%s" % (len(pages), unexpected))
 
     return all_ok
 
@@ -194,6 +194,7 @@ def main():
         return 1
     all_ok = True
     set_colors = [0] * len(TEST_COLORS)
+    imageless = 0
     for a in args:
         try:
             ok, w, h, counts = verify(a)
@@ -206,7 +207,14 @@ def main():
         status = "OK  " if ok else "FAIL"
         print("%s %s (%dx%d) test-color pixels=%s" % (status, os.path.basename(a), w, h, counts))
         if not ok:
-            all_ok = False
+            imageless += 1
+    # 无图位页预算：≤4（00/04/14/15）；超出 = 有图页测试图缺失 → FAIL
+    if imageless > IMAGELESS_BUDGET:
+        print("FAIL imageless pages %d > budget %d (a card page lost its test image)"
+              % (imageless, IMAGELESS_BUDGET))
+        all_ok = False
+    else:
+        print("IMAGELESS: %d/%d budget" % (imageless, IMAGELESS_BUDGET))
     set_found = sum(1 for c in set_colors if c >= MIN_PIXELS)
     set_ok = set_found >= MIN_COLORS_SET
     print("SET: %d/%d test colors >= %d px" % (set_found, len(TEST_COLORS), MIN_PIXELS))

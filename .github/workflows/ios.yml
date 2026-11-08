@@ -194,7 +194,8 @@ jobs:
         run: |
           set -eo pipefail
           cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
-          MANIFEST=$(ls *creenshots-manifest*.json 2>/dev/null | head -1 || true)
+          # screenshots-manifest（字符串附件）导出为 UUID.txt → 按内容定位
+          MANIFEST=$(grep -l 'pageName' ./*.txt ./*.json 2>/dev/null | head -1 || true)
           # --min 16：17 张清单中 12-top250 在 blocker B1（CI demo 入口不可达）时缺席
           python3 -I "$GITHUB_WORKSPACE/scripts/verify_screenshots.py" ./*.png ${MANIFEST:+--manifest "$MANIFEST"} --min 16
 
@@ -203,7 +204,8 @@ jobs:
         run: |
           set -eo pipefail
           cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
-          REPORT=$(ls layout-report.json 2>/dev/null || ls *ayout-report*.json *ayout-report*.txt 2>/dev/null | head -1 || true)
+          # layout-report（字符串附件）导出为 UUID.txt → 按内容定位
+          REPORT=$(grep -l 'violations' ./*.txt ./*.json 2>/dev/null | head -1 || true)
           if [ -z "$REPORT" ]; then echo 'FAIL layout-report.json missing (LayoutAuditUITests did not run)'; exit 1; fi
           python3 -I "$GITHUB_WORKSPACE/scripts/verify_layout.py" "$REPORT"
 
