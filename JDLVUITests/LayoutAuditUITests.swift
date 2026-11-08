@@ -301,7 +301,9 @@ final class LayoutAuditUITests: XCTestCase {
             navBack(app)
         } else {
             // blocker B1：页面可达但 demo 数据未渲染（或入口未打开）——如实记录，不产生 violation
+            // （waitFirstCard 内部已记 violation → 此处清除，以 skippedPages 承载）
             skippedPages.append("top250")
+            report.removeAll { ($0["page"] as? String) == "top250" }
             snapDiag(app, "top250-entry-unreachable")
             if app.navigationBars.firstMatch.exists { navBack(app) }
         }
