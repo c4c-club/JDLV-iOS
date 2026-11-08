@@ -139,6 +139,11 @@ jobs:
           mysql -uroot -e "GRANT ALL ON jdlv_app_it.* TO 'jdlv_it'@'%'"
           mysql -uroot -e "FLUSH PRIVILEGES"
 
+      - name: Disable hardware keyboard (XCUITest typeText needs software keyboard)
+        run: |
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          echo "hardware keyboard disabled for simulator"
+
       - name: Test
         env:
           # TEST_RUNNER_ 前缀：xcodebuild 转发进测试进程（剥前缀）；单测与 UI 测试 runner 都可见
