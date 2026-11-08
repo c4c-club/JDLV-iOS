@@ -18,13 +18,15 @@ final class LayoutAuditUITests: XCTestCase {
     // MARK: 报告
 
     private var report: [[String: Any]] = []
+    private var skippedPages: [String] = []
 
     private func addViolation(_ page: String, _ element: String, _ reason: String) {
         report.append(["page": page, "element": element, "violation": reason])
     }
 
     private func flushReport() {
-        if let data = try? JSONSerialization.data(withJSONObject: ["violations": report],
+        let payload: [String: Any] = ["violations": report, "skippedPages": skippedPages]
+        if let data = try? JSONSerialization.data(withJSONObject: payload,
                                                   options: [.prettyPrinted]),
            let s = String(data: data, encoding: .utf8) {
             let a = XCTAttachment(string: s)
