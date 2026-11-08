@@ -228,6 +228,8 @@ private struct ShtContent: View {
                 fav: vm.favIds.contains(t.s("tid")),
                 onClick: { router.push(.shtThread(t.s("tid"))) }   // nav("sht/{tid}")
             )
+            // Button 级 id（article_card 同款模式——XCUI 可靠查询）
+            .accessibilityIdentifier("shtcard_\(i)")
             .onAppear {
                 if i >= items.count - 3 {
                     Task { await vm.loadNext() }

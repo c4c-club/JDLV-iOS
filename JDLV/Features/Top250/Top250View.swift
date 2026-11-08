@@ -60,7 +60,6 @@ struct Top250View: View {
             services.showToast(r.toastText)
             vm.refreshChannel.consume()
         }
-        .accessibilityIdentifier("top250_page")
     }
 
     // MARK: 副标题（共 {total} 部 · 当前：全部/{year}年）
@@ -71,6 +70,8 @@ struct Top250View: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, ComponentMetrics.pageMargin)
             .padding(.top, 4)
+            // 页面身份锚点打在文本节点（staticText 必成 a11y 节点；容器 id 不可靠）
+            .accessibilityIdentifier("top250_page")
     }
 
     // MARK: 年份 chips（首项「全部」+「{y} ({n})」；失败只剩「全部」）
@@ -104,11 +105,11 @@ struct Top250View: View {
 
     private var list: some View {
         VStack(spacing: 10) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, m in
+            ForEach(Array(items.enumerated()), id: \.offset) { i, m in
                 Top250Row(m: m) {
                     router.push(.movie(m.s("id")))
                 }
-                .accessibilityIdentifier("t250_\(m.s("id"))")
+                .accessibilityIdentifier("t250row_\(i)")
             }
         }
         .padding(.horizontal, ComponentMetrics.pageMargin)

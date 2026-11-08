@@ -226,9 +226,9 @@ final class LayoutAuditUITests: XCTestCase {
 
         // 4) 98t（2 列）
         openTab(app, "sht")
-        waitFirstCard(app, page: "sht", prefix: "card_sht_")
+        waitFirstCard(app, page: "sht", prefix: "shtcard_")
         Thread.sleep(forTimeInterval: 1.0)
-        audit(app, page: "sht", prefix: "card_sht_", columns: 2, spacing: 12, checkScroll: true)
+        audit(app, page: "sht", prefix: "shtcard_", columns: 2, spacing: 12, checkScroll: true)
 
         // 5) 资讯（1 列行卡 96）
         openTab(app, "search")
@@ -249,9 +249,9 @@ final class LayoutAuditUITests: XCTestCase {
         // 7) TOP250（1 列行卡 112）
         openTab(app, "search")
         _ = tapIfExist(app.buttons["viewall_top"])
-        waitFirstCard(app, page: "top250", prefix: "top250_row")
+        waitFirstCard(app, page: "top250", prefix: "t250row_")
         Thread.sleep(forTimeInterval: 1.0)
-        audit(app, page: "top250", prefix: "top250_row", columns: 1, spacing: 10, checkScroll: true)
+        audit(app, page: "top250", prefix: "t250row_", columns: 1, spacing: 10, checkScroll: true)
         navBack(app)
 
         // 8) 收藏（1 列行卡）

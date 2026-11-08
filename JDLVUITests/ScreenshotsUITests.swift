@@ -237,7 +237,7 @@ final class ScreenshotsUITests: XCTestCase {
         // 8) 08-sht / 09-thread-detail（R3：sht_grid 锚点；详情单 LazyVStack）
         openTab(app, "98t", "sht")
         snapPage(app, "08-sht", [app.descendants(matching: .any)["sht_grid"].firstMatch,
-                                 app.descendants(matching: .any)["card_sht_0"].firstMatch])
+                                 app.descendants(matching: .any)["shtcard_0"].firstMatch])
         let shtRow = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示帖子")).firstMatch
         if shtRow.exists {
             _ = tapIfExist(shtRow)
@@ -267,7 +267,8 @@ final class ScreenshotsUITests: XCTestCase {
         if viewallTop.exists {
             _ = tapIfExist(viewallTop)
             snapPage(app, "12-top250",
-                     [app.descendants(matching: .any)["top250_page"].firstMatch])
+                     [app.descendants(matching: .any)["top250_page"].firstMatch,
+                      app.navigationBars.staticTexts["TOP 250"].firstMatch])
             navBack(app)
         }
 
