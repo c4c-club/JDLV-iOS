@@ -22,6 +22,8 @@ final class LayoutAuditUITests: XCTestCase {
 
     private func addViolation(_ page: String, _ element: String, _ reason: String) {
         report.append(["page": page, "element": element, "violation": reason])
+        // 进测试日志（CI log-failed 可直接 grep 明细，不依赖附件下载）
+        print("LAYOUT-VIOLATION [\(page)] \(element): \(reason)")
     }
 
     private func flushReport() {
