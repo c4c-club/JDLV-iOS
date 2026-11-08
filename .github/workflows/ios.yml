@@ -166,15 +166,20 @@ jobs:
           else:
               entries = json.load(open(mp, encoding="utf-8"))
               ren = 0
+              # xcresulttool suggested name 形如 "<附件名>_<序号>_<UUID>.<ext>"
+              # （如 screenshots-manifest_0_454E....json ← 附件名 screenshots-manifest.json）
+              suffix = re.compile(r'^(.*?)_\d+_[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}(\.[A-Za-z0-9]+)$')
               for e in entries:
                   src = e.get("exportedFileName")
                   name = e.get("suggestedHumanReadableName") or e.get("attachmentName") or ""
-                  if not src or not name:
+                  if not src or not name or src == "manifest.json":
                       continue
                   sp = os.path.join(d, src)
                   if not os.path.exists(sp):
                       continue
-                  base = re.sub(r'[^A-Za-z0-9._-]', '_', name)
+                  m = suffix.match(name)
+                  base = (m.group(1) + m.group(2)) if m else name
+                  base = re.sub(r'[^A-Za-z0-9._-]', '_', base)
                   if not base.lower().endswith(('.png', '.json', '.txt', '.mp4')):
                       base += '.txt'
                   dst = os.path.join(d, base)
