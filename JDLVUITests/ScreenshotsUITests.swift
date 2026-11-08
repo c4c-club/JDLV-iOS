@@ -211,19 +211,21 @@ final class ScreenshotsUITests: XCTestCase {
                                   app.buttons["viewall_recent"]])
 
         // 3) 02-search-results（输入「演示」→ CardGrid；键盘 flake → 重试至结果态）
+        // 结果态正向判定：结果网格首卡 card_search_0 存在（entry 行的 .exists 在截图后
+        // 有瞬时 false 的 a11y 快照抖动 → 误判已在结果态、跳过输入，01=02 重复根因）
         let field = app.textFields.firstMatch
-        let entryRow = app.buttons["entry_articles"]
-        var inResults = false
+        let resultCard = app.buttons["card_search_0"].firstMatch
+        var inResults = resultCard.exists
         for _ in 0..<3 {
-            guard !entryRow.exists else { inResults = true; break }   // 已在结果态
+            if resultCard.waitForExistence(timeout: 2) { inResults = true; break }
             _ = typeInto(field, "演示")
-            // 结果态判定：入口行消失（vm.items != nil）；300ms 防抖 + 查询 ≤8s
-            if waitGone(entryRow, 10) { inResults = true; break }
+            // 300ms 防抖 + demo 查询 ≤10s → 结果网格出现
+            if resultCard.waitForExistence(timeout: 10) { inResults = true; break }
             clearField(app, field)
         }
         if inResults {
             snapPage(app, "02-search-results",
-                     [app.buttons["mode_fuzzy"], app.buttons["mode_exact"]])
+                     [resultCard, app.buttons["mode_fuzzy"]])
         } else {
             // B2：3 次重试仍未到结果态（键盘不可用）——走查无法继续产出有效截图集，
             // 如实 skip 本用例（不拍重复首页态冒充结果页；CI 重跑直至输入链路恢复）
