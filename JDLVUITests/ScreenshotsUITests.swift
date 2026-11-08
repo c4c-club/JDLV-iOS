@@ -129,8 +129,8 @@ final class ScreenshotsUITests: XCTestCase {
         return XCTWaiter.wait(for: [exp], timeout: timeout) == .completed
     }
 
-    /// 清空文本框（全选 + 剪切）
-    private func clearField(_ field: XCUIElement) {
+    /// 清空文本框（长选 + 剪切；键盘 flake 重试用）
+    private func clearField(_ app: XCUIApplication, _ field: XCUIElement) {
         guard field.exists else { return }
         field.tap()
         field.press(forDuration: 1.1)
@@ -218,10 +218,8 @@ final class ScreenshotsUITests: XCTestCase {
             guard !entryRow.exists else { inResults = true; break }   // 已在结果态
             _ = typeInto(field, "演示")
             // 结果态判定：入口行消失（vm.items != nil）；300ms 防抖 + 查询 ≤8s
-            let gone = waitGone(entryRow, 10)
-            if gone { inResults = true; break }
-            field.exists ? (field.value as? String ?? "").isEmpty
-                ? () : clearField(field) : ()
+            if waitGone(entryRow, 10) { inResults = true; break }
+            clearField(app, field)
         }
         if inResults {
             snapPage(app, "02-search-results",
