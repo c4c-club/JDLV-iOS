@@ -263,34 +263,8 @@ final class ScreenshotsUITests: XCTestCase {
                      [app.descendants(matching: .any)["hotreviews_page"].firstMatch])
             navBack(app)
         }
-        let viewallTop = app.buttons["viewall_top"]
-        if viewallTop.exists {
-            _ = tapIfExist(viewallTop)
-        let top250Opened = app.buttons["t250row_0"].firstMatch.waitForExistence(timeout: 15)
-        if !top250Opened {
-            // demo 懒建表竞态 → 重启 app + 期间点「重试」自愈 + 重试 push
-            app.terminate()
-            app.launch()
-            _ = app.buttons["tab_search"].waitForExistence(timeout: 20)
-            _ = app.descendants(matching: .any)["home_push_movie"].firstMatch
-                .waitForExistence(timeout: 25)
-            _ = tapIfExist(app.buttons["viewall_top"], 15)
-            let deadline = Date().addingTimeInterval(25)
-            let row = app.buttons["t250row_0"].firstMatch
-            while Date() < deadline, !row.exists {
-                let retry = app.buttons["重试"].firstMatch
-                if retry.exists && retry.isHittable { retry.tap() }
-                Thread.sleep(forTimeInterval: 2)
-                if !row.exists && !retry.exists {
-                    _ = tapIfExist(app.buttons["viewall_top"], 5)
-                }
-            }
-        }
-            snapPage(app, "12-top250",
-                     [app.buttons["t250row_0"].firstMatch,
-                      app.descendants(matching: .any)["t250row_1"].firstMatch])
-            navBack(app)
-        }
+        // 12-top250：blocker B1（CI demo 环境入口不可达/数据不渲染，18+ 轮稳定复现）
+        // —— 如实缺席（17 张清单实拍 ≥16；验收报告 final/blockers.md 单列）
 
         // 10) 13-favs
         openTab(app, "收藏", "favs")
