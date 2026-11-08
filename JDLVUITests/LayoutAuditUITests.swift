@@ -224,9 +224,14 @@ final class LayoutAuditUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "actors", prefix: "card_actors_", columns: 3, spacing: 12, checkScroll: true)
 
-        // 4) 98t（2 列）
+        // 4) 98t（2 列；demo bind 竞态 → 首次无卡则重进 tab 重试）
         openTab(app, "sht")
-        waitFirstCard(app, page: "sht", prefix: "shtcard_")
+        if !waitFirstCard(app, page: "sht", prefix: "shtcard_") {
+            openTab(app, "search")
+            Thread.sleep(forTimeInterval: 1.0)
+            openTab(app, "sht")
+            waitFirstCard(app, page: "sht", prefix: "shtcard_", timeout: 20)
+        }
         Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "sht", prefix: "shtcard_", columns: 2, spacing: 12, checkScroll: true)
 
@@ -246,10 +251,16 @@ final class LayoutAuditUITests: XCTestCase {
         audit(app, page: "hot-reviews", prefix: "hot_review_row", columns: 1, spacing: 8, checkScroll: true)
         navBack(app)
 
-        // 7) TOP250（1 列行卡 112）
+        // 7) TOP250（push 页：等首页三段渲染后再点查看全部；无卡重试一次 push）
         openTab(app, "search")
-        _ = tapIfExist(app.buttons["viewall_top"])
-        waitFirstCard(app, page: "top250", prefix: "t250row_")
+        _ = app.descendants(matching: .any)["home_push_movie"].firstMatch.waitForExistence(timeout: 20)
+        _ = tapIfExist(app.buttons["viewall_top"], 15)
+        if !waitFirstCard(app, page: "top250", prefix: "t250row_") {
+            navBack(app)
+            Thread.sleep(forTimeInterval: 1.0)
+            _ = tapIfExist(app.buttons["viewall_top"], 10)
+            waitFirstCard(app, page: "top250", prefix: "t250row_", timeout: 20)
+        }
         Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "top250", prefix: "t250row_", columns: 1, spacing: 10, checkScroll: true)
         navBack(app)

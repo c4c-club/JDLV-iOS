@@ -267,8 +267,8 @@ final class ScreenshotsUITests: XCTestCase {
         if viewallTop.exists {
             _ = tapIfExist(viewallTop)
             snapPage(app, "12-top250",
-                     [app.descendants(matching: .any)["top250_page"].firstMatch,
-                      app.navigationBars.staticTexts["TOP 250"].firstMatch])
+                     [app.buttons["t250row_0"].firstMatch,
+                      app.descendants(matching: .any)["t250row_1"].firstMatch])
             navBack(app)
         }
 
