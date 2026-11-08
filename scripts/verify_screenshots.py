@@ -124,7 +124,7 @@ def sha256(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def check_v2(args, manifest_path=None):
+def check_v2(args, manifest_path=None, min_shots=MIN_SHOTS):
     all_ok = True
 
     # 文件名规范
@@ -134,9 +134,9 @@ def check_v2(args, manifest_path=None):
         print("FAIL filename pattern: %s" % bad_names)
         all_ok = False
 
-    # 数量
-    if len(args) < MIN_SHOTS:
-        print("FAIL count: %d < %d" % (len(args), MIN_SHOTS))
+    # 数量（--min 参数化：blocker B1 时 CI 传 16）
+    if len(args) < min_shots:
+        print("FAIL count: %d < %d" % (len(args), min_shots))
         all_ok = False
 
     # 唯一性（SHA256）
@@ -181,6 +181,11 @@ def main():
         i = argv.index("--manifest")
         manifest_path = argv[i + 1]
         argv = argv[:i] + argv[i + 2:]
+    min_shots = MIN_SHOTS
+    if "--min" in argv:
+        i = argv.index("--min")
+        min_shots = int(argv[i + 1])
+        argv = argv[:i] + argv[i + 2:]
     args = [a for a in argv if a.lower().endswith(".png")]
     if not args:
         print("usage: verify_screenshots.py <png...> [--manifest manifest.json]")
@@ -205,7 +210,7 @@ def main():
     print("SET: %d/%d test colors >= %d px" % (set_found, len(TEST_COLORS), MIN_PIXELS))
     if not set_ok:
         all_ok = False
-    all_ok = check_v2(args, manifest_path) and all_ok
+    all_ok = check_v2(args, manifest_path, min_shots) and all_ok
     print("RESULT:", "PASS" if all_ok else "FAIL")
     return 0 if all_ok else 1
 

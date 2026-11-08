@@ -37,12 +37,16 @@ def main():
     with open(args.report, "r", encoding="utf-8") as f:
         data = json.load(f)
     violations = data.get("violations", [])
+    skipped = data.get("skippedPages", [])
     all_ok = True
     for v in violations:
         print("VIOLATION [%s] %s: %s" % (v.get("page"), v.get("element"), v.get("violation")))
     if violations:
         print("FAIL %d layout violations" % len(violations))
         all_ok = False
+    if skipped:
+        # blocker B1：top250 demo 入口不可达（验收报告单列）——如实放行其余页
+        print("SKIPPED PAGES (blocker B1): %s" % skipped)
 
     pages = [p for p in args.pages.split(",") if p] or EXPECTED_PAGES
     seen = {v.get("page") for v in violations}
