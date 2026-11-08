@@ -164,16 +164,26 @@ jobs:
           if not os.path.exists(mp):
               print("no xcresult manifest.json; keep UUID names")
           else:
-              entries = json.load(open(mp, encoding="utf-8"))
+              raw = json.load(open(mp, encoding="utf-8"))
+              def walk(o):
+                  if isinstance(o, dict):
+                      yield o
+                      for v in o.values():
+                          yield from walk(v)
+                  elif isinstance(o, list):
+                      for v in o:
+                          yield from walk(v)
               ren = 0
               # xcresulttool suggested name 形如 "<附件名>_<序号>_<UUID>.<ext>"
-              # （如 screenshots-manifest_0_454E....json ← 附件名 screenshots-manifest.json）
               suffix = re.compile(r'^(.*?)_\d+_[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}(\.[A-Za-z0-9]+)$')
-              for e in entries:
-                  src = e.get("exportedFileName")
-                  name = e.get("suggestedHumanReadableName") or e.get("attachmentName") or ""
-                  if not src or not name or src == "manifest.json":
+              seen = set()
+              for e in walk(raw):
+                  src = e.get("exportedFileName") if isinstance(e, dict) else None
+                  name = (e.get("suggestedHumanReadableName")
+                          or e.get("attachmentName") or "") if isinstance(e, dict) else ""
+                  if not src or not name or src == "manifest.json" or src in seen:
                       continue
+                  seen.add(src)
                   sp = os.path.join(d, src)
                   if not os.path.exists(sp):
                       continue
@@ -186,6 +196,8 @@ jobs:
                   if dst != sp and not os.path.exists(dst):
                       os.replace(sp, dst)
                       ren += 1
+              if ren == 0:
+                  print("DIAG first manifest node:", json.dumps(raw, ensure_ascii=False)[:600])
               print("renamed %d attachments" % ren)
           PYRENAME
 
@@ -197,7 +209,9 @@ jobs:
           # screenshots-manifest（字符串附件）导出为 UUID.txt → 按内容定位
           MANIFEST=$(grep -l 'pageName' ./*.txt ./*.json 2>/dev/null | head -1 || true)
           # --min 16：17 张清单中 12-top250 在 blocker B1（CI demo 入口不可达）时缺席
-          python3 -I "$GITHUB_WORKSPACE/scripts/verify_screenshots.py" ./*.png ${MANIFEST:+--manifest "$MANIFEST"} --min 16
+          # diag-* = 失败诊断截图（无测试色，非页面验收对象）→ 排除
+          PNGS=$(ls ./*.png 2>/dev/null | grep -v '/diag-' || true)
+          python3 -I "$GITHUB_WORKSPACE/scripts/verify_screenshots.py" $PNGS ${MANIFEST:+--manifest "$MANIFEST"} --min 16
 
       - name: Verify layout report (R3 gate)
         if: always()
