@@ -232,7 +232,8 @@ final class ScreenshotsUITests: XCTestCase {
         app.terminate()
         app.launchArguments += ["-JDLV_TEST_SEARCH", "演示"]
         app.launch()
-        let resultCard = app.buttons["card_search_0"].firstMatch
+        // CardGrid wrapper 是 a11y 容器（children: .contain）→ XCUI 类型是 Other 非 Button
+        let resultCard = app.descendants(matching: .any)["card_search_0"].firstMatch
         if resultCard.waitForExistence(timeout: 30) {
             Thread.sleep(forTimeInterval: 1.2)
             XCTAssertTrue(app.state == .runningForeground, "02: app not foreground")

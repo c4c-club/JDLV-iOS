@@ -309,7 +309,8 @@ final class LayoutAuditUITests: XCTestCase {
             _ = app.descendants(matching: .any)["home_push_movie"].firstMatch
                 .waitForExistence(timeout: 25)
             _ = tapIfExist(app.buttons["viewall_top"], 15)
-            waitHealing(app, app.buttons["t250row_0"].firstMatch, timeout: 25)
+            waitHealing(app, app.descendants(matching: .any)["t250row_0"].firstMatch,
+                        timeout: 25)
         }
         let top250HasCards = !collect(app, prefix: "t250row_").isEmpty
         if top250HasCards {
