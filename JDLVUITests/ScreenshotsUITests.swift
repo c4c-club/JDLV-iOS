@@ -247,6 +247,13 @@ final class ScreenshotsUITests: XCTestCase {
             }
         } else {
             snapDiag(app, "02-no-results")
+            // 诊断：dump 当前可见静态文本（注入后 app 实际停在哪个状态）
+            let st = app.staticTexts
+            print("B2-diag visible texts (\(st.count)):")
+            for i in 0..<min(st.count, 30) {
+                print("B2-diag [\(i)] \(st.element(boundBy: i).label.prefix(60))")
+            }
+            print("B2-diag query field value: \(field.value as? String ?? "?")")
             throw XCTSkip("B2: injected search did not reach results state")
         }
         // 清注入参数，恢复正常走查（03 起无搜索态）

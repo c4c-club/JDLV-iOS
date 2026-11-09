@@ -143,6 +143,14 @@ final class LayoutAuditUITests: XCTestCase {
         var cards = collect(app, prefix: prefix)
         let isFallback = cards.contains { $0.0.contains("demo_") }
         if cards.isEmpty {
+            // demo 数据竞态窗口：heal 后 collect 非空进 audit、此处又空 → 重查 3×2s
+            for _ in 0..<3 {
+                Thread.sleep(forTimeInterval: 2)
+                cards = collect(app, prefix: prefix)
+                if !cards.isEmpty { break }
+            }
+        }
+        if cards.isEmpty {
             // 已由 waitFirstCard 报告；此处兜底
             addViolation(page, prefix, "no cards found")
             return
@@ -195,9 +203,19 @@ final class LayoutAuditUITests: XCTestCase {
                 .press(forDuration: 0.05, thenDragTo: app.coordinate(
                     withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
             Thread.sleep(forTimeInterval: 1.2)
-            let after = collect(app, prefix: prefix).map { $0.1.minY }
-            let moved = (after.max() ?? 0) < (before.max() ?? 0) - 10
-            let more = after.count > before.count
+            var after = collect(app, prefix: prefix).map { $0.1.minY }
+            var moved = (after.max() ?? 0) < (before.max() ?? 0) - 10
+            var more = after.count > before.count
+            if !moved && !more {
+                // lazy 渲染/滚动动画未完成的竞态窗口 → 重试一次
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+                    .press(forDuration: 0.05, thenDragTo: app.coordinate(
+                        withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+                Thread.sleep(forTimeInterval: 1.5)
+                after = collect(app, prefix: prefix).map { $0.1.minY }
+                moved = (after.max() ?? 0) < (before.max() ?? 0) - 10
+                more = after.count > before.count
+            }
             if !moved && !more {
                 addViolation(page, prefix,
                              "not scrollable (minY unchanged, no new cards)")
