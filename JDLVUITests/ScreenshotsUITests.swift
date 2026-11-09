@@ -232,11 +232,10 @@ final class ScreenshotsUITests: XCTestCase {
         var inResults = resultCard.exists
         for _ in 0..<3 {
             if resultCard.waitForExistence(timeout: 2) { inResults = true; break }
-            guard let f = field else { break }
-            _ = typeInto(app, f, "演示")
+            _ = typeInto(app, field, "演示")
             // 300ms 防抖 + demo 查询 ≤10s → 结果网格出现
             if resultCard.waitForExistence(timeout: 10) { inResults = true; break }
-            clearField(app, f)
+            clearField(app, field)
         }
         if inResults {
             snapPage(app, "02-search-results",
