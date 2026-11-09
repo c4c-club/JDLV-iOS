@@ -76,7 +76,16 @@ struct HomeView: View {
         .background(theme.bg0.ignoresSafeArea())
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { vm.bind(to: store, persistMode: persistMode) }
+        .onAppear {
+            vm.bind(to: store, persistMode: persistMode)
+            // UI 测试注入：-JDLV_TEST_SEARCH <q> → 启动即搜（B2 修复；DEBUG+demo 恒 nil）
+            if let q = LaunchMode.testSearchQuery, vm.items == nil, vm.query.isEmpty {
+                vm.query = q
+                vm.queryEdited()
+                SearchHistory.add(q)
+                Task { await vm.search() }
+            }
+        }
         .onChange(of: vm.query) { _ in
             if skipNextDebounce {
                 skipNextDebounce = false

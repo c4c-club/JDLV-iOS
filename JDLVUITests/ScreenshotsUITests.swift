@@ -221,34 +221,32 @@ final class ScreenshotsUITests: XCTestCase {
         snapPage(app, "01-home", [app.buttons["entry_articles"], app.buttons["entry_hotreviews"],
                                   app.buttons["viewall_recent"]])
 
-        // 3) 02-search-results（输入「演示」→ CardGrid；键盘 flake → 重试至结果态）
-        // 结果态正向判定：结果网格首卡 card_search_0 存在（entry 行的 .exists 在截图后
-        // 有瞬时 false 的 a11y 快照抖动 → 误判已在结果态、跳过输入，01=02 重复根因）
-        // 容器 id（home_searchbar）触发 SwiftUI a11y 合并 → 子 TextField 不暴露；
-        // 用 TextField 本体 id（SearchBar.swift 直接挂）——唯一确定
-        let field = app.textFields["home_search_field"].firstMatch
+        // 3) 02-search-results：-JDLV_TEST_SEARCH 注入（B2：CI 模拟器 typeText 丢字符）
+        app.terminate()
+        app.launchArguments += ["-JDLV_TEST_SEARCH", "演示"]
+        app.launch()
         let resultCard = app.buttons["card_search_0"].firstMatch
-        var inResults = resultCard.exists
-        for _ in 0..<3 {
-            if resultCard.waitForExistence(timeout: 2) { inResults = true; break }
-            _ = typeInto(app, field, "演示")
-            // 300ms 防抖 + demo 查询 ≤10s → 结果网格出现
-            if resultCard.waitForExistence(timeout: 10) { inResults = true; break }
-            clearField(app, field)
-        }
-        if inResults {
-            snapPage(app, "02-search-results",
-                     [resultCard, app.buttons["mode_fuzzy"]])
+        if resultCard.waitForExistence(timeout: 30) {
+            Thread.sleep(forTimeInterval: 1.2)
+            XCTAssertTrue(app.state == .runningForeground, "02: app not foreground")
+            do {
+                let a = XCTAttachment(screenshot: app.screenshot())
+                a.name = "02-search-results"
+                a.lifetime = .keepAlways
+                add(a)
+                manifest.append(["pageName": "02-search-results", "anchor": "card_search_0",
+                                 "ts": ISO8601DateFormatter().string(from: Date())])
+                snapCount += 1
+            }
         } else {
-            // B2：3 次重试仍未到结果态（键盘不可用）——走查无法继续产出有效截图集，
-            // 如实 skip 本用例（不拍重复首页态冒充结果页；CI 重跑直至输入链路恢复）
-            let diag = XCTAttachment(screenshot: app.screenshot())
-            diag.name = "diag-search-not-reached"
-            diag.lifetime = .keepAlways
-            add(diag)
-            throw XCTSkip("B2: search results not reached after 3 typing attempts (keyboard); rerun needed")
+            snapDiag(app, "02-no-results")
+            throw XCTSkip("B2: injected search did not reach results state")
         }
-        dismissAnyModal(app)
+        // 清注入参数，恢复正常走查（03 起无搜索态）
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "-JDLV_TEST_SEARCH" || $0 == "演示" }
+        app.launch()
+        _ = app.buttons["tab_search"].waitForExistence(timeout: 20)
 
         // 4) 03-browse（CardGrid 2 列）
         openTab(app, "浏览", "browse")

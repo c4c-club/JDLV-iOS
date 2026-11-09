@@ -25,4 +25,19 @@ enum LaunchMode: Equatable {
     static var current: LaunchMode {
         parse(ProcessInfo.processInfo.arguments)
     }
+
+    /// UI 测试专用：启动后自动以该词执行搜索（DEBUG + demo；绕开 CI 模拟器
+    /// typeText 合成事件丢字符的已知问题 —— R3 B2 blocker 的修复）。
+    /// 格式：-JDLV_TEST_SEARCH <query>；Release / 生产模式恒 nil。
+    static var testSearchQuery: String? {
+        #if DEBUG
+        guard current == .demo else { return nil }
+        guard let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-JDLV_TEST_SEARCH"),
+              i + 1 < ProcessInfo.processInfo.arguments.count else { return nil }
+        let q = ProcessInfo.processInfo.arguments[i + 1]
+        return q.isEmpty ? nil : q
+        #else
+        return nil
+        #endif
+    }
 }
