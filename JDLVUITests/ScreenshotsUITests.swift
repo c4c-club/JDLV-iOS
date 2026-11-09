@@ -220,17 +220,23 @@ final class ScreenshotsUITests: XCTestCase {
         // 3) 02-search-results（输入「演示」→ CardGrid；键盘 flake → 重试至结果态）
         // 结果态正向判定：结果网格首卡 card_search_0 存在（entry 行的 .exists 在截图后
         // 有瞬时 false 的 a11y 快照抖动 → 误判已在结果态、跳过输入，01=02 重复根因）
-        // isHittable 过滤：只命中当前可见 tab 的搜索框（隐藏 tab 的字段不可点）
-        let field = app.textFields
-            .matching(NSPredicate(format: "isHittable == true")).firstMatch
+        // 隐藏 tab 的字段会抢 firstMatch 且 isHittable 不可用于 NSPredicate
+        // （XCTElementQueryInvalidPredicate）→ 显式遍历找当前可点字段
+        var field: XCUIElement? = nil
+        let allFields = app.textFields
+        for i in 0..<min(allFields.count, 12) {
+            let e = allFields.element(boundBy: i)
+            if e.exists && e.isHittable { field = e; break }
+        }
         let resultCard = app.buttons["card_search_0"].firstMatch
         var inResults = resultCard.exists
         for _ in 0..<3 {
             if resultCard.waitForExistence(timeout: 2) { inResults = true; break }
-            _ = typeInto(app, field, "演示")
+            guard let f = field else { break }
+            _ = typeInto(app, f, "演示")
             // 300ms 防抖 + demo 查询 ≤10s → 结果网格出现
             if resultCard.waitForExistence(timeout: 10) { inResults = true; break }
-            clearField(app, field)
+            clearField(app, f)
         }
         if inResults {
             snapPage(app, "02-search-results",
