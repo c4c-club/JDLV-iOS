@@ -253,7 +253,6 @@ final class ScreenshotsUITests: XCTestCase {
             for i in 0..<min(st.count, 30) {
                 print("B2-diag [\(i)] \(st.element(boundBy: i).label.prefix(60))")
             }
-            print("B2-diag query field value: \(field.value as? String ?? "?")")
             throw XCTSkip("B2: injected search did not reach results state")
         }
         // 清注入参数，恢复正常走查（03 起无搜索态）
