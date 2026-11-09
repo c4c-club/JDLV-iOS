@@ -118,13 +118,13 @@ final class ProductionSmokeUITests: XCTestCase {
 
         // ④ 搜索真实数据命中（生产查询链路二次佐证；键盘聚焦失败 → 跳过，不否定前 3 步）
         searchTab.tap()
-        let bar = app.descendants(matching: .any)["home_searchbar"].firstMatch
+        let bar = app.textFields["home_search_field"].firstMatch
         XCTAssertTrue(bar.waitForExistence(timeout: 10))
         bar.tap()
         Thread.sleep(forTimeInterval: 1.0)
         var typed = false
         // 6 栈常驻：隐藏 Tab 的字段也在 AX 树里 → 必须按搜索栏容器作用域查询
-        let field = app.descendants(matching: .any)["home_searchbar"].descendants(matching: .textField).firstMatch
+        let field = app.textFields["home_search_field"].firstMatch
         if field.waitForExistence(timeout: 5) {
             do {
                 try field.typeText("冒烟影片")

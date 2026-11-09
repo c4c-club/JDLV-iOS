@@ -59,7 +59,10 @@ struct SearchBarCompact: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
-        .accessibilityIdentifier("home_searchbar")
+        // 容器不再用 accessibilityIdentifier（SwiftUI 会合并子树、吞掉子 TextField 的
+        // id → XCUI 查不到输入框）；测试锚点 = TextField 本体的 home_search_field
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("home_searchbar")
     }
 }
 
