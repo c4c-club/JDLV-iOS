@@ -132,6 +132,13 @@ final class ScreenshotsUITests: XCTestCase {
         }
     }
 
+    private func snapDiag(_ app: XCUIApplication, _ name: String) {
+        let a = XCTAttachment(screenshot: app.screenshot())
+        a.name = "diag-\(name)"
+        a.lifetime = .keepAlways
+        add(a)
+    }
+
     @discardableResult
     private func waitGone(_ el: XCUIElement, _ timeout: TimeInterval) -> Bool {
         guard el.exists else { return true }
