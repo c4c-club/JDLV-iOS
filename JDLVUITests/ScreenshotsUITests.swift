@@ -224,10 +224,9 @@ final class ScreenshotsUITests: XCTestCase {
         // 3) 02-search-results（输入「演示」→ CardGrid；键盘 flake → 重试至结果态）
         // 结果态正向判定：结果网格首卡 card_search_0 存在（entry 行的 .exists 在截图后
         // 有瞬时 false 的 a11y 快照抖动 → 误判已在结果态、跳过输入，01=02 重复根因）
-        // 6 tab 常驻（opacity 0 不改变 frame）→ 隐藏 tab 的字段同样「isHittable=true」，
-        // 全树扫描不可靠 → 限定 home_searchbar 子树内查字段（唯一确定）
-        let searchBar = app.descendants(matching: .any)["home_searchbar"].firstMatch
-        let field = searchBar.descendants(matching: .textField).firstMatch
+        // 容器 id（home_searchbar）触发 SwiftUI a11y 合并 → 子 TextField 不暴露；
+        // 用 TextField 本体 id（SearchBar.swift 直接挂）——唯一确定
+        let field = app.textFields["home_search_field"].firstMatch
         let resultCard = app.buttons["card_search_0"].firstMatch
         var inResults = resultCard.exists
         for _ in 0..<3 {

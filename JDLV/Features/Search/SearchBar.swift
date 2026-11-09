@@ -35,6 +35,8 @@ struct SearchBarCompact: View {
                     .autocorrectionDisabled()
                     .submitLabel(.search)
                     .onSubmit(onSearch)
+                    // TextField 本体 id（容器 id 会触发 SwiftUI a11y 合并、子字段不再暴露）
+                    .accessibilityIdentifier("home_search_field")
                 if !text.isEmpty {
                     Button {
                         text = ""
