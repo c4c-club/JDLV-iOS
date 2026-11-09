@@ -63,13 +63,16 @@ final class ScreenshotsUITests: XCTestCase {
 
     @discardableResult
     private func typeInto(_ app: XCUIApplication, _ field: XCUIElement, _ text: String) -> Bool {
-        // 6 tab 常驻：app.textFields.firstMatch 可能命中隐藏 tab 的字段（tap 无焦点）→
-        // 调用方需传 isHittable 过滤后的查询；此处 tap 后先 field.typeText、失败回退 app.typeText
         guard field.waitForExistence(timeout: 6) else { return false }
         if field.isHittable {
             field.tap()
         } else {
             field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        // 等软件键盘弹出（硬件键盘已在 CI 禁用；弹出需 1-5s）
+        let kb = app.keyboards.firstMatch
+        if !kb.waitForExistence(timeout: 8) {
+            print("B2-diag: software keyboard did not appear after tap")
         }
         do {
             try field.typeText(text)
@@ -79,6 +82,7 @@ final class ScreenshotsUITests: XCTestCase {
                 try app.typeText(text)
                 return true
             } catch {
+                print("B2-diag: typeText failed both ways: \(error)")
                 return false
             }
         }
@@ -220,14 +224,10 @@ final class ScreenshotsUITests: XCTestCase {
         // 3) 02-search-results（输入「演示」→ CardGrid；键盘 flake → 重试至结果态）
         // 结果态正向判定：结果网格首卡 card_search_0 存在（entry 行的 .exists 在截图后
         // 有瞬时 false 的 a11y 快照抖动 → 误判已在结果态、跳过输入，01=02 重复根因）
-        // 隐藏 tab 的字段会抢 firstMatch 且 isHittable 不可用于 NSPredicate
-        // （XCTElementQueryInvalidPredicate）→ 显式遍历找当前可点字段
-        var field: XCUIElement? = nil
-        let allFields = app.textFields
-        for i in 0..<min(allFields.count, 12) {
-            let e = allFields.element(boundBy: i)
-            if e.exists && e.isHittable { field = e; break }
-        }
+        // 6 tab 常驻（opacity 0 不改变 frame）→ 隐藏 tab 的字段同样「isHittable=true」，
+        // 全树扫描不可靠 → 限定 home_searchbar 子树内查字段（唯一确定）
+        let searchBar = app.descendants(matching: .any)["home_searchbar"].firstMatch
+        let field = searchBar.descendants(matching: .textField).firstMatch
         let resultCard = app.buttons["card_search_0"].firstMatch
         var inResults = resultCard.exists
         for _ in 0..<3 {
