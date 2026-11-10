@@ -126,6 +126,9 @@ struct AppRoot: View {
     @StateObject private var router = Router()
     @StateObject private var services = AppServices.shared
 
+    // R4 P3：按需挂载 —— 只渲染访问过的 Tab；未访问 Tab 用占位，绝不创建根页/触发 onAppear 查询
+    @State private var visitedTabs: Set<String> = ["search"]
+
     private struct TabDef {
         let route: String
         let label: String
@@ -146,17 +149,34 @@ struct AppRoot: View {
         // 自定义底栏（对齐 Android TOP_DESTS）：UITabBarController 在 >5 个 tab 时
         // 折叠成「更多」，Android 6 Tab 1:1 需要自绘；二级页隐藏底栏（导航不变量）。
         ZStack(alignment: .bottom) {
-            // 内容层：6 个 NavigationStack 常驻（Tab 切换保留状态、单实例栈）
+            // 内容层：Tab 按需挂载（R4 P3）——访问过的 Tab 保留 NavigationStack（切换不丢状态）；
+            // 未访问的用占位（不创建根页、不触发 onAppear 查询、不建 1s timer）
             ForEach(Self.tabs, id: \.route) { t in
-                NavigationStack(path: pathBinding(t.route)) {
-                    tabRoot(t.route, label: t.label)
-                        .navigationDestination(for: Route.self) { route in
-                            RouteDestination(route: route)
-                        }
+                if visitedTabs.contains(t.route) {
+                    NavigationStack(path: pathBinding(t.route)) {
+                        tabRoot(t.route, label: t.label)
+                            .navigationDestination(for: Route.self) { route in
+                                RouteDestination(route: route)
+                            }
+                    }
+                    .opacity(router.tab == t.route ? 1 : 0)
+                    .allowsHitTesting(router.tab == t.route)
+                    .accessibilityHidden(router.tab != t.route)
+                } else if router.tab == t.route {
+                    // 首次切入当帧的占位：避免 onChange 插入前的白屏一帧
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .opacity(router.tab == t.route ? 1 : 0)
-                .allowsHitTesting(router.tab == t.route)
-                .accessibilityHidden(router.tab != t.route)
+            }
+            .onChange(of: router.tab) { tab in
+                if !visitedTabs.contains(tab) {
+                    visitedTabs.insert(tab)
+                    #if DEBUG
+                    print("[Perf] visitedTabs now: \(visitedTabs.sorted())")
+                    #endif
+                }
             }
             // 顶部横幅（内容之上、Tab 内容顶部；离线按库粒度 + 恢复 6s 自消）
             VStack(spacing: 0) {
@@ -182,6 +202,11 @@ struct AppRoot: View {
         // A5/R5：进入主界面时把 Core 分库离线标记并入横幅（网络迁移路径之外的增量同步）
         .onAppear {
             services.syncOfflineFlags(networkOnline: NetworkMonitor.shared.online)
+            // R4 P3：启动区间开始（HomeView 首屏数据到达时 end）
+            PerfSignposts.beginLaunchOnce()
+            #if DEBUG
+            print("[Perf] AppRoot onAppear, initial visitedTabs: \(visitedTabs.sorted())")
+            #endif
         }
         // 全局 Toast（SnackbarHost 对位）
         .overlay { ToastHost(services: services) }

@@ -86,6 +86,10 @@ struct HomeView: View {
                 Task { await vm.search() }
             }
         }
+        // R4 P3：首屏数据到达（vm.items 首次非空）→ 启动区间结束（幂等）
+        .onChange(of: vm.items != nil) { loaded in
+            if loaded { PerfSignposts.endLaunchOnce() }
+        }
         .onChange(of: vm.query) { _ in
             if skipNextDebounce {
                 skipNextDebounce = false
