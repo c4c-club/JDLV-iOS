@@ -109,9 +109,9 @@ final class DateRangeTests: XCTestCase {
         XCTAssertNil(DateRange.monthRange("202a", "1"))
     }
 
-    /// "0000"：年份有效域 1...9999 → nil
+    /// "0000"：年份有效域 1...9999 → nil（"0099" = 99 年，合法非 nil）
     func test_yearZeroReturnsNil() {
         XCTAssertNil(DateRange.monthRange("0000", "1"))
-        XCTAssertNil(DateRange.monthRange("0099", "1"))
+        XCTAssertNotNil(DateRange.monthRange("0099", "1"))
     }
 }

@@ -263,7 +263,7 @@ final class SettingsTests: XCTestCase {
         s.lockSecret = "pbkdf2-sha256$120000$abc$def"
 
         let storage = s.toStorage()
-        XCTAssertEqual(storage.count, 72)
+        XCTAssertEqual(storage.count, 73)   // R4 S1：+allow_insecure_http
         let back = AppSettings.fromStorage(storage)
         XCTAssertEqual(back, s)
     }
@@ -275,7 +275,7 @@ final class SettingsTests: XCTestCase {
         s.localPass = "pw-local"
         s.lockSecret = "hash"
         let stripped = s.storageWithoutSecrets
-        XCTAssertEqual(stripped.count, 69)
+        XCTAssertEqual(stripped.count, 70)   // R4 S1：73 − 3 口令键
         XCTAssertNil(stripped["remote_pass"])
         XCTAssertNil(stripped["local_pass"])
         XCTAssertNil(stripped["lock_secret"])
@@ -360,10 +360,13 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(s.jdbDb, "rj"); XCTAssertEqual(s.shtDb, "rs")
     }
 
-    /// setupRequired：remote → user 或 pass 空；local → localUser 空（pass 不参与）
+    /// setupRequired：remote → host/user/pass 任一空；local → localUser 空（pass 不参与）
+    /// R4 V10：默认 remoteHost=""（不预置内网地址）→ host 也是 setup 判定项，测试注入
     func test_setupRequired() {
         var s = AppSettings()
-        XCTAssertTrue(s.setupRequired)                 // 默认 remote + 账号空
+        XCTAssertTrue(s.setupRequired)                 // 默认 remote + host/账号空
+        s.remoteHost = "10.0.0.5"
+        XCTAssertTrue(s.setupRequired)                 // 账号仍空
         s.remoteUser = "reader"
         XCTAssertTrue(s.setupRequired)                 // pass 仍空
         s.remotePass = "pw"

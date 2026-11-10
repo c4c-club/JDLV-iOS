@@ -11,7 +11,7 @@ final class MySQLIntegrationTests: XCTestCase {
     static let host = ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_HOST"] ?? "127.0.0.1"
     static let port = Int(ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_PORT"] ?? "3306")!
     static let user = ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_USER"] ?? "root"
-    static let pass = ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_PASS"] ?? ""   // R4：默认空口令（CI root 空口令启动），不再回退固定值
+    static let pass = ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_PASS"].flatMap { $0.isEmpty ? nil : $0 }   // R4：空/未设 = nil（不发口令；MySQL8 空口令账号语义）
     static let dbName = "jdlv_it"
 
     static var group: EventLoopGroup?
