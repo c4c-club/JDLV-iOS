@@ -191,10 +191,10 @@ final class FavsVM: ObservableObject {
             movie = try await store.favList(kind: "movie")
             sht = try await store.favList(kind: "sht")
             actor = try await store.favList(kind: "actor")
-            error = nil
+            self.error = nil
         } catch {
-            // P9：失败保留上次数据并显式报错（绝不静默显示为空收藏）
-            error = FavsCopy.loadFailed
+            // P9：失败保留上次数据并显式报错（绝不静默显示为空收藏；self 消歧 catch 隐式绑定）
+            self.error = FavsCopy.loadFailed
         }
     }
 
