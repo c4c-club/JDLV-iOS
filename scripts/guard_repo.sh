@@ -34,7 +34,7 @@ if [ -d docs ]; then
   [ -z "$doccred" ] || { echo 'guard FAIL: credential literals in local docs/'; echo "$doccred"; exit 1; }
   git check-ignore -q docs/ || { echo 'guard FAIL: docs/ not gitignored'; exit 1; }
 fi
-grep -q 'MARKETING_VERSION: 1.6.0' project.yml || { echo 'guard FAIL: version'; exit 1; }
+grep -q 'MARKETING_VERSION: 1.6.1' project.yml || { echo 'guard FAIL: version'; exit 1; }
 # R3 门禁：键盘 API 审计（问题 1 —— asciiCapable/inputView/UIKeyInput 禁用）
 kb_hits=$(grep -R -E "asciiCapable|inputView|UIKeyInput" JDLV --include='*.swift' || true)
 [ -z "$kb_hits" ] || { echo 'guard FAIL: banned keyboard API (issue 1 audit)'; echo "$kb_hits"; exit 1; }
