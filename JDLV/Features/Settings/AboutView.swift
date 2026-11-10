@@ -110,18 +110,12 @@ struct AboutView: View {
 
     private func exportDiagnostics() {
         let s = store.settings
-        var lines: [String] = []
-        lines.append("JDLV iOS 诊断日志")
-        lines.append("生成时间: \(Date())")
-        lines.append("版本: \(versionText) (\(buildText))")
-        lines.append("设备: \(UIDevice.current.model) · \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
-        lines.append("数据源: \(dataSourceSummary)")
-        lines.append("dbSrc: \(s.dbSrc) · queryTimeout: \(s.queryTimeout)s · connectTimeout: \(s.connectTimeout)s")
-        lines.append("代理: \(s.proxyHost.isEmpty ? "未配置" : "\(s.proxyHost):\(s.proxyPort)")")
-        lines.append("输入法: \(KeyboardDiagnostics.activeModesDescription)")
-        #if DEBUG
-        lines.append("testImgMode: \(s.testImgMode)")
-        #endif
+        let lines = SettingsDiagnostics.diagnosticLines(s: s, metaLines: [
+            "JDLV iOS 诊断日志",
+            "生成时间: \(Date())",
+            "版本: \(versionText) (\(buildText))",
+            "设备: \(UIDevice.current.model) · \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+        ])
         let url = Self.writeTempLog(lines.joined(separator: "\n"))
         diagLogURL = url
         if url != nil { showShareLog = true }

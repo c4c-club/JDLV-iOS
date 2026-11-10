@@ -33,10 +33,16 @@ jobs:
           [ "$(git ls-files docs | wc -l)" -eq 0 ] || { echo 'guard FAIL: docs tracked'; exit 1; }
           android_hits=$(git ls-files | grep -E 'JDLV-Mobile/app/sr[c]' || true)
           [ -z "$android_hits" ] || { echo 'guard FAIL: Android sources'; echo "$android_hits"; exit 1; }
-          cred_hits=$(git grep -IlE "$PAT" -- . || true)
+          BENIGN="MYSQL_ALLOW_EMPTY_PASSWORD|PASS[A-Z_]*[[:space:]]*[:=][[:space:]]*\"\"|PASS[A-Z_]*[[:space:]]*=[[:space:]]*[\"']\\$\(openssl rand"
+          cred_hits=$(git grep -InE "$PAT" -- . | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
           [ -z "$cred_hits" ] || { echo 'guard FAIL: credential literals in tracked tree'; echo "$cred_hits"; exit 1; }
+          # R4 强模式 2：值形态凭据（排除 $VAR 引用 / 空串 / ALLOW_EMPTY 开关；
+          #  mysql URL 限定常见用户名字符，规避扫描器源码自匹配）
+          RPAT="(IDENTIFIED[[:space:]]+.*BY[[:space:]]*[\"'][^\"'\$]|[A-Z_]*PASSWORD[[:space:]]*[:=][[:space:]]*[\"'][^\"'\$]|TEST_RUNNER_[A-Z_]*PASS[A-Z_]*[[:space:]]*[:=][[:space:]]*[\"'][^\"'\$]|mysql://[A-Za-z0-9._%~+-]+:[^[:space:]@]+@)"
+          rcred_hits=$(git grep -InE "$RPAT" -- . | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
+          [ -z "$rcred_hits" ] || { echo 'guard FAIL: credential value literals in tracked tree'; echo "$rcred_hits"; exit 1; }
           if [ -d docs ]; then
-            doccred=$(grep -rIlE "$PAT" docs --exclude-dir=07_证据 || true)
+            doccred=$(grep -rInE "$PAT" docs --exclude-dir=07_证据 2>/dev/null | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
             [ -z "$doccred" ] || { echo 'guard FAIL: credential literals in local docs/'; echo "$doccred"; exit 1; }
             git check-ignore -q docs/ || { echo 'guard FAIL: docs/ not gitignored'; exit 1; }
           fi
@@ -67,9 +73,9 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: root
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
         options: >-
-          --health-cmd="mysqladmin ping -proot"
+          --health-cmd="mysqladmin ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -80,7 +86,6 @@ jobs:
           JDLV_TEST_MYSQL_HOST: mysql
           JDLV_TEST_MYSQL_PORT: "3306"
           JDLV_TEST_MYSQL_USER: root
-          JDLV_TEST_MYSQL_PASS: root
         run: |
           ln -sf /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 /usr/lib/x86_64-linux-gnu/libsqlite3.so
           swift test --package-path JDLVCore --filter IntegrationTests
@@ -133,9 +138,12 @@ jobs:
             sleep 2
           done
           mysql -uroot -e 'select 1'
+          FIXTURE_PASS="$(openssl rand -hex 16)"
+          echo "::add-mask::$FIXTURE_PASS"
+          echo "JDLV_FIXTURE_PASS=$FIXTURE_PASS" >> "$GITHUB_ENV"
           mysql -uroot -e "CREATE DATABASE IF NOT EXISTS jdlv_app_it CHARACTER SET utf8mb4"
-          # 专用 fixture 账号 + mysql_native_password（明文信道可认证；生产为内网只读账号）
-          mysql -uroot -e "CREATE USER IF NOT EXISTS 'jdlv_it'@'%' IDENTIFIED WITH mysql_native_password BY 'jdlv_it'"
+          # 专用 fixture 账号 + mysql_native_password（口令每次运行随机生成 + add-mask，不入 YAML）
+          mysql -uroot -e "CREATE USER IF NOT EXISTS 'jdlv_it'@'%' IDENTIFIED WITH mysql_native_password BY '$FIXTURE_PASS'"
           mysql -uroot -e "GRANT ALL ON jdlv_app_it.* TO 'jdlv_it'@'%'"
           mysql -uroot -e "FLUSH PRIVILEGES"
 
@@ -150,7 +158,7 @@ jobs:
           TEST_RUNNER_JDLV_TEST_MYSQL_HOST: "127.0.0.1"
           TEST_RUNNER_JDLV_TEST_MYSQL_PORT: "3306"
           TEST_RUNNER_JDLV_TEST_MYSQL_USER: jdlv_it
-          TEST_RUNNER_JDLV_TEST_MYSQL_PASS: jdlv_it
+          TEST_RUNNER_JDLV_TEST_MYSQL_PASS: ${{ env.JDLV_FIXTURE_PASS }}
         run: |
           set -eo pipefail
           xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test 2>&1 | tee build/test.log

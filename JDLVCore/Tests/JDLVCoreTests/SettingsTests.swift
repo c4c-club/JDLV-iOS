@@ -56,8 +56,8 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(s.localHost, "127.0.0.1")
         XCTAssertEqual(s.localPort, "3306")
         XCTAssertEqual(s.localUser, "")
-        XCTAssertEqual(s.remoteHost, "192.168.123.203")
-        XCTAssertEqual(s.remotePort, "3307")
+        XCTAssertEqual(s.remoteHost, "")             // R4：不预置内网地址
+        XCTAssertEqual(s.remotePort, "3306")
         XCTAssertEqual(s.remoteJdb, "javdb")
         XCTAssertEqual(s.remoteSht, "sehuatang")
         XCTAssertEqual(s.themeName, "dark")

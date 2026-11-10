@@ -172,7 +172,7 @@ enum SearchCopy {
 
     // 首次引导卡（C2.4）
     static let welcomeTitle = "👋 欢迎使用 JDLV Mobile"
-    static let welcomeHint = "首次使用请在设置里填写数据库地址与账号 (凭证来源见项目 mysql.txt 说明)"
+    static let welcomeHint = "首次使用请在设置里填写数据库地址与账号（仅保存在本机钥匙串）"
     static let welcomeAction = "去设置数据源"
 
     // 首页三段（C4 段头逐字）+ 查看全部

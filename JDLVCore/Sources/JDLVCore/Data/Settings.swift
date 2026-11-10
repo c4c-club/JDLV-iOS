@@ -36,8 +36,8 @@ public struct AppSettings: Equatable {
     public var localPass: String = ""            // 口令：Store 层走 Keychain
     public var localJdb: String = "javdb"
     public var localSht: String = "sehuatang"
-    public var remoteHost: String = "192.168.123.203"
-    public var remotePort: String = "3307"       // A-26：旧 3308 → 3307（MySQL 8）
+    public var remoteHost: String = ""           // R4：默认空，用户在设置里填写；不预置任何内网地址
+    public var remotePort: String = "3306"       // A-26/R4：通用默认 3306
     public var remoteUser: String = ""
     public var remotePass: String = ""           // 口令：Store 层走 Keychain
     public var remoteJdb: String = "javdb"

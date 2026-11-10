@@ -24,6 +24,16 @@ targets:
       - path: JDLV
         excludes:
           - "Resources/Info.plist"
+          - "**/*.txt"
+          - "**/*.md"
+          - "**/*.secret"
+          - "**/*.credentials"
+          - "**/mysql*"
+          - "**/.env*"
+          - "**/*.sql"
+          - "**/*.db"
+          - "**/*.sqlite*"
+          - "**/*.log"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jdlv.ios

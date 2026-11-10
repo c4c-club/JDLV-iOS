@@ -123,7 +123,7 @@ enum SettingsCopy {
     static let dsLabelShtDb = "98t 库名"
     static let dsPhHost = "IP / 主机名"
     static let dsPhPortLocal = "3306"
-    static let dsPhPortRemote = "3307"
+    static let dsPhPortRemote = "3306"
     static let dsPhUser = "用户名"
     static let dsPhPass = "密码"
     static let dsPhJdb = "javdb"
@@ -545,6 +545,9 @@ struct SettingsLabeledRow<Content: View>: View {
 }
 
 /// CompactField：单行 13sp、min 高 38、圆角 8、1pt 描边、surfaceVariant 35% 底
+/// R4 口令硬化：secure 分支永远 SecureField（绝不切 TextField）；「明文」由调用方
+/// 通过 showPlain 控制——只在上层盖一个只读、不可选中、privacySensitive 的 Text 覆盖层，
+/// 系统层面不产生可复制明文输入框。明文的鉴权与 10 秒自动收回在 DataSourceCard。
 struct CompactField: View {
     @Binding var text: String
     var placeholder: String
@@ -560,8 +563,11 @@ struct CompactField: View {
     var body: some View {
         HStack(spacing: 6) {
             Group {
-                if secure && !showPlain {
+                if secure {
                     SecureField(placeholder, text: $text)
+                        .textContentType(.password)
+                        .privacySensitive()
+                        .textSelection(.disabled)
                 } else {
                     TextField(placeholder, text: $text)
                 }
@@ -584,6 +590,18 @@ struct CompactField: View {
         .frame(minHeight: 38)
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3.opacity(0.35)))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(theme.line, lineWidth: 1))
+        .overlay(alignment: .leading) {
+            if secure && showPlain {
+                AppText(text.isEmpty ? placeholder : text,
+                        lvl: .bodyS, color: theme.text, maxLines: 1)
+                    .privacySensitive()
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3))
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("compact_field_plain_overlay")
+            }
+        }
     }
 }
 

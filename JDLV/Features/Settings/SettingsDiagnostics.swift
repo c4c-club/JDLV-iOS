@@ -41,6 +41,28 @@ enum SettingsDiagnostics {
         return args[i + 1] == "1"
     }
 
+    // MARK: 诊断日志正文（AboutView「导出诊断日志」共用；R4 抽出为可单测纯函数）
+
+    /// R4 门禁：诊断文本不得包含任何口令值（remotePass/localPass/lockSecret）。
+    /// metaLines 由调用方给（时间/版本/设备等）；数据源摘要只含 host:port 与库名，不含口令。
+    static func diagnosticLines(s: AppSettings, metaLines: [String]) -> [String] {
+        var lines = metaLines
+        // 数据源摘要（不含口令）：本地 jdb/sht 库名 · 远程 host:port
+        let local = [s.localJdb, s.localSht].filter { !$0.isEmpty }.joined(separator: "/")
+        let remote = s.remoteHost.isEmpty ? "" : "\(s.remoteHost):\(s.remotePort)"
+        var parts: [String] = []
+        if !local.isEmpty { parts.append("本地 \(local)") }
+        if !remote.isEmpty { parts.append("远程 \(remote)") }
+        lines.append("数据源: " + (parts.isEmpty ? "未配置" : parts.joined(separator: " · ")))
+        lines.append("dbSrc: \(s.dbSrc) · queryTimeout: \(s.queryTimeout)s · connectTimeout: \(s.connectTimeout)s")
+        lines.append("代理: \(s.proxyHost.isEmpty ? "未配置" : "\(s.proxyHost):\(s.proxyPort)")")
+        lines.append("输入法: \(KeyboardDiagnostics.activeModesDescription)")
+        #if DEBUG
+        lines.append("testImgMode: \(s.testImgMode)")
+        #endif
+        return lines
+    }
+
     // MARK: 测试连接（§13；① 与 ② 共用）
 
     /// 测试期间并发查询不串代理的串行门（Android connLock 对位）
