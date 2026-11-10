@@ -73,7 +73,9 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          # R4：空口令账号在 MySQLNIO/caching_sha2 下无法连接（服务端按 used-password 校验）→
+          # 改用每次 run 唯一的临时口令（github.run_id；非固定凭据、随 run 丢弃、不进任何密文）
+          MYSQL_ROOT_PASSWORD: ${{ github.run_id }}
         options: >-
           --health-cmd="mysqladmin ping"
           --health-interval=10s
@@ -86,6 +88,7 @@ jobs:
           JDLV_TEST_MYSQL_HOST: mysql
           JDLV_TEST_MYSQL_PORT: "3306"
           JDLV_TEST_MYSQL_USER: root
+          JDLV_TEST_MYSQL_PASS: ${{ github.run_id }}
         run: |
           ln -sf /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 /usr/lib/x86_64-linux-gnu/libsqlite3.so
           swift test --package-path JDLVCore --filter IntegrationTests
