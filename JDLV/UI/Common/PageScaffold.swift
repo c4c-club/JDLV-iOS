@@ -28,6 +28,8 @@ struct PageScaffold<Content: View>: View {
 
     /// 右下角 PageChip + 回顶（false = 不挂）
     var showNavTools: Bool = false
+    /// R4 P5：底部避让（-1 = 读环境 tabBarInset；TabBar 页 56；显式 0 = 详情页）
+    var bottomInset: CGFloat = -1
     var pageLoaded: Int = 0
     var pageTotal: Int64 = -1
     var pagePer: Int = 40
@@ -36,6 +38,9 @@ struct PageScaffold<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     @Environment(\.appTheme) private var theme
+    @Environment(\.tabBarInset) private var envTabBarInset
+    /// 实际生效的底部避让（-1 哨兵 → 环境值）
+    private var effBottomInset: CGFloat { bottomInset >= 0 ? bottomInset : envTabBarInset }
     // R4 P4：滚动状态降频 —— 不再每帧写 CGFloat @State（整页 body 重求值的根因）；
     // 只在越过回顶阈值时翻转布尔，showScrollTop 只影响 FAB 显隐，不驱动内容。
     @State private var showScrollTop = false
@@ -47,7 +52,8 @@ struct PageScaffold<Content: View>: View {
                     if showNavTools {
                         ListNavTools(loaded: pageLoaded, total: pageTotal, per: pagePer,
                                      goPage: goPage,
-                                     showScrollTop: showScrollTop) {
+                                     showScrollTop: showScrollTop,
+                                     bottomInset: effBottomInset) {
                             withAnimation { proxy.scrollTo(ListScaffoldConst.topAnchor, anchor: .top) }
                         }
                     }
@@ -102,6 +108,8 @@ struct PageScaffold<Content: View>: View {
                 if let cfg = loadMore {
                     LoadMoreFooter(config: cfg)
                 }
+                // R4 P5：底部余量 —— PageChip/FAB 不压最后一行
+                Color.clear.frame(height: effBottomInset + 88)
             }
             .id(ListScaffoldConst.topAnchor)
         }

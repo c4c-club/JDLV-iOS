@@ -1,5 +1,17 @@
 import SwiftUI
 
+/// R4 P5：自绘底栏避让（AppRoot 注入 56；详情页/push 页 0 或不读）
+private struct TabBarInsetKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 56
+}
+
+extension EnvironmentValues {
+    var tabBarInset: CGFloat {
+        get { self[TabBarInsetKey.self] }
+        set { self[TabBarInsetKey.self] = newValue }
+    }
+}
+
 //
 //  PageNav.swift —— PageChip（跳页对话框）+ ListNavTools（右下角竖排导航）
 //  （07 B17/B18、08 A.5、10 §0.4）。
@@ -26,11 +38,19 @@ struct PageChip: View {
     @Environment(\.appTheme) private var theme
     @State private var showJump = false
     @State private var pageInput = ""
+    @State private var jumpError = ""
+
+    /// 页码上界：total > 0 → ceil(total/per)；未知 total 只钳下限（§8.4）
+    private var maxPage: Int? {
+        total > 0 ? Int(ceil(Double(total) / Double(max(per, 1)))) : nil
+    }
 
     var body: some View {
-        if loaded > 0 {
+        // R4 P5：loaded>0 || total>0 即渲染（首屏加载中也有跳页入口）
+        if loaded > 0 || total > 0 {
             Button {
                 pageInput = ""
+                jumpError = ""
                 showJump = true
             } label: {
                 AppText(AppCopy.pageChipLabel(loaded: loaded, total: total), lvl: .meta)
@@ -43,6 +63,7 @@ struct PageChip: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("page_chip")
             .sheet(isPresented: $showJump) { jumpSheet }
         }
     }
@@ -64,6 +85,11 @@ struct PageChip: View {
                 .frame(minHeight: 40)
                 .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3.opacity(0.35)))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(theme.line, lineWidth: 1))
+                .accessibilityIdentifier("page_jump_field")
+            // R4 P5：越界/非法输入保持 sheet 并提示（§8.4）
+            if !jumpError.isEmpty {
+                AppText(jumpError, lvl: .meta, color: theme.red)
+            }
             HStack(spacing: 12) {
                 Button {
                     showJump = false
@@ -74,11 +100,15 @@ struct PageChip: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("page_jump_cancel")
                 Button {
-                    if let p = Int(pageInput.trimmingCharacters(in: .whitespaces)), p >= 1 {
+                    if let p = Int(pageInput.trimmingCharacters(in: .whitespaces)),
+                       p >= 1, maxPage == nil || p <= maxPage! {
                         goPage?(p)
+                        showJump = false
+                    } else {
+                        jumpError = AppCopy.pageJumpOutOfRange
                     }
-                    showJump = false
                 } label: {
                     AppText(AppCopy.pageJumpGo, lvl: .bodyS, color: .white, fontWeight: .medium)
                         .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
@@ -86,6 +116,7 @@ struct PageChip: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("page_jump_go")
             }
         }
         .padding(16)
@@ -103,6 +134,8 @@ struct ListNavTools: View {
     var goPage: ((Int) -> Void)? = nil
     /// 滚动超过约 3 行 → true（ListScaffold 由 offset 推导）
     var showScrollTop: Bool
+    /// R4 P5：底部避让（TabBar 页 = 56；详情 = 0）——PageChip/FAB 不再被自绘 TabBar 遮挡
+    var bottomInset: CGFloat = 0
     var onScrollTop: () -> Void
 
     @Environment(\.appTheme) private var theme
@@ -126,7 +159,7 @@ struct ListNavTools: View {
             }
         }
         .padding(.trailing, 12)
-        .padding(.bottom, 16)
+        .padding(.bottom, bottomInset + 16)
         .animation(.easeInOut(duration: 0.2), value: showScrollTop)
     }
 }

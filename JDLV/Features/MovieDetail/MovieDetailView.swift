@@ -26,6 +26,8 @@ struct MovieDetailView: View {
     @StateObject private var vm: MovieDetailVM
     @State private var lightboxOpen = false
     @State private var lightboxIndex = 0
+    // R4 P5：回顶阈值布尔（详情页无 TabBar → bottomInset 0）
+    @State private var showScrollTop = false
 
     init(mid: String) {
         self.mid = mid
@@ -77,18 +79,28 @@ struct MovieDetailView: View {
     // MARK: 正文（LazyColumn 16dp 内边距，区块顺序逐字）
 
     private var content: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                titleBlock          // ① 标题区
-                coverBlock          // ② 横版封面
-                infoBlock           // ③ 信息行 + summary + 反查行 + 已读按钮
-                actorsBlock         // ④ 演员
-                previewsBlock       // ⑤ 剧照
-                magnetsBlock        // ⑥ 磁力卡
-                articlesBlock       // ⑦ 相关资讯
-                Color.clear.frame(height: 24)   // 尾部 24dp
+        // R4 P5：ScrollViewReader + 顶部锚点 + ScrollTopFAB（detail 无 TabBar → inset 0）
+        ScrollViewReader { proxy in
+            ScrollView {
+                ScrollOffsetReader(space: "movie_detail_space")
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    titleBlock          // ① 标题区
+                    coverBlock          // ② 横版封面
+                    infoBlock           // ③ 信息行 + summary + 反查行 + 已读按钮
+                    actorsBlock         // ④ 演员
+                    previewsBlock       // ⑤ 剧照
+                    magnetsBlock        // ⑥ 磁力卡
+                    articlesBlock       // ⑦ 相关资讯
+                    Color.clear.frame(height: 24)   // 尾部 24dp
+                }
+                .padding(16)
+                .id("movie_detail_top")
             }
-            .padding(16)
+            .coordinateSpace(name: "movie_detail_space")
+            .scrollTopOffsetWatcher(show: $showScrollTop)
+            .scrollTopOverlay(visible: showScrollTop, bottomInset: 0) {
+                withAnimation { proxy.scrollTo("movie_detail_top", anchor: .top) }
+            }
         }
     }
 

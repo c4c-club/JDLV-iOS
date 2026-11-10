@@ -820,9 +820,14 @@ struct SettingsView: View {
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.tabBarInset) private var envTabBarInset
+
+    // R4 P5：回顶（tab 根页有自绘 TabBar → inset = 环境值 56）
+    @State private var showScrollTop = false
 
     var body: some View {
         let s = store.settings
+        ScrollViewReader { proxy in
         ScrollView {
             // R4 P4：LazyVStack —— 卡片进入视口才布局（11 张卡一次性布局的启动成本消除）
             LazyVStack(alignment: .leading, spacing: 10) {
@@ -843,6 +848,17 @@ struct SettingsView: View {
                 Spacer().frame(height: 30)
             }
             .padding(16)
+            .id("settings_top")
+        }
+        .coordinateSpace(name: "settings_space")
+        .onPreferenceChange(PageScrollOffsetKey.self) { y in
+            let should = y < ListScaffoldConst.scrollTopOffset
+            if should != showScrollTop {
+                withAnimation(.easeInOut(duration: 0.18)) { showScrollTop = should }
+            }
+        }
+        .scrollTopOverlay(visible: showScrollTop, bottomInset: envTabBarInset) {
+            withAnimation { proxy.scrollTo("settings_top", anchor: .top) }
         }
         .background(theme.bg0.ignoresSafeArea())
         .accessibilityIdentifier("settings_page")
@@ -860,6 +876,7 @@ struct SettingsView: View {
             if phase == .background {
                 Task { await store.flushPendingEdits() }
             }
+        }
         }
     }
 

@@ -69,15 +69,27 @@ struct ArticleDetailView: View {
 
     // MARK: 正文区
 
+    // R4 P5：回顶（同 MovieDetail；detail 无 TabBar → inset 0）
+    @State private var showScrollTop = false
+
     private var content: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                coverBlock          // ① 16:9 封面
-                titleBlock          // ② 标题 + 元信息
-                dividerBlock        // ③ 1dp 分隔线 + 8pt
-                bodyBlock           // ④ 分块正文
-                relatedMoviesBlock  // ⑤ 相关影片
-                Color.clear.frame(height: 24)   // 尾部 24pt
+        ScrollViewReader { proxy in
+            ScrollView {
+                ScrollOffsetReader(space: "article_detail_space")
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    coverBlock          // ① 16:9 封面
+                    titleBlock          // ② 标题 + 元信息
+                    dividerBlock        // ③ 1dp 分隔线 + 8pt
+                    bodyBlock           // ④ 分块正文
+                    relatedMoviesBlock  // ⑤ 相关影片
+                    Color.clear.frame(height: 24)   // 尾部 24pt
+                }
+                .id("article_detail_top")
+            }
+            .coordinateSpace(name: "article_detail_space")
+            .scrollTopOffsetWatcher(show: $showScrollTop)
+            .scrollTopOverlay(visible: showScrollTop, bottomInset: 0) {
+                withAnimation { proxy.scrollTo("article_detail_top", anchor: .top) }
             }
         }
     }

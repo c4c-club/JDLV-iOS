@@ -86,9 +86,13 @@ struct ShtDetailView: View {
 
     // MARK: 正文（单 ScrollView + 单 LazyVStack + 进度锚点）
 
+    // R4 P5：回顶（复用现有 proxy 与 sht_detail_top 锚点；detail 无 TabBar → inset 0）
+    @State private var showScrollTop = false
+
     private var content: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                ScrollOffsetReader(space: "sht_detail_space")
                 LazyVStack(alignment: .leading, spacing: 0) {
                     titleBlock
                         .padding(.bottom, 10)
@@ -103,6 +107,11 @@ struct ShtDetailView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
                 .id("sht_detail_top")
+            }
+            .coordinateSpace(name: "sht_detail_space")
+            .scrollTopOffsetWatcher(show: $showScrollTop)
+            .scrollTopOverlay(visible: showScrollTop, bottomInset: 0) {
+                withAnimation { proxy.scrollTo("sht_detail_top", anchor: .top) }
             }
             .onAppear { restoreProgress(proxy) }
             .onDisappear {

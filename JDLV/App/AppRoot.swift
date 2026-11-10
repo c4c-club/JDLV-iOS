@@ -199,6 +199,9 @@ struct AppRoot: View {
         }
         .environmentObject(router)
         .environmentObject(services)
+        // R4 P5：自绘 TabBar 避让（56 = 48 控件 + 8 余量；详情页 push 后 TabBar 隐藏，
+        // 详情页 FAB 显式传 0）
+        .environment(\.tabBarInset, 56)
         // A5/R5：进入主界面时把 Core 分库离线标记并入横幅（网络迁移路径之外的增量同步）
         .onAppear {
             services.syncOfflineFlags(networkOnline: NetworkMonitor.shared.online)
