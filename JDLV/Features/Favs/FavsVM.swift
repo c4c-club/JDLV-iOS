@@ -56,7 +56,7 @@ final class LocalFavsStore: FavsStore {
         await openIfNeeded()
         guard let impl else { throw StoreUnavailable() }
         // 已收藏态 toggle → 取消收藏
-        _ = try await impl.favToggle(kind: kind, itemId: id, title: title)
+        _ = try await impl.favToggle(kind: kind, id: id, title: title)
     }
 }
 

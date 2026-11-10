@@ -354,8 +354,10 @@ final class SettingsStore: ObservableObject {
     /// 主题/视图/每页数量等纯展示设置用；落盘失败不阻断内存生效（下次保存重写）。
     /// A3/R3：副作用只在【落盘成功】后经 onPersistedEffects 单入口执行。
     /// R3 问题 4：值未变 → .noChange；落盘异常 → .failed；成功 → .saved。
-    /// R4 P4：persist 改 async（KeychainWriter 后台写）→ 本通道改 async（无外部调用方）。
-    func updateSettings(_ transform: SettingsTransform) async {
+    /// R4 P4：persist 已 async（KeychainWriter 后台写）→ 本通道保持同步签名（VM 有大量
+    /// 同步调用方），落盘部分改 fire-and-forget Task：内存立即生效（原语义），后台完成后
+    /// 触发副作用/三态。
+    func updateSettings(_ transform: SettingsTransform) {
         var next = settings
         transform(&next)
         guard next != settings else {
@@ -363,19 +365,18 @@ final class SettingsStore: ObservableObject {
             return
         }
         noteSaving()
-        var saved = false
-        do {
-            try await persist(next)
-            saved = true
-        } catch {
-            // 落盘失败：内存生效（展示态），但不触发运行时副作用（A3：失败不触发）
-            noteFinished(.failed)
-        }
         let old = settings
-        settings = next
-        if saved {
-            onPersistedEffects?(old, next)
-            noteFinished(.saved)
+        settings = next   // 内存立即生效（原语义：失败不回滚，下次保存重写）
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.persist(next)
+                self.onPersistedEffects?(old, next)
+                self.noteFinished(.saved)
+            } catch {
+                // 落盘失败：内存已生效（展示态），但不触发运行时副作用（A3：失败不触发）
+                self.noteFinished(.failed)
+            }
         }
     }
 
