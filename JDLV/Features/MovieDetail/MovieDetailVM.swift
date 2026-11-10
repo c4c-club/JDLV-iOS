@@ -43,22 +43,22 @@ struct LocalFavStore: FavStoreProtocol {
 
     func favIs(kind: String, itemId: String) async -> Bool {
         guard let a = await BrowseMarks.open() else { return false }
-        return (try? await a.favIs(kind: kind, itemId: itemId)) ?? false
+        return (try? await a.favIs(kind: kind, id: itemId)) ?? false
     }
 
     func favToggle(kind: String, itemId: String, title: String) async -> Bool {
         guard let a = await BrowseMarks.open() else { return false }
-        return (try? await a.favToggle(kind: kind, itemId: itemId, title: title)) ?? false
+        return (try? await a.favToggle(kind: kind, id: itemId, title: title)) ?? false
     }
 
     func historyIs(kind: String, itemId: String) async -> Bool {
         guard let a = await BrowseMarks.open() else { return false }
-        return (try? await a.historyIs(kind: kind, itemId: itemId)) ?? false
+        return (try? await a.historyIs(kind: kind, id: itemId)) ?? false
     }
 
     func historyMark(kind: String, itemId: String, title: String) async {
         guard let a = await BrowseMarks.open() else { return }
-        _ = try? await a.historyMark(kind: kind, itemId: itemId, title: title)
+        _ = try? await a.historyMark(kind: kind, id: itemId, title: title)
     }
 }
 
