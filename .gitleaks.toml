@@ -1,0 +1,31 @@
+# gitleaks 配置（R4 Phase 2）——供本地/CI 使用 gitleaks 时加载。
+# 与 scripts/scan_repo_secrets.py / scripts/secret_allowlist.txt / guard_repo.sh 的口径一致：
+# 只放「键名 / 合成变量名 / 结构性引用」，绝不放真实值。
+# 分类依据：docs/20_证据_R4/<STAMP>/security/history-classification.md
+# （历史命中全部为 .github/workflows/ios.yml 历史版本的 CI 合成值 root/jdlv_it：
+#   合成、非生产、不可达；HEAD 于 commit 4be15f4 清零。）
+
+[extend]
+# 使用 gitleaks 默认规则集，下方 allowlist 只做降噪。
+
+[allowlist]
+description = "JDLV R4：CI 合成值与良性形态（见 scripts/secret_allowlist.txt）"
+paths = [
+  '''(^|/)docs/''',                     # docs/ 为本地证据区，gitignored，不参与仓库判定
+  '''(^|/)scripts/(guard_repo|scan_repo_secrets|ipa_forensics|verify_ipa)\.(sh|py)$''',  # 扫描器源码自匹配
+]
+regexes = [
+  '''MYSQL_ALLOW_EMPTY_PASSWORD''',                     # CI service 开关（root 空口令启动）
+  '''JDLV_FIXTURE_PASS''',                              # 每次运行 openssl rand 随机生成的合成变量名
+  '''USER:\s*jdlv_it''',                                # fixture 账号「用户名」（非口令）
+  '''IDENTIFIED\s+.*BY\s+["']\$[A-Za-z_]+["']''',       # BY 引用 shell 变量（运行时随机值）
+  '''\$\{\{\s*(env|secrets)\.[A-Za-z0-9_]+''',          # GitHub Actions 上下文引用
+  '''PASS[A-Za-z_]*\s*[:=]\s*""''',                     # 显式空串
+]
+commits = [
+  # ios.yml 全部 21 个历史提交（CI 合成值 root/jdlv_it；4be15f4 清零；完整链 git log --all -- .github/workflows/ios.yml）：
+  "4be15f4", "b0befc3", "8f8886a", "4d6e08d", "3ebb8ca", "142e0db",
+  "ca53e1d", "6990372", "c79e75f", "aba0e65", "21b0aac", "26d2fe9",
+  "22dc78c", "b6a6e56", "9309b9d", "6eda2fe", "c061b0a", "9046d30",
+  "e690fed", "5bcea9c", "060c010",
+]

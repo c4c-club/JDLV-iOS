@@ -252,6 +252,9 @@ jobs:
           # R10：grep 不带 -q —— minos 16.0 行必须进 CI 日志（set -e 下不命中仍失败），供证据抓行
           otool -l Payload/JDLV.app/JDLV | grep 'minos 16.0'
 
+      - name: Verify IPA (security gate)
+        run: bash scripts/verify_ipa.sh JDLV-unsigned.ipa
+
       - name: Upload simulator zip
         uses: actions/upload-artifact@v4
         with:
@@ -290,10 +293,33 @@ jobs:
             ~/Library/Logs/DiagnosticReports/Retired/*.ips
           if-no-files-found: ignore
 
+  security:
+    # R4 Phase 2：历史凭据扫描门（PR + tag；release needs 闭环）。
+    # 分类结论（docs/20_证据_R4 security/history-classification.md）：历史命中全部是
+    # .github/workflows/ios.yml 的历史版本（CI 合成值 root/jdlv_it，非生产、不可达，HEAD 已清零）。
+    # 门禁规则：HIT 路径只能是 ios.yml 历史版本；出现其它路径 → FAIL。
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: history secret scan (strong value patterns)
+        run: python3 scripts/scan_repo_secrets.py --root . --mode history --out /tmp/history.txt
+      - name: classify and gate
+        run: |
+          set -euo pipefail
+          HITS=$(grep -c '^HIT' /tmp/history.txt || true)
+          echo "history hits: $HITS"
+          OTHER=$(grep '^HIT' /tmp/history.txt | grep -v 'path=\.github/workflows/ios\.yml' || true)
+          [ -z "$OTHER" ] || { echo 'security FAIL: unclassified history hits'; echo "$OTHER"; exit 1; }
+          echo 'security OK (all history hits are classified ios.yml historical blobs)'
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    # R10/C2：等全部 4 个 job 成功才发布（不再只 needs ios）
-    needs: [guard, core-linux, core-mysql, ios]
+    # R10/C2：等全部 job 成功才发布（R4 起 security 纳入 needs）
+    needs: [guard, core-linux, core-mysql, ios, security]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -308,6 +334,8 @@ jobs:
         with:
           name: JDLV-Simulator-app-zip
           path: dist
+      - name: Re-verify IPA (security gate)
+        run: bash scripts/verify_ipa.sh dist/JDLV-unsigned.ipa
       - name: Checksums + GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
