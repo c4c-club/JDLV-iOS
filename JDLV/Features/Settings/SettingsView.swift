@@ -811,7 +811,8 @@ struct SettingsView: View {
     var body: some View {
         let s = store.settings
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            // R4 P4：LazyVStack —— 卡片进入视口才布局（11 张卡一次性布局的启动成本消除）
+            LazyVStack(alignment: .leading, spacing: 10) {
                 // 全局唯一保存状态行（R3 问题 4：单一 SaveStatusView；各卡不再挂）
                 SaveStatusView(state: store.saveState,
                                onRetry: { Task { await store.flushPendingEdits() } })

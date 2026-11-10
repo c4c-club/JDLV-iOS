@@ -273,7 +273,9 @@ struct HomeView: View {
     private func sectionGrid(rows: [Row], keyPrefix: String,
                              onViewAll: @escaping () -> Void) -> some View {
         let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: 1)
-        return CardGrid(items: rows.indices.map { ($0, rows[$0]) },
+        // R4 P4：索引对一次性构造，不在 body 闭包里反复下标
+        let items = rows.indices.map { ($0, rows[$0]) }
+        return CardGrid(items: items,
                         columns: 1, cellWidth: cellW,
                         cellHeight: CardLayout.movieLargeH(cellW: cellW)) { pair in
             let (i, m) = pair
@@ -314,7 +316,9 @@ struct HomeView: View {
             let cardH = vm.viewMode == 1
                 ? CardLayout.movieLargeH(cellW: cellW)
                 : CardLayout.movieSmallH(cellW: cellW)
-            CardGrid(items: items.indices.map { ($0, items[$0]) },
+            // R4 P4：索引对一次性构造，不在 body 闭包里反复下标
+            let pairs = items.indices.map { ($0, items[$0]) }
+            CardGrid(items: pairs,
                      columns: cols, cellWidth: cellW, cellHeight: cardH,
                      idPrefix: "card_search") { pair in
                 let (i, m) = pair

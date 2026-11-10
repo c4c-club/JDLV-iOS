@@ -25,6 +25,14 @@ import JDLVCore
 /// 设置变换（等价 Android `{ it.copy(...) }`）
 public typealias SettingsTransform = (inout AppSettings) -> Void
 
+/// R4 P4：Keychain 物理写入走串行后台 actor（SecItem 调用离主线程；任务 05 §7.5.3）。
+/// 原子化预写/回滚的顺序与 persisted* 缓存逻辑仍在 @MainActor SettingsStore（actor 只做单次 set）。
+private actor KeychainWriter {
+    func set(_ value: String, forKey key: String) -> Result<Void, KeychainStore.KeyStatus> {
+        KeychainStore.setResult(value, forKey: key)
+    }
+}
+
 @MainActor
 final class SettingsStore: ObservableObject {
 
@@ -111,6 +119,9 @@ final class SettingsStore: ObservableObject {
     private var persistedLocalPass = ""
     private var persistedRemotePass = ""
     private var persistedLockSecret = ""
+
+    /// R4 P4：Keychain 物理写入执行器（串行后台 actor；见文件头说明）
+    private let keychainWriter = KeychainWriter()
 
     enum PersistError: Error {
         case keychainWrite(String)
@@ -242,6 +253,8 @@ final class SettingsStore: ObservableObject {
 
     /// A-7 自愈：`lockEnabled && lockType != "biometric" && lockSecret 空`（切换认证方式残留）
     /// → 自动写回 lockEnabled=false, lockType="none", lockSecret=""，防永久锁死。
+    /// R4 P4：persist 已 async（KeychainWriter 后台写）→ 自愈改为 fire-and-forget Task，
+    /// 不阻断启动（内存态先按 fixed 生效由下一次保存兜底 —— 原语义不变）。
     private func healResidualLockIfNeeded() {
         let s = settings
         guard s.lockEnabled, s.lockType != "biometric", s.lockSecret.isEmpty else { return }
@@ -249,12 +262,15 @@ final class SettingsStore: ObservableObject {
         fixed.lockEnabled = false
         fixed.lockType = "none"
         fixed.lockSecret = ""
-        do {
-            try persist(fixed)
-            settings = fixed
-            healedResidualLock = true
-        } catch {
-            // 自愈落盘失败不阻断启动（内存态已修正，下次保存会再写）
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.persist(fixed)
+                self.settings = fixed
+                self.healedResidualLock = true
+            } catch {
+                // 自愈落盘失败不阻断启动（内存态已修正，下次保存会再写）
+            }
         }
     }
 
@@ -264,19 +280,30 @@ final class SettingsStore: ObservableObject {
     /// 其余 69 键 JSON 编码后写 UserDefaults 单键 `jdlv_settings_v1`。
     /// A7/R7：口令三键原子化 —— 预写校验，任一失败回滚已写键到 persisted* 旧值，
     /// 抛 PersistError（绝不半写）；写失败文案入 secretWriteMessage。
-    private func persist(_ s: AppSettings) throws {
+    /// R4 P4：Keychain 物理写入走串行后台 KeychainWriter actor（SecItem 离主线程）；
+    /// 原子顺序与缓存逻辑仍在主 actor，主线程不再做 Keychain I/O。
+    private func persist(_ s: AppSettings) async throws {
         var wrote: [(key: String, oldValue: String)] = []
         do {
-            try writeSecret(s.localPass, forKey: SecretKey.localPass,
-                            persisted: &persistedLocalPass, wrote: &wrote)
-            try writeSecret(s.remotePass, forKey: SecretKey.remotePass,
-                            persisted: &persistedRemotePass, wrote: &wrote)
-            try writeSecret(s.lockSecret, forKey: SecretKey.lockSecret,
-                            persisted: &persistedLockSecret, wrote: &wrote)
+            if s.localPass != persistedLocalPass {
+                try await writeSecretViaWriter(s.localPass, forKey: SecretKey.localPass)
+                wrote.append((SecretKey.localPass, persistedLocalPass))
+                persistedLocalPass = s.localPass
+            }
+            if s.remotePass != persistedRemotePass {
+                try await writeSecretViaWriter(s.remotePass, forKey: SecretKey.remotePass)
+                wrote.append((SecretKey.remotePass, persistedRemotePass))
+                persistedRemotePass = s.remotePass
+            }
+            if s.lockSecret != persistedLockSecret {
+                try await writeSecretViaWriter(s.lockSecret, forKey: SecretKey.lockSecret)
+                wrote.append((SecretKey.lockSecret, persistedLockSecret))
+                persistedLockSecret = s.lockSecret
+            }
         } catch {
             // 回滚已写键（尽力而为：恢复旧值与缓存，保持内存/磁盘一致）
             for w in wrote {
-                _ = KeychainStore.setResult(w.oldValue, forKey: w.key)
+                _ = await keychainWriter.set(w.oldValue, forKey: w.key)
                 switch w.key {
                 case SecretKey.localPass: persistedLocalPass = w.oldValue
                 case SecretKey.remotePass: persistedRemotePass = w.oldValue
@@ -295,15 +322,11 @@ final class SettingsStore: ObservableObject {
         defaults.set(data, forKey: AppSettings.storageDefaultsKey)
     }
 
-    /// 单口令键写入：值未变跳过；失败抛 PersistError.keychainWrite(可读文案)
-    private func writeSecret(_ value: String, forKey key: String,
-                             persisted: inout String,
-                             wrote: inout [(key: String, oldValue: String)]) throws {
-        guard value != persisted else { return }
-        switch KeychainStore.setResult(value, forKey: key) {
+    /// 单口令键物理写入（KeychainWriter actor；失败抛 PersistError.keychainWrite 可读文案）
+    private func writeSecretViaWriter(_ value: String, forKey key: String) async throws {
+        switch await keychainWriter.set(value, forKey: key) {
         case .success:
-            wrote.append((key, persisted))
-            persisted = value
+            break
         case .failure(let st):
             throw PersistError.keychainWrite(st.message)
         }
@@ -314,7 +337,8 @@ final class SettingsStore: ObservableObject {
     /// 主题/视图/每页数量等纯展示设置用；落盘失败不阻断内存生效（下次保存重写）。
     /// A3/R3：副作用只在【落盘成功】后经 onPersistedEffects 单入口执行。
     /// R3 问题 4：值未变 → .noChange；落盘异常 → .failed；成功 → .saved。
-    func updateSettings(_ transform: SettingsTransform) {
+    /// R4 P4：persist 改 async（KeychainWriter 后台写）→ 本通道改 async（无外部调用方）。
+    func updateSettings(_ transform: SettingsTransform) async {
         var next = settings
         transform(&next)
         guard next != settings else {
@@ -324,7 +348,7 @@ final class SettingsStore: ObservableObject {
         noteSaving()
         var saved = false
         do {
-            try persist(next)
+            try await persist(next)
             saved = true
         } catch {
             // 落盘失败：内存生效（展示态），但不触发运行时副作用（A3：失败不触发）
@@ -353,7 +377,7 @@ final class SettingsStore: ObservableObject {
         }
         noteSaving()
         do {
-            try persist(next)
+            try await persist(next)
             let old = settings
             settings = next
             onPersistedEffects?(old, next)

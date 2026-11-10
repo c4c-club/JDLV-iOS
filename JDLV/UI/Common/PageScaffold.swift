@@ -36,7 +36,9 @@ struct PageScaffold<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     @Environment(\.appTheme) private var theme
-    @State private var scrollY: CGFloat = 0
+    // R4 P4：滚动状态降频 —— 不再每帧写 CGFloat @State（整页 body 重求值的根因）；
+    // 只在越过回顶阈值时翻转布尔，showScrollTop 只影响 FAB 显隐，不驱动内容。
+    @State private var showScrollTop = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -45,7 +47,7 @@ struct PageScaffold<Content: View>: View {
                     if showNavTools {
                         ListNavTools(loaded: pageLoaded, total: pageTotal, per: pagePer,
                                      goPage: goPage,
-                                     showScrollTop: scrollY < ListScaffoldConst.scrollTopOffset) {
+                                     showScrollTop: showScrollTop) {
                             withAnimation { proxy.scrollTo(ListScaffoldConst.topAnchor, anchor: .top) }
                         }
                     }
@@ -72,7 +74,12 @@ struct PageScaffold<Content: View>: View {
                 stateBody
             }
             .coordinateSpace(name: ListScaffoldConst.space)
-            .onPreferenceChange(PageScrollOffsetKey.self) { scrollY = $0 }
+            .onPreferenceChange(PageScrollOffsetKey.self) { y in
+                let should = y < ListScaffoldConst.scrollTopOffset
+                if should != showScrollTop {
+                    withAnimation(.easeInOut(duration: 0.18)) { showScrollTop = should }
+                }
+            }
             .environment(\.containerWidth, geo.size.width)
         }
     }
