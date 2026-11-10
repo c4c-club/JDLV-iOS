@@ -205,12 +205,12 @@ public enum Q {
         let eff = (12...36).contains(per) ? per : 24
         let note = "本地缓存 · 可能过期"
 
-        func localFallback(mark: Bool) throws -> [String: Any] {
+        func localFallback(mark: Bool) async throws -> [String: Any] {
             if mark { Db.markOffline("jdb") }
-            // 本地兜底走 IdxDb 键索引（★ S12-P4 列表页不写 shadow.db）
-            let r = localHomeSeg("release_date", eff)   // TODO(P5): IdxDb.moviesBy("release_date", false, eff, 0)
-            let h = localHomeSeg("want", eff)           // TODO(P5): IdxDb.moviesBy("want", false, eff, 0)
-            let t = localHomeSeg("score", eff)          // TODO(P5): IdxDb.moviesBy("score", false, eff, 0)
+            // 本地兜底走 IdxDb 键索引（★ S12-P4 列表页不写 shadow.db；R4 P8 落地）
+            let r = await localHomeSeg("release_date", eff)
+            let h = await localHomeSeg("want", eff)
+            let t = await localHomeSeg("score", eff)
             if r.isEmpty && h.isEmpty && t.isEmpty {
                 // ★ S11-P0: 影子库空 ≠ 远程不可达 —— 文案必须说真话 (铁律 22)
                 throw QRuntimeError("首页三个分段查询均失败, 且本地索引为空 (下拉重试)")
@@ -229,9 +229,9 @@ public enum Q {
                         return r
                     }
                 } catch { /* 仍失败 → 本地兜底 */ }
-                return try localFallback(mark: false)
+                return try await localFallback(mark: false)
             }
-            return try localFallback(mark: false)
+            return try await localFallback(mark: false)
         }
 
         do {
@@ -246,36 +246,38 @@ public enum Q {
                 throw error   // 通 → rethrow（UI 错误态+重试，不静默退影子）
             }
             Db.markOffline("jdb")
-            return try localFallback(mark: true)
+            return try await localFallback(mark: true)
         }
         // null（三段全空且无异常 = 空库）→ 本地兜底
-        return try localFallback(mark: false)
+        return try await localFallback(mark: false)
     }
 
     // MARK: - R4 P8：本地首页兜底数据源（App 壳层注入；Core 不反向依赖 App）
 
     private static let localIdxLock = NSLock()
-    private static var _localIdxProvider: (() -> IdxDb?)?
+    private static var _localIdxProvider: (() async -> IdxDb?)?
 
     /// 注入本地索引库提供器（AppBootstrap.injectRuntime 里接 SettingsIndexHub）。
     /// 返回 nil = 无索引 → 调用方收到「本地索引为空」明确错误（绝不假装有缓存）。
-    public static func setLocalIdxProvider(_ p: (() -> IdxDb?)?) {
+    public static func setLocalIdxProvider(_ p: (() async -> IdxDb?)?) {
         localIdxLock.lock()
         _localIdxProvider = p
         localIdxLock.unlock()
     }
 
-    private static func localIdx() -> IdxDb? {
+    private static func localIdx() async -> IdxDb? {
         localIdxLock.lock()
         defer { localIdxLock.unlock() }
-        return _localIdxProvider?()
+        let p = _localIdxProvider
+        localIdxLock.unlock()
+        return await p?()
     }
 
     /// Android localFallback 的 IdxDb 三段读取对位（R4 P8 落地，V41）。
     /// key ∈ release_date / want / score（idx_movies 列；本地无排名表 → rank 走 score 近似）。
     /// 无 provider / 读失败 → 返回 []（localFallback 汇总后抛「本地索引为空」明确错误）。
-    private static func localHomeSeg(_ key: String, _ eff: Int) -> [Row] {
-        guard let idx = localIdx() else { return [] }
+    private static func localHomeSeg(_ key: String, _ eff: Int) async -> [Row] {
+        guard let idx = await localIdx() else { return [] }
         return (try? idx.moviesBy(sort: key, asc: false, limit: eff, offset: 0)) ?? []
     }
 

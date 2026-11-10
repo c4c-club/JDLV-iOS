@@ -78,7 +78,7 @@ enum AppBootstrap {
         CdnRewrite.settingsProvider = { snapshotBox.cdnSettings }
         CdnRewrite.applyHostOnly()
         // R4 P8：本地首页兜底接 SettingsIndexHub 的 IdxDb（懒建；仅离线路径触达）
-        Q.setLocalIdxProvider { SettingsIndexHub.shared.sync?.idx }
+        Q.setLocalIdxProvider { await SettingsIndexHub.shared.sync?.idx }
     }
 
     // MARK: AppSettings → MySQLPoolSettings（① 纯映射）

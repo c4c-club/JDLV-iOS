@@ -550,7 +550,7 @@ final class BrowseVM: ObservableObject {
         let key = Self.listCacheKey(f: f, sort: sort, asc: asc, per: per, page: targetPage)
         // ① TTL 内缓存命中（路径一致，同样写锚点/计数）
         if let hit = cache.get(key, ttlMinutes: filterTtl) {
-            apply(hit, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
+            await apply(hit, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
             await countIfNeeded(rid: rid, append: append, targetPage: targetPage)
             return
         }
@@ -561,13 +561,13 @@ final class BrowseVM: ObservableObject {
                 f: f, page: targetPage, per: per, sort: sort, asc: asc, anchor: anchor)
             guard rid == reqId else { return }   // 旧响应一律丢弃
             cache.put(key, d)
-            apply(d, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
+            await apply(d, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
             await countIfNeeded(rid: rid, append: append, targetPage: targetPage)
         } catch {
             // ③ stale（无视 TTL）→ SWR 回退；无 stale → ErrText + fromRefresh 时 Fail
             guard rid == reqId else { return }
             if let stale = cache.stale(key) {
-                apply(stale, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
+                await apply(stale, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
                 await countIfNeeded(rid: rid, append: append, targetPage: targetPage)
                 return
             }
@@ -590,7 +590,7 @@ final class BrowseVM: ObservableObject {
     /// refreshResult 仅手动下拉路径写入；首屏异步计数
     private func apply(
         _ d: [String: Any], rid: Int, append: Bool, targetPage: Int, fromRefresh: Bool
-    ) {
+    ) async {
         guard rid == reqId else { return }
         let fresh = d["items"] as? [Row] ?? []
         let prev = items ?? []

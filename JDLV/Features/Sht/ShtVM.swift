@@ -165,19 +165,19 @@ struct ShtMarkSource {
             },
             historyIs: { tid in
                 guard let a = await BrowseMarks.open() else { return false }
-                return (try? await a.historyIs(kind: "sht", itemId: tid)) ?? false
+                return (try? await a.historyIs(kind: "sht", id: tid)) ?? false
             },
             favIs: { tid in
                 guard let a = await BrowseMarks.open() else { return false }
-                return (try? await a.favIs(kind: "sht", itemId: tid)) ?? false
+                return (try? await a.favIs(kind: "sht", id: tid)) ?? false
             },
             historyMark: { tid, title in
                 guard let a = await BrowseMarks.open() else { return }
-                _ = try? await a.historyMark(kind: "sht", itemId: tid, title: title)
+                _ = try? await a.historyMark(kind: "sht", id: tid, title: title)
             },
             favToggle: { tid, title in
                 guard let a = await BrowseMarks.open() else { return false }
-                return (try? await a.favToggle(kind: "sht", itemId: tid, title: title)) ?? false
+                return (try? await a.favToggle(kind: "sht", id: tid, title: title)) ?? false
             })
     }
 }
@@ -474,7 +474,7 @@ final class ShtVM: ObservableObject {
             fuzzy: fuzzy, semantic: semantic, sort: sort, per: per, page: targetPage)
         // ① TTL 内缓存命中（路径一致，同样写锚点/计数）
         if let hit = cache.get(key, ttlMinutes: Self.LIST_TTL_MINUTES) {
-            apply(hit, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
+            await apply(hit, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
             await countIfNeeded(rid: rid, append: append, targetPage: targetPage)
             return
         }
@@ -491,7 +491,7 @@ final class ShtVM: ObservableObject {
                 threshold: Float(store?.settings.semThreshold ?? 10) / 100.0)
             guard rid == reqId else { return }   // 旧响应一律丢弃
             cache.put(key, d)
-            apply(d, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
+            await apply(d, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
             await countIfNeeded(rid: rid, append: append, targetPage: targetPage)
         } catch {
             guard rid == reqId else { return }
@@ -505,7 +505,7 @@ final class ShtVM: ObservableObject {
             }
             // ③ stale（无视 TTL）→ SWR 回退；无 stale → ErrText + fromRefresh 时 Fail
             if let stale = cache.stale(key) {
-                apply(stale, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
+                await apply(stale, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
                 return
             }
             loading = false
@@ -540,7 +540,7 @@ final class ShtVM: ObservableObject {
     /// hasMore=满页推断；readIds/favIds 批量 union
     private func apply(
         _ d: [String: Any], rid: Int, append: Bool, targetPage: Int, fromRefresh: Bool
-    ) {
+    ) async {
         guard rid == reqId else { return }
         let fresh = d["items"] as? [Row] ?? []
         let prev = items ?? []

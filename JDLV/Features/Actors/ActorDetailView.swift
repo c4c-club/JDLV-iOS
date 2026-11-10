@@ -190,8 +190,7 @@ struct ActorDetailView: View {
     @ViewBuilder
     private func aliasCell(_ alias: String) -> some View {
         if alias.count > 24 {
-            DisclosureGroup(aliasExpanded ? ActorDetailCopy.lessInfo : ActorDetailCopy.moreInfo,
-                            isExpanded: $aliasExpanded) {
+            DisclosureGroup(isExpanded: $aliasExpanded) {
                 Text(alias)
                     .font(.system(size: 12))
                     .foregroundColor(theme.text2)
@@ -199,7 +198,7 @@ struct ActorDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 4)
             } label: {
-                InfoCell(label: ActorDetailCopy.infoAlias,
+                InfoCell(label: aliasExpanded ? ActorDetailCopy.lessInfo : ActorDetailCopy.moreInfo,
                          value: String(alias.prefix(24)) + "…", lines: 1)
             }
             .gridCellColumns(2)

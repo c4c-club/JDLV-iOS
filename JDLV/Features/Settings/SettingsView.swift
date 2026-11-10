@@ -485,7 +485,7 @@ struct SettingsGroupCard<Content: View>: View {
 
     init(title: String, rememberKey: String, defaultExpanded: Bool = false,
          summary: String = "",
-         @ViewBuilder content: () -> Content) {
+         @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self.rememberKey = rememberKey
         self.defaultExpanded = defaultExpanded

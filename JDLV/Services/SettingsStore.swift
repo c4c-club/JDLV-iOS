@@ -210,7 +210,8 @@ final class SettingsStore: ObservableObject {
     }
 
     /// 单键读取（A7/R7：失败 → 空串 + 失败标记，区分 itemNotFound；init 期静态版）
-    private static func loadSecretStatic(_ key: String, _ failed: inout Bool, _ msg: inout String) -> String {
+    /// nonisolated：init 的 detached 闭包在任意线程直调（KeychainStore 静态 API 线程安全）
+    nonisolated private static func loadSecretStatic(_ key: String, _ failed: inout Bool, _ msg: inout String) -> String {
         switch KeychainStore.getResult(key) {
         case .success(let v):
             return v ?? ""
