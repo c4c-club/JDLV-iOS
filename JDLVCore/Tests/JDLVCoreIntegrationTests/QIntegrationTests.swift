@@ -93,7 +93,7 @@ final class QIntegrationTests: XCTestCase {
     @discardableResult
     func boot() async throws -> MySQLPoolSettings {
         let s = MySQLPoolSettings(
-            host: Self.host, port: Self.port, user: Self.user, pass: Self.pass,
+            host: Self.host, port: Self.port, user: Self.user, pass: Self.pass ?? "",   // String? → pool 设置非可选；空串由 pool 转 nil 连接
             jdbDb: Self.dbName, shtDb: Self.dbName, tls: false,
             connectTimeout: 5, queryTimeout: 8)
         Db.configure(settingsProvider: { s }, hasNetwork: { true })
@@ -1484,14 +1484,14 @@ final class QIntegrationTests: XCTestCase {
     func test_Q_taxonomy_fallbackAndArticlesMissingOnSparseDb() async throws {
         try await boot()
         let alt = MySQLPoolSettings(
-            host: Self.host, port: Self.port, user: Self.user, pass: Self.pass,
+            host: Self.host, port: Self.port, user: Self.user, pass: Self.pass ?? "",   // String? → pool 设置非可选；空串由 pool 转 nil 连接
             jdbDb: Self.altDbName, shtDb: Self.dbName, tls: false,
             connectTimeout: 5, queryTimeout: 8)
         Db.configure(settingsProvider: { alt }, hasNetwork: { true })
         Db.reset()
         defer {
             let main = MySQLPoolSettings(
-                host: Self.host, port: Self.port, user: Self.user, pass: Self.pass,
+                host: Self.host, port: Self.port, user: Self.user, pass: Self.pass ?? "",   // String? → pool 设置非可选；空串由 pool 转 nil 连接
                 jdbDb: Self.dbName, shtDb: Self.dbName, tls: false,
                 connectTimeout: 5, queryTimeout: 8)
             Db.configure(settingsProvider: { main }, hasNetwork: { true })

@@ -74,7 +74,7 @@ final class MySQLIntegrationTests: XCTestCase {
                           connectTimeout: Int = 5) -> MySQLPoolSettings {
         MySQLPoolSettings(
             host: host ?? Self.host, port: port ?? Self.port,
-            user: Self.user, pass: Self.pass,
+            user: Self.user, pass: Self.pass ?? "",   // String? → pool 设置非可选；空串由 pool 转 nil 连接
             jdbDb: Self.dbName, shtDb: Self.dbName,
             tls: tls, connectTimeout: connectTimeout, queryTimeout: 8)
     }
