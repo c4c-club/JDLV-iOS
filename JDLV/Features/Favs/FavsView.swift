@@ -78,7 +78,10 @@ struct FavsView: View {
 
     private var listContent: some View {
         Group {
-            if rows.isEmpty {
+            if let err = vm.error {
+                // R4 P9：读取失败显式态（与空收藏区分；可重试）
+                ErrorBox(text: err, onRetry: { Task { await vm.reload() } })
+            } else if rows.isEmpty {
                 EmptyBox(text: FavsCopy.emptyText)
             } else {
                 List {

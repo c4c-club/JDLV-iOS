@@ -42,11 +42,16 @@ enum SettingsCopy {
         }
     }
 
-    static func hhmmss(_ d: Date) -> String {
+    /// R4 P10：formatter 复用（DateFormatter iOS7+ 线程安全）
+    private static let hhmmssFmt: DateFormatter = {
         let df = DateFormatter()
         df.dateFormat = "HH:mm:ss"
         df.locale = Locale(identifier: "en_US_POSIX")
-        return df.string(from: d)
+        return df
+    }()
+
+    static func hhmmss(_ d: Date) -> String {
+        hhmmssFmt.string(from: d)
     }
 
     // MARK: 0.3 折叠卡标题（逐字 11 条）
@@ -130,6 +135,11 @@ enum SettingsCopy {
     static let dsPhSht = "sehuatang"
     static let dsPlain = "明文"
     static let dsHide = "隐藏"
+
+    // R4 S1：明文 HTTP 镜像开关（默认关）
+    static let allowInsecureHTTPLabel = "允许不安全 HTTP 镜像"
+    static let allowInsecureHTTPHint = "仅当镜像站不支持 HTTPS 时开启；明文传输可被窃听/篡改"
+    static let allowInsecureHTTPWarning = "⚠ 已允许明文 HTTP：图片流量未加密，可能被中间人窃听或篡改，风险自担。"
     static let dsTlsLabel = "数据库 TLS (useSSL)"
     static let dsTlsDesc = "服务器需开启 TLS。注意: 自签名证书会跳过证书校验 —— 可防被动嗅探, 防不住主动中间人; 局域网可信环境可关闭"
     static let dsEditingOtherHint = "正在编辑另一数据源 (不影响当前连接)"
@@ -466,7 +476,9 @@ struct SettingsGroupCard<Content: View>: View {
     var defaultExpanded: Bool = false
     /// 收起时标题下一行 12sp 摘要（maxLines 1 截断）
     var summary: String = ""
-    @ViewBuilder let content: Content
+    /// R4 P5：存闭包不存视图 —— content() 只在 expanded 分支调用，
+    /// 折叠卡不再在 SettingsView.body 求值时构建全部子视图（11 张卡全量构建的根因）
+    let content: () -> Content
 
     @State private var expanded: Bool
     @Environment(\.appTheme) private var theme
@@ -478,7 +490,7 @@ struct SettingsGroupCard<Content: View>: View {
         self.rememberKey = rememberKey
         self.defaultExpanded = defaultExpanded
         self.summary = summary
-        self.content = content()
+        self.content = content
         _expanded = State(initialValue: CollapsiblePref.isExpanded(rememberKey, default: defaultExpanded))
     }
 
@@ -487,7 +499,7 @@ struct SettingsGroupCard<Content: View>: View {
             header
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    content
+                    content()
                 }
                 .padding(.top, 8)
             }
@@ -552,7 +564,8 @@ struct CompactField: View {
     @Binding var text: String
     var placeholder: String
     var secure: Bool = false
-    var showPlain: Bool = true
+    /// R4 P11：默认 false —— 未来任何 secure 字段不显式传 showPlain 即保持掩码（安全默认）
+    var showPlain: Bool = false
     var keyboard: UIKeyboardType = .default
     var trailingTitle: String? = nil
     var onTrailing: (() -> Void)? = nil

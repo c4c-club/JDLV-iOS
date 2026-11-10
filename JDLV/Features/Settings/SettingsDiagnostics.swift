@@ -43,19 +43,38 @@ enum SettingsDiagnostics {
 
     // MARK: 诊断日志正文（AboutView「导出诊断日志」共用；R4 抽出为可单测纯函数）
 
-    /// R4 门禁：诊断文本不得包含任何口令值（remotePass/localPass/lockSecret）。
-    /// metaLines 由调用方给（时间/版本/设备等）；数据源摘要只含 host:port 与库名，不含口令。
+    /// R4 P14/V47：host 脱敏 —— IPv4 保留前两段（如 192.168.*.*）；域名保留首尾段
+    /// （mysql.example.com → mysql.*.com）；两段 → 首段.*；端口由调用方原样保留。
+    static func maskHost(_ host: String) -> String {
+        let parts = host.split(separator: ".").map(String.init)
+        if parts.count == 4, parts.allSatisfy({ !$0.isEmpty && Int($0) != nil }) {
+            return "\(parts[0]).\(parts[1]).*.*"
+        }
+        if parts.count >= 3 {
+            return "\(parts[0]).*.\(parts[parts.count - 1])"
+        }
+        if parts.count == 2 {
+            return "\(parts[0]).*"
+        }
+        return host.isEmpty ? host : "***"
+    }
+
+    /// R4 门禁：诊断文本不得包含任何口令值（remotePass/localPass/lockSecret），
+    /// host 一律脱敏（V47：不含完整内网 IP）。metaLines 由调用方给（时间/版本/设备等）。
     static func diagnosticLines(s: AppSettings, metaLines: [String]) -> [String] {
         var lines = metaLines
-        // 数据源摘要（不含口令）：本地 jdb/sht 库名 · 远程 host:port
+        // 数据源摘要（不含口令）：本地 jdb/sht 库名 · 远程 脱敏host:port
         let local = [s.localJdb, s.localSht].filter { !$0.isEmpty }.joined(separator: "/")
-        let remote = s.remoteHost.isEmpty ? "" : "\(s.remoteHost):\(s.remotePort)"
+        let remote = s.remoteHost.isEmpty ? "" : "\(maskHost(s.remoteHost)):\(s.remotePort)"
         var parts: [String] = []
         if !local.isEmpty { parts.append("本地 \(local)") }
         if !remote.isEmpty { parts.append("远程 \(remote)") }
         lines.append("数据源: " + (parts.isEmpty ? "未配置" : parts.joined(separator: " · ")))
         lines.append("dbSrc: \(s.dbSrc) · queryTimeout: \(s.queryTimeout)s · connectTimeout: \(s.connectTimeout)s")
-        lines.append("代理: \(s.proxyHost.isEmpty ? "未配置" : "\(s.proxyHost):\(s.proxyPort)")")
+        let proxy = s.proxyHost.isEmpty
+            ? "未配置"
+            : "\(maskHost(s.proxyHost)):\(s.proxyPort)"
+        lines.append("代理: \(proxy)")
         lines.append("输入法: \(KeyboardDiagnostics.activeModesDescription)")
         #if DEBUG
         lines.append("testImgMode: \(s.testImgMode)")
@@ -313,7 +332,8 @@ final class SettingsSnapshotBox: @unchecked Sendable {
             imageCacheMb: s.imageCacheMb,
             imageCacheDays: s.imageCacheDays,
             coverHalf: s.coverHalf,
-            testImgMode: s.testImgMode)
+            testImgMode: s.testImgMode,
+            allowInsecureHTTP: s.allowInsecureHTTP)
     }
 }
 

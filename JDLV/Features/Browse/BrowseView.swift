@@ -66,6 +66,8 @@ private struct BrowseContent: View {
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.containerWidth) private var envWidth
+    // R4 P3：实测容器宽度（PageScaffold 发 preference；320/402pt 不再走 393 兜底）
+    @State private var measuredWidth: CGFloat = 0
 
     @State private var showFilter = false
 
@@ -74,13 +76,15 @@ private struct BrowseContent: View {
     private var items: [Row] { vm.items ?? [] }
     private var itemsEmpty: Bool { items.isEmpty }
 
-    private var pageWidth: CGFloat { resolvedContainerWidth(envWidth, hSize: hSize) }
+    private var pageWidth: CGFloat {
+        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
+    }
 
-    /// 列数：viewMode 1(大图)/2(列表) → 1 列；0(小图) → 手机 2 列、最短边 ≥600（或 regular）3 列
+    /// 列数：viewMode 1(大图)/2(列表) → 1 列；0(小图) → 手机 2 列、容器 ≥600（或 regular）3 列
     private var gridColumns: Int {
         if vm.viewMode != 0 { return 1 }
-        let short = min(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
-        return (short >= 600 || hSize == .regular) ? 3 : 2
+        // R4 P3：不读 UIScreen.main（横竖屏/分屏失真）—— 用实测容器宽度（PageContainerWidthKey）
+        return (pageWidth >= 600 || hSize == .regular) ? 3 : 2
     }
 
     /// 主空态（A.6）：0 命中是空态不是错误
@@ -116,6 +120,14 @@ private struct BrowseContent: View {
             goPage: { p in Task { await vm.goPage(p) } }
         ) {
             browseHeader
+            // R4 P9：已读/收藏标记查询失败显式呈现（与空数据区分）
+            if let marksErr = vm.marksError {
+                AppText(marksErr, lvl: .meta, color: theme.red, textAlign: .center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("browse_marks_error")
+            }
             if !itemsEmpty {
                 grid
             }
@@ -146,6 +158,7 @@ private struct BrowseContent: View {
             vm.refreshChannel.consume()
         }
         .accessibilityIdentifier("browse_page")
+        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
     }
 
     // MARK: toolbar（iOS 原生：排序/顺序 Menu + 视图 Menu + 筛选 badge）

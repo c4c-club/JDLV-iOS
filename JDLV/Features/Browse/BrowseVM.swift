@@ -267,8 +267,9 @@ final class MemoryBrowseCache: BrowseCacheStore {
 // MARK: - 已读/收藏批量标记（A-1：列表页批量 IN 查，替代逐条单查）
 
 struct BrowseMarkSource {
-    var historySet: ([String]) -> Set<String>
-    var favSet: ([String]) -> Set<String>
+    // R4 P6/P9：标记查询走 async throws（LocalStoreActor 串行后台）；错误由调用方呈现
+    var historySet: ([String]) async throws -> Set<String>
+    var favSet: ([String]) async throws -> Set<String>
 
     static func empty() -> BrowseMarkSource {
         BrowseMarkSource(historySet: { _ in [] }, favSet: { _ in [] })
@@ -286,22 +287,35 @@ struct BrowseMarkSource {
                 })
         }
         #endif
-        guard let store = BrowseMarks.shared else { return .empty() }
+        // R4 P6：不在调用方 init 打开 SQLite —— 闭包内首次经 BrowseMarks.open() 后台打开
         return BrowseMarkSource(
-            historySet: { ids in (try? store.historySet(kind: "movie", ids: ids)) ?? [] },
-            favSet: { ids in (try? store.favSet(kind: "movie", ids: ids)) ?? [] })
+            historySet: { ids in
+                guard let a = await BrowseMarks.open() else { return [] }
+                return try await a.historySet(kind: "movie", ids: ids)
+            },
+            favSet: { ids in
+                guard let a = await BrowseMarks.open() else { return [] }
+                return try await a.favSet(kind: "movie", ids: ids)
+            })
     }
 }
 
 /// LocalStore 单例宿主（App 壳层尚无全局 LocalStore，P9b 先落此处；后续页可复用）
+/// R4 P6：不再提供同步 `shared`（View init 触发主线程 SQLite 打开的根因）；
+/// 改为 once-Task 后台打开 + `open() async` 复用；打开失败返回 nil（调用方按不可用处理）。
 enum BrowseMarks {
-    static let shared: LocalStore? = {
+    private static let openOnce: Task<LocalStoreActor?, Never> = Task.detached(priority: .utility) {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = base.appendingPathComponent("jdlv", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return try? LocalStore(directory: dir.path)
-    }()
+        guard let store = try? LocalStore(directory: dir.path) else { return nil }
+        return LocalStoreActor(store: store)
+    }
+
+    static func open() async -> LocalStoreActor? {
+        await openOnce.value
+    }
 }
 
 // MARK: - BrowseVM（A.2 全契约）
@@ -319,6 +333,8 @@ final class BrowseVM: ObservableObject {
     let taxonomyLoader: BrowseTaxonomyLoader
     /// 已读/收藏批量查（BrowseView onAppear 注入默认实现；测试注入假源）
     var marks: BrowseMarkSource?
+    /// R4 P9：批量标记查询失败态（页面据此显示错误注释；nil = 正常）
+    @Published var marksError: String? = nil
     /// 全局 Toast 通道（AppServices.showToast；测试注入收集器）
     var onToast: (String) -> Void
     /// 刷新结果通道（仅手动下拉路径写入；页面消费后 consume 清位）
@@ -607,11 +623,17 @@ final class BrowseVM: ObservableObject {
         if let marks = marks {
             let ids = merged.map { $0.s("id") }.filter { !$0.isEmpty }
             if !ids.isEmpty {
-                let read = marks.historySet(ids)
-                let fav = marks.favSet(ids)
-                if rid == reqId {
-                    readIds = readIds.union(read)
-                    favIds = favIds.union(fav)
+                do {
+                    let read = try await marks.historySet(ids)
+                    let fav = try await marks.favSet(ids)
+                    if rid == reqId {
+                        readIds = readIds.union(read)
+                        favIds = favIds.union(fav)
+                    }
+                    marksError = nil
+                } catch {
+                    // P9：标记查询失败显式呈现（与空数据区分；badge 缺失不清空既有数据）
+                    marksError = "已读/收藏标记查询失败（本地存储不可用）"
                 }
             }
         }

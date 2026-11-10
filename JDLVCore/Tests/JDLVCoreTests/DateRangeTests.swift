@@ -91,4 +91,27 @@ final class DateRangeTests: XCTestCase {
             XCTAssertTrue(range.0 < range.1, "上界必须严格大于下界（半开区间）")
         }
     }
+
+    // MARK: - R4 P7：Unicode 数字 / 非法年份不崩溃（V40）
+
+    /// 全角「２０２６」：isNumber 为 true 但 Int() 只认 ASCII → nil（原 Int(y)! 崩溃点）
+    func test_fullwidthDigitsReturnNil() {
+        XCTAssertNil(DateRange.monthRange("２０２６", "1"))
+    }
+
+    /// 阿拉伯-印度数字「٢٠٢٦」：同理 nil
+    func test_arabicIndicDigitsReturnNil() {
+        XCTAssertNil(DateRange.monthRange("٢٠٢٦", "1"))
+    }
+
+    /// 混入字母后缀 "202a"：isNumber 过滤 → nil
+    func test_alphaSuffixReturnsNil() {
+        XCTAssertNil(DateRange.monthRange("202a", "1"))
+    }
+
+    /// "0000"：年份有效域 1...9999 → nil
+    func test_yearZeroReturnsNil() {
+        XCTAssertNil(DateRange.monthRange("0000", "1"))
+        XCTAssertNil(DateRange.monthRange("0099", "1"))
+    }
 }

@@ -15,16 +15,16 @@ import XCTest
 
 final class SettingsTests: XCTestCase {
 
-    // MARK: - 键表结构（72 = String 30 + Int 24 + Boolean 18）
+    // MARK: - 键表结构（R4 S1：73 = String 30 + Int 24 + Boolean 19）
 
-    /// KS 30 / KI 24 / KB 18，合计 72，互不重叠且并集即 72
+    /// KS 30 / KI 24 / KB 19，合计 73，互不重叠且并集即 73
     func test_keyTableCounts() {
         XCTAssertEqual(AppSettings.KS.count, 30)
         XCTAssertEqual(AppSettings.KI.count, 24)
-        XCTAssertEqual(AppSettings.KB.count, 18)
-        XCTAssertEqual(AppSettings.KS.count + AppSettings.KI.count + AppSettings.KB.count, 72)
+        XCTAssertEqual(AppSettings.KB.count, 19)
+        XCTAssertEqual(AppSettings.KS.count + AppSettings.KI.count + AppSettings.KB.count, 73)
         let all = Set(AppSettings.KS).union(AppSettings.KI).union(AppSettings.KB)
-        XCTAssertEqual(all.count, 72)
+        XCTAssertEqual(all.count, 73)
     }
 
     /// 键名逐字抽查（含易错的下划线/拼写）
@@ -44,6 +44,14 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(AppSettings.KB.contains("shadow_actor_links"))
         XCTAssertTrue(AppSettings.KB.contains("test_img_mode"))
         XCTAssertTrue(AppSettings.KB.contains("jdb_sort_asc"))
+        XCTAssertTrue(AppSettings.KB.contains("allow_insecure_http"), "R4 S1 新键")
+    }
+
+    /// R4 S1：明文 HTTP 镜像开关默认必须 false（绝不偷偷默认 true）
+    func test_allowInsecureHTTPDefaultsFalse() {
+        XCTAssertEqual(AppSettings().allowInsecureHTTP, false, "S1：默认禁止明文 HTTP 镜像")
+        let d = AppSettings().toStorage()
+        XCTAssertEqual(d["allow_insecure_http"] as? Bool, false, "落盘视图默认 false")
     }
 
     // MARK: - 默认值逐字抽查（B 表，≥10 项）

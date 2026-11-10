@@ -43,9 +43,15 @@ final class KeychainLaunchTests: XCTestCase {
     // MARK: 读失败可观测
 
     @MainActor
-    func testReadFaultSurfacesInsteadOfSilentEmpty() {
+    func testReadFaultSurfacesInsteadOfSilentEmpty() async {
         KeychainStore.fault.read = true
         let store = SettingsStore(defaults: freshDefaults("readfault"))
+        // R4 P6：Keychain 读取已移后台 —— 等 loaded（毫秒级；5s 上限防挂）
+        let deadline = Date().addingTimeInterval(5)
+        while !store.loaded && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(store.loaded, "后台 Keychain 读取必须在 5s 内完成")
         XCTAssertTrue(store.secretReadFailed, "读失败必须显式置位")
         XCTAssertFalse(store.secretReadMessage.isEmpty, "必须有可读文案")
         // 口令不可用 → setupRequired（不是「网络不可达」）

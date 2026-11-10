@@ -21,28 +21,42 @@ import JDLVCore
 
 protocol FavsStore {
     /// 对齐 LocalStore.favList：行键 kind/id/title/ts；ts DESC（新→旧）
-    func favList(kind: String) async -> [Row]
+    /// R4 P6/P9：async throws —— SQLite 在 LocalStoreActor 后台执行；错误不吞（与空收藏区分）
+    func favList(kind: String) async throws -> [Row]
     /// 取消收藏（R3 问题 11 §4.12 swipeActions；demo no-op）
-    func favRemove(kind: String, id: String, title: String) async
+    func favRemove(kind: String, id: String, title: String) async throws
 }
 
 extension FavsStore {
-    func favRemove(kind: String, id: String, title: String) async {}
+    func favRemove(kind: String, id: String, title: String) async throws {}
 }
 
-/// 生产：Core LocalStore（jdlv_local.db；BrowseMarks 单例宿主复用）
-struct LocalFavsStore: FavsStore {
-    let store: LocalStore?
+/// 本地存储不可用（打开失败/目录不可写；P9 显式错误态）
+struct StoreUnavailable: Error, CustomStringConvertible {
+    var description: String { "本地存储不可用" }
+}
 
-    func favList(kind: String) async -> [Row] {
-        guard let store else { return [] }
-        return (try? store.favList(kind: kind)) ?? []
+/// 生产：Core LocalStore（jdlv_local.db；LocalStoreActor 串行后台执行）
+/// R4 P6：不在 init 打开 SQLite —— 首次使用经 BrowseMarks.open() 后台打开；
+/// 打开失败 → 抛 StoreUnavailable（P9：绝不静默当空收藏）。
+final class LocalFavsStore: FavsStore {
+    private var impl: LocalStoreActor?
+
+    private func openIfNeeded() async {
+        if impl == nil { impl = await BrowseMarks.open() }
     }
 
-    func favRemove(kind: String, id: String, title: String) async {
-        guard let store else { return }
+    func favList(kind: String) async throws -> [Row] {
+        await openIfNeeded()
+        guard let impl else { throw StoreUnavailable() }
+        return try await impl.favList(kind: kind)
+    }
+
+    func favRemove(kind: String, id: String, title: String) async throws {
+        await openIfNeeded()
+        guard let impl else { throw StoreUnavailable() }
         // 已收藏态 toggle → 取消收藏
-        _ = try? store.favToggle(kind: kind, itemId: id, title: title)
+        _ = try await impl.favToggle(kind: kind, itemId: id, title: title)
     }
 }
 
@@ -94,17 +108,25 @@ enum FavsCopy {
     }
     /// 分享 subject
     static let exportSubject = "JDLV 收藏导出"
+
+    /// R4 P9：本地存储读取失败文案（与空收藏区分）
+    static let loadFailed = "收藏读取失败：本地存储不可用（下拉重试）"
 }
 
 // MARK: - 时间格式化（yyyy-MM-dd HH:mm 本地时区；ts 双口径归一）
 
 enum FavsFmt {
+    /// R4 P10：formatter 复用（每行 new 在千行导出时 CPU 抖动；DateFormatter iOS7+ 线程安全）
+    private static let df: DateFormatter = {
+        let d = DateFormatter()
+        d.dateFormat = "yyyy-MM-dd HH:mm"
+        d.locale = Locale(identifier: "en_US_POSIX")
+        return d
+    }()
+
     /// yyyy-MM-dd HH:mm（本地时区）；nil/空 → nil
     static func fullDateTime(fromMs ms: Int64?) -> String? {
         guard let ms, ms > 0 else { return nil }
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd HH:mm"
-        df.locale = Locale(identifier: "en_US_POSIX")
         return df.string(from: Date(timeIntervalSince1970: Double(ms) / 1000))
     }
 
@@ -128,9 +150,9 @@ final class FavsVM: ObservableObject {
         self.store = store
             ?? (DemoDataSource.enabled()
                 ? DemoFavsStore()
-                : LocalFavsStore(store: BrowseMarks.shared))
+                : LocalFavsStore())
         #else
-        self.store = store ?? LocalFavsStore(store: BrowseMarks.shared)
+        self.store = store ?? LocalFavsStore()
         #endif
     }
 
@@ -139,6 +161,8 @@ final class FavsVM: ObservableObject {
     // MARK: 状态（A.5 逐字段）
 
     @Published var loading = false
+    /// R4 P9：读取失败显式态（nil = 正常；非 nil = 本地存储错误，与空收藏区分）
+    @Published var error: String? = nil
     /// 三分类（ts DESC，最新在前）
     @Published var movie: [Row] = []
     @Published var sht: [Row] = []
@@ -161,17 +185,28 @@ final class FavsVM: ObservableObject {
 
     func reload() async {
         loading = true
-        // Android A.5：三类按 movie → sht → actor 顺序拉取（seen 顺序确定）
-        movie = await store.favList(kind: "movie")
-        sht = await store.favList(kind: "sht")
-        actor = await store.favList(kind: "actor")
-        loading = false
+        defer { loading = false }
+        do {
+            // Android A.5：三类按 movie → sht → actor 顺序拉取（seen 顺序确定）
+            movie = try await store.favList(kind: "movie")
+            sht = try await store.favList(kind: "sht")
+            actor = try await store.favList(kind: "actor")
+            error = nil
+        } catch {
+            // P9：失败保留上次数据并显式报错（绝不静默显示为空收藏）
+            error = FavsCopy.loadFailed
+        }
     }
 
     // MARK: remove（R3 §4.12 swipeActions 删除 → 取消收藏 + reload）
 
     func remove(_ r: Row) async {
-        await store.favRemove(kind: r.s("kind"), id: r.s("id"), title: r.s("title"))
+        do {
+            try await store.favRemove(kind: r.s("kind"), id: r.s("id"), title: r.s("title"))
+        } catch {
+            // P9：删除失败显式呈现（reload 会反映真实存储状态）
+            self.error = FavsCopy.loadFailed
+        }
         await reload()
     }
 

@@ -36,30 +36,29 @@ protocol FavStoreProtocol {
     func historyMark(kind: String, itemId: String, title: String) async
 }
 
-/// 生产：Core LocalStore（jdlv_local.db；单例宿主复用 BrowseMarks，A-1 同口径）
+/// 生产：Core LocalStore（jdlv_local.db；A-1 同口径）
+/// R4 P6：不再持 LocalStore / 不在 init 打开 SQLite —— 每次操作经 BrowseMarks.open()
+/// 后台打开（once Task 复用），SQL 全部走 LocalStoreActor 串行后台，绝不 MainActor。
 struct LocalFavStore: FavStoreProtocol {
-    let store: LocalStore?
-
-    init(store: LocalStore? = BrowseMarks.shared) { self.store = store }
 
     func favIs(kind: String, itemId: String) async -> Bool {
-        guard let store else { return false }
-        return (try? store.favIs(kind: kind, itemId: itemId)) ?? false
+        guard let a = await BrowseMarks.open() else { return false }
+        return (try? await a.favIs(kind: kind, itemId: itemId)) ?? false
     }
 
     func favToggle(kind: String, itemId: String, title: String) async -> Bool {
-        guard let store else { return false }
-        return (try? store.favToggle(kind: kind, itemId: itemId, title: title)) ?? false
+        guard let a = await BrowseMarks.open() else { return false }
+        return (try? await a.favToggle(kind: kind, itemId: itemId, title: title)) ?? false
     }
 
     func historyIs(kind: String, itemId: String) async -> Bool {
-        guard let store else { return false }
-        return (try? store.historyIs(kind: kind, itemId: itemId)) ?? false
+        guard let a = await BrowseMarks.open() else { return false }
+        return (try? await a.historyIs(kind: kind, itemId: itemId)) ?? false
     }
 
     func historyMark(kind: String, itemId: String, title: String) async {
-        guard let store else { return }
-        try? store.historyMark(kind: kind, itemId: itemId, title: title)
+        guard let a = await BrowseMarks.open() else { return }
+        _ = try? await a.historyMark(kind: kind, itemId: itemId, title: title)
     }
 }
 

@@ -107,6 +107,7 @@ public struct AppSettings: Equatable {
     public var proxyCdnJdb: Bool = false         // S11-P7：未落盘沿用旧 proxy_cdn
     public var proxyCdnSht: Bool = false         // S11-P7：同上
     public var testImgMode: Bool = false         // S11-P8：测试图片模式（仅 debug 暴露）
+    public var allowInsecureHTTP: Bool = false   // R4 S1：明文 HTTP 镜像显式开关（默认 false；开启仅在设置页有红色警告）
     public var shadowActorIndex: Bool = true     // S13-P3：女优索引开关
     public var shadowActorLinks: Bool = true     // S13-P3：出演关系开关
     public var shadowTagIndex: Bool = true       // S14-P7：影片标签索引
@@ -135,11 +136,12 @@ public extension AppSettings {
         "cover_half", "lookup_scope", "search_mode", "taxonomy_ts", "shadow_mode",
         "home_per",
     ]
-    /// Boolean 键（18）
+    /// Boolean 键（19）
     static let KB: [String] = [
         "big", "sht_big", "sht_has_magnet", "rd_alt", "proxy_db", "proxy_cdn",
         "lock_enabled", "db_ssl", "new_pipeline", "shadow_enabled", "shadow_prefer",
         "jdb_sort_asc", "proxy_cdn_jdb", "proxy_cdn_sht", "test_img_mode",
+        "allow_insecure_http",
         "shadow_actor_index", "shadow_actor_links", "shadow_tag_index",
     ]
 
@@ -317,6 +319,7 @@ public extension AppSettings {
         s.shadowPrefer = readB(d, "shadow_prefer", s.shadowPrefer)
         s.jdbSortAsc = readB(d, "jdb_sort_asc", s.jdbSortAsc)
         s.testImgMode = readB(d, "test_img_mode", s.testImgMode)
+        s.allowInsecureHTTP = readB(d, "allow_insecure_http", s.allowInsecureHTTP)
         s.shadowActorIndex = readB(d, "shadow_actor_index", s.shadowActorIndex)
         s.shadowActorLinks = readB(d, "shadow_actor_links", s.shadowActorLinks)
         s.shadowTagIndex = readB(d, "shadow_tag_index", s.shadowTagIndex)
@@ -405,6 +408,7 @@ public extension AppSettings {
         d["proxy_cdn_jdb"] = proxyCdnJdb
         d["proxy_cdn_sht"] = proxyCdnSht
         d["test_img_mode"] = testImgMode
+        d["allow_insecure_http"] = allowInsecureHTTP
         d["shadow_actor_index"] = shadowActorIndex
         d["shadow_actor_links"] = shadowActorLinks
         d["shadow_tag_index"] = shadowTagIndex

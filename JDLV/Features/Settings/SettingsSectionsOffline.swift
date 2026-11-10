@@ -20,6 +20,7 @@ import JDLVCore
 struct OfflineIndexCard: View {
 
 
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
 
@@ -66,9 +67,8 @@ struct OfflineIndexCard: View {
             recalcUsage()
         }
         .onReceive(tickTimer) { _ in
-            // R4 P4：本卡未可见（onAppear 未触发过）不触达 hub —— 打开设置页即建 IdxDb 的
-            // 隐性路径消除；可见性判定 = LazyVStack 下卡片 onAppear（滚动进视口才发）
-            guard loadedOnce else { return }
+            // R4 P4/P5：本卡未可见不触达 hub（不建 IdxDb）；非前台零状态写入
+            guard loadedOnce, scenePhase == .active else { return }
             st = SettingsIndexHub.shared.sync?.state ?? SyncState()
         }
         // 重建二次确认 AlertDialog（§11.7 逐字）

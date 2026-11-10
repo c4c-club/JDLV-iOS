@@ -20,9 +20,9 @@ final class ImageDecoderTests: XCTestCase {
     }
 
     func testDownsampleCapsMaxPixel() throws {
-        for (w, h) in [(1, 1), (100, 100), (1000, 1000)] {
+        for (w, h) in [(1, 1), (100, 100), (1000, 1000), (1200, 1800)] {
             let png = try makePNG(width: w, height: h)
-            for maxPixel in [16, 64, 256] {
+            for maxPixel in [16, 64, 256, 540] {
                 let img = try XCTUnwrap(ImageDecoder.downsample(png, maxPixel: maxPixel),
                                         "\(w)x\(h) @ maxPixel=\(maxPixel) 应解码成功")
                 let cg = try XCTUnwrap(img.cgImage)
@@ -30,6 +30,18 @@ final class ImageDecoderTests: XCTestCase {
                                          "\(w)x\(h) @ maxPixel=\(maxPixel) 最长边必须 ≤ \(maxPixel)")
             }
         }
+    }
+
+    /// R4 4.5 §17.3.4：同一 data 两次解码结果尺寸一致（确定性；不存在二次膨胀）
+    func testDownsampleDeterministicForSameData() throws {
+        let png = try makePNG(width: 1200, height: 1800)
+        let a = try XCTUnwrap(ImageDecoder.downsample(png, maxPixel: 540))
+        let b = try XCTUnwrap(ImageDecoder.downsample(png, maxPixel: 540))
+        let cga = try XCTUnwrap(a.cgImage)
+        let cgb = try XCTUnwrap(b.cgImage)
+        XCTAssertEqual(cga.width, cgb.width, "同 data 两次解码宽度一致")
+        XCTAssertEqual(cga.height, cgb.height, "同 data 两次解码高度一致")
+        XCTAssertLessThanOrEqual(max(cga.width, cga.height), 540)
     }
 
     func testDownsampleNoLimitKeepsSize() throws {

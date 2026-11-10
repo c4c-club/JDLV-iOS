@@ -109,7 +109,9 @@ final class ProductionSmokeUITests: XCTestCase {
             diag.name = "diag-smoke-conn-hang"
             diag.lifetime = .keepAlways
             add(diag)
-            throw XCTSkip("settings testConnection result not shown in 90s (CI env); real-device check pending")
+            // R4 P12（V45）：真实连接挂起是功能失败，不得 skip 掩盖
+            XCTFail("settings testConnection result not shown in 90s（真实连接挂起 = 功能失败；附件 diag-smoke-conn-hang）")
+            return
         }
         let label = result.label
         XCTAssertTrue(label.contains("✓"), "测试连接必须真实成功: \(label)")

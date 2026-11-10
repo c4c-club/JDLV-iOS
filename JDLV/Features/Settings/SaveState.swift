@@ -69,10 +69,15 @@ struct SaveStatusView: View {
         .animation(.easeInOut(duration: 0.2), value: state)
     }
 
-    private static func time(_ d: Date) -> String {
+    /// R4 P10：formatter 复用（DateFormatter iOS7+ 线程安全）
+    private static let fmt: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
-        return f.string(from: d)
+        return f
+    }()
+
+    private static func time(_ d: Date) -> String {
+        fmt.string(from: d)
     }
 }
 

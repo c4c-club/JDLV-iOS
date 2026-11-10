@@ -107,7 +107,8 @@ final class SettingsStore: ObservableObject {
 
     // MARK: - 存储
 
-    private let defaults: UserDefaults
+    let defaults: UserDefaults
+    /// R4 P13：搜索历史/测试隔离需要读取 suite（只读暴露；写入仍走 Store 内部）
 
     private enum SecretKey {
         static let localPass = "settings:local_pass"
@@ -163,7 +164,7 @@ final class SettingsStore: ObservableObject {
         #endif
     }
 
-    // MARK: - init（同步 load）
+    // MARK: - init（R4 P6：UserDefaults 同步 + Keychain 三键后台读）
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -174,22 +175,38 @@ final class SettingsStore: ObservableObject {
         } else {
             s = AppSettings()
         }
-        // 口令走 Keychain（missing → 默认空串；读取失败 → 显式标记，绝不静默当空口令）
-        var readFailed = false
-        var readMsg = ""
-        s.localPass = Self.loadSecretStatic(SecretKey.localPass, &readFailed, &readMsg)
-        s.remotePass = Self.loadSecretStatic(SecretKey.remotePass, &readFailed, &readMsg)
-        s.lockSecret = Self.loadSecretStatic(SecretKey.lockSecret, &readFailed, &readMsg)
-        persistedLocalPass = s.localPass
-        persistedRemotePass = s.remotePass
-        persistedLockSecret = s.lockSecret
-
         self.settings = s
-        self.secretReadFailed = readFailed
-        self.secretReadMessage = readMsg
-        self.loaded = true
-        self.healResidualLockIfNeeded()
-        self.observeProtectedDataAvailable()
+        // R4 P6：Keychain 三键读取移到后台（任务 06 §17.5.5；loaded=false 期间 AppGate 转圈，
+        // AppRoot.swift 已有该分支）。读取完成后回主 actor 写内存态 + 刷新启动快照
+        // （AppBootstrap.box / 隧道 reconcile —— 否则远端连接会拿到空口令）。
+        // 启动 Gate 期间主线程 0 次 Keychain 读取（硬规则 14：≤3 次轻量读取 → 本实现 0 次）。
+        self.loaded = false
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var readFailed = false
+            var readMsg = ""
+            let lp = Self.loadSecretStatic(SecretKey.localPass, &readFailed, &readMsg)
+            let rp = Self.loadSecretStatic(SecretKey.remotePass, &readFailed, &readMsg)
+            let ls = Self.loadSecretStatic(SecretKey.lockSecret, &readFailed, &readMsg)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                var updated = self.settings
+                updated.localPass = lp
+                updated.remotePass = rp
+                updated.lockSecret = ls
+                self.persistedLocalPass = lp
+                self.persistedRemotePass = rp
+                self.persistedLockSecret = ls
+                self.settings = updated
+                self.secretReadFailed = readFailed
+                self.secretReadMessage = readMsg
+                self.loaded = true
+                self.healResidualLockIfNeeded()
+                self.observeProtectedDataAvailable()
+                // 启动快照补齐（等价原同步路径 init 时的 box.update；reconcile 内部按键比较，幂等）
+                AppBootstrap.box.update(updated)
+                ProxyTunnelManager.shared.reconcile(updated)
+            }
+        }
     }
 
     /// 单键读取（A7/R7：失败 → 空串 + 失败标记，区分 itemNotFound；init 期静态版）

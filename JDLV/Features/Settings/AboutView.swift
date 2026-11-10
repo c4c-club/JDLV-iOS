@@ -116,14 +116,21 @@ struct AboutView: View {
             "版本: \(versionText) (\(buildText))",
             "设备: \(UIDevice.current.model) · \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
         ])
+        // R4 P14：清理上一次导出的残留（同一 tmp 路径；不在 defer 里删当前文件，
+        // 分享面板生命周期内保留，系统 tmp 清理兜底回收）
+        try? FileManager.default.removeItem(at: Self.tmpLogURL)
         let url = Self.writeTempLog(lines.joined(separator: "\n"))
         diagLogURL = url
         if url != nil { showShareLog = true }
     }
 
+    /// 诊断临时文件固定路径（R4 P14：可寻址清理，不留历史残留）
+    private static var tmpLogURL: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("jdlv-diagnostics.txt")
+    }
+
     private static func writeTempLog(_ text: String) -> URL? {
-        let dir = FileManager.default.temporaryDirectory
-        let f = dir.appendingPathComponent("jdlv-diagnostics.txt")
+        let f = tmpLogURL
         do {
             try text.data(using: .utf8)?.write(to: f)
             return f

@@ -30,10 +30,12 @@ extension EnvironmentValues {
     }
 }
 
-/// 页面侧取容器宽度：注入值 > 0 用之；否则回退水平 size class 估算（首帧）
+/// 页面侧取容器宽度：注入值 > 0 用之；否则回退水平 size class 估算（首帧兜底）。
+/// R4 P3：删除 393 硬编码 —— compact 首帧兜底改 320（最小机型；宁可窄不可溢出），
+/// 实测宽度一帧后经 PageContainerWidthKey 到位（PageScaffold/二级页自测宽）。
 func resolvedContainerWidth(_ envWidth: CGFloat, hSize: UserInterfaceSizeClass?) -> CGFloat {
     if envWidth > 0 { return envWidth }
-    return hSize == .regular ? 768 : 393
+    return hSize == .regular ? 768 : 320
 }
 
 enum GridMath {

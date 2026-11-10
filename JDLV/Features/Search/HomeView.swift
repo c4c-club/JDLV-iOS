@@ -23,12 +23,17 @@ struct HomeView: View {
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.containerWidth) private var envWidth
+    // R4 P3：实测容器宽度（PageScaffold 发 preference，首帧后即真实值；320/402pt 不再走 393 兜底）
+    @State private var measuredWidth: CGFloat = 0
 
     /// 容器宽（PageScaffold 注入；首帧回退 size class 估算）
-    private var pageWidth: CGFloat { resolvedContainerWidth(envWidth, hSize: hSize) }
+    private var pageWidth: CGFloat {
+        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
+    }
 
     @StateObject private var vm: SearchVM
-    @State private var history: [String] = SearchHistory.load()
+    // R4 P13：历史随 store.defaults suite 隔离（onAppear 首载，不用 .standard）
+    @State private var history: [String] = []
     @State private var skipNextDebounce = false
 
     init() {
@@ -78,11 +83,14 @@ struct HomeView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             vm.bind(to: store, persistMode: persistMode)
+            // R4 P13：suite 隔离的历史首载
+            history = SearchHistory.load(defaults: store.defaults)
             // UI 测试注入：-JDLV_TEST_SEARCH <q> → 启动即搜（B2 修复；DEBUG+demo 恒 nil）
             if let q = LaunchMode.testSearchQuery, vm.items == nil, vm.query.isEmpty {
                 vm.query = q
                 vm.queryEdited()
-                SearchHistory.add(q)
+                SearchHistory.add(q, defaults: store.defaults)
+                history = SearchHistory.load(defaults: store.defaults)
                 Task { await vm.search() }
             }
         }
@@ -136,6 +144,7 @@ struct HomeView: View {
             }
         }
         .accessibilityIdentifier("home_page")
+        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
     }
 
     // MARK: 顶部块（随列表滚动，C2）
@@ -418,8 +427,8 @@ struct HomeView: View {
             vm.query = q
         }
         vm.resetDebounce()
-        SearchHistory.add(q)
-        history = SearchHistory.load()
+        SearchHistory.add(q, defaults: store.defaults)
+        history = SearchHistory.load(defaults: store.defaults)
         Task { await vm.search() }
     }
 

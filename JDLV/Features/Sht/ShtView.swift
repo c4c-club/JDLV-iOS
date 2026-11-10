@@ -45,6 +45,8 @@ private struct ShtContent: View {
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.containerWidth) private var envWidth
+    // R4 P3：实测容器宽度（PageScaffold 发 preference；320/402pt 不再走 393 兜底）
+    @State private var measuredWidth: CGFloat = 0
 
     @State private var showFilter = false
     @State private var exportShare: ShtExportResult? = nil
@@ -53,7 +55,9 @@ private struct ShtContent: View {
 
     private var items: [Row] { vm.items ?? [] }
     private var itemsEmpty: Bool { items.isEmpty }
-    private var pageWidth: CGFloat { resolvedContainerWidth(envWidth, hSize: hSize) }
+    private var pageWidth: CGFloat {
+        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
+    }
 
     /// 列数：viewMode 1(大图) → 1 列；0(小图) → 手机 2 列、最短边 ≥600（或 regular）3 列
     private var gridColumns: Int {
@@ -130,6 +134,7 @@ private struct ShtContent: View {
             vm.refreshChannel.consume()
         }
         .accessibilityIdentifier("sht_page")
+        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
     }
 
     // MARK: toolbar（排序/视图 Menu + 筛选 badge + 导出）

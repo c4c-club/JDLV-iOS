@@ -252,9 +252,31 @@ public enum Q {
         return try localFallback(mark: false)
     }
 
-    /// Android localFallback 的 IdxDb 三段读取对位（P5 前恒空 → 空库语义）。
+    // MARK: - R4 P8：本地首页兜底数据源（App 壳层注入；Core 不反向依赖 App）
+
+    private static let localIdxLock = NSLock()
+    private static var _localIdxProvider: (() -> IdxDb?)?
+
+    /// 注入本地索引库提供器（AppBootstrap.injectRuntime 里接 SettingsIndexHub）。
+    /// 返回 nil = 无索引 → 调用方收到「本地索引为空」明确错误（绝不假装有缓存）。
+    public static func setLocalIdxProvider(_ p: (() -> IdxDb?)?) {
+        localIdxLock.lock()
+        _localIdxProvider = p
+        localIdxLock.unlock()
+    }
+
+    private static func localIdx() -> IdxDb? {
+        localIdxLock.lock()
+        defer { localIdxLock.unlock() }
+        return _localIdxProvider?()
+    }
+
+    /// Android localFallback 的 IdxDb 三段读取对位（R4 P8 落地，V41）。
+    /// key ∈ release_date / want / score（idx_movies 列；本地无排名表 → rank 走 score 近似）。
+    /// 无 provider / 读失败 → 返回 []（localFallback 汇总后抛「本地索引为空」明确错误）。
     private static func localHomeSeg(_ key: String, _ eff: Int) -> [Row] {
-        []   // TODO(P5): IdxDb.moviesBy(key, false, eff, 0)
+        guard let idx = localIdx() else { return [] }
+        return (try? idx.moviesBy(sort: key, asc: false, limit: eff, offset: 0)) ?? []
     }
 
     /// homeRemote〔私有〕：三段并行；每段异常被收集不吞（★ S14-P3 B13）。

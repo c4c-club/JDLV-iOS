@@ -51,12 +51,16 @@ final class ImagePipeline: ImageLoading {
 
     // MARK: - 缓存
 
-    /// 内存 NSCache（R4 P4：128MB; cost = 位图字节 w*h*4；didReceiveMemoryWarning 全清）
+    /// 内存 NSCache（R4 P4：128MB / countLimit 200; cost = 位图字节 w*h*4；内存告警全清）
     private let memCache: NSCache<NSString, UIImage> = {
         let c = NSCache<NSString, UIImage>()
         c.totalCostLimit = 128 * 1024 * 1024
+        c.countLimit = 200
         return c
     }()
+
+    /// 内存告警 observer token（deinit 移除；singleton 常驻，防御性清理）
+    private var memWarnToken: NSObjectProtocol?
 
     private let diskLock = NSLock()
     private var lastCleanupAt: Int64 = 0
@@ -98,11 +102,17 @@ final class ImagePipeline: ImageLoading {
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         cleanupDiskIfNeeded()
         // R4 P4：系统内存告警 → 全清内存缓存（§6.3）
-        NotificationCenter.default.addObserver(
+        memWarnToken = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil, queue: .main) { [weak self] _ in
                 self?.memCache.removeAllObjects()
             }
+    }
+
+    deinit {
+        if let t = memWarnToken {
+            NotificationCenter.default.removeObserver(t)
+        }
     }
 
     // MARK: - 入口（协议方法）

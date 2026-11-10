@@ -20,6 +20,8 @@ struct ActorDetailView: View {
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.containerWidth) private var envWidth
+    // R4 P3：二级页环境里没有 PageScaffold 注入 → 自测宽（background GeometryReader 发 preference）
+    @State private var measuredWidth: CGFloat = 0
     let aid: String
 
     @StateObject private var vm: ActorDetailVM
@@ -33,7 +35,9 @@ struct ActorDetailView: View {
     // MARK: 派生
 
     private var name: String { vm.actor?.s("name") ?? "" }
-    private var pageWidth: CGFloat { resolvedContainerWidth(envWidth, hSize: hSize) }
+    private var pageWidth: CGFloat {
+        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
+    }
 
     var body: some View {
         Group {
@@ -48,6 +52,12 @@ struct ActorDetailView: View {
             }
         }
         .background(theme.bg0.ignoresSafeArea())
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: PageContainerWidthKey.self, value: geo.size.width)
+            }
+        )
+        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
         .navigationTitle(name.isEmpty ? ActorDetailCopy.navTitleFallback : name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -155,7 +165,10 @@ struct ActorDetailView: View {
                 AppText(ActorDetailCopy.emptyMovies, lvl: .meta)
                     .padding(.top, 12)
             } else {
-                let cellW = GridMath.cellWidth(pageWidth: pageWidth - 24, columns: 2)
+                // R4 P4：content 已有 12pt 水平 padding → 内宽 = pageWidth - 24，
+                // GridMath margin 显式传 0，杜绝「内层 padding + 默认 16 margin」双重扣
+                let innerW = pageWidth - 24
+                let cellW = GridMath.cellWidth(pageWidth: innerW, columns: 2, margin: 0)
                 CardGrid(items: vm.items, columns: 2,
                          cellWidth: cellW,
                          cellHeight: CardLayout.movieSmallH(cellW: cellW)) { mv in

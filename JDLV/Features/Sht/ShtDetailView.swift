@@ -64,7 +64,7 @@ struct ShtDetailView: View {
                 .accessibilityIdentifier("sht_reader_aa")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                FavButton(fav: vm.fav) { vm.toggleFav(tid) }
+                FavButton(fav: vm.fav) { Task { await vm.toggleFav(tid) } }
             }
         }
         .sheet(isPresented: $showReaderSheet) {

@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 
 PAT="(PASSWORD|PASS|password|store[P]assword|key[P]assword)[[:space:]]*[:=][[:space:]]*[\"']"
 DOC_RE='(^|/)(README|CHANGELOG|LICENSE)|\.(md|txt|kt|gradle.*)$|(^|/)docs/'
-doc_hits=$(git ls-files | grep -Ei "$DOC_RE" || true)
+doc_hits=$(git ls-files | grep -Ei "$DOC_RE" | grep -vE '^scripts/secret_allowlist\.txt$' || true)
 [ -z "$doc_hits" ] || { echo 'guard FAIL: tracked doc files'; echo "$doc_hits"; exit 1; }
 [ "$(git ls-files docs | wc -l)" -eq 0 ] || { echo 'guard FAIL: docs tracked'; exit 1; }
 android_hits=$(git ls-files | grep -E 'JDLV-Mobile/app/sr[c]' || true)

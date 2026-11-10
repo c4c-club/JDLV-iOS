@@ -21,6 +21,7 @@ struct JdbImageCard: View {
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var customMirror = ""
     @State private var loaded = false
@@ -62,6 +63,17 @@ struct JdbImageCard: View {
 
             SettingsNote(text: SettingsCopy.jdbFixedNote, topPad: 2)
 
+            // R4 S1：明文 HTTP 镜像显式开关（默认关；开启即 MITM 风险自担）
+            AppSwitchRow(label: SettingsCopy.allowInsecureHTTPLabel,
+                         checked: s.allowInsecureHTTP,
+                         hint: SettingsCopy.allowInsecureHTTPHint) { v in
+                editNow { $0.allowInsecureHTTP = v }
+            }
+            if s.allowInsecureHTTP {
+                SettingsNote(text: SettingsCopy.allowInsecureHTTPWarning,
+                             topPad: 2, color: theme.red)
+            }
+
             SettingsActionButton(title: SettingsCopy.selfTestButton,
                                  busyTitle: SettingsCopy.selfTestBusy,
                                  busy: selfBusy) {
@@ -90,6 +102,8 @@ struct JdbImageCard: View {
             customMirror = (chipValue == "custom") ? s.jdbImgHost : ""
         }
         .onReceive(diagTimer) { _ in
+            // R4 P5：非前台不刷新（timer 仍在但零状态写入 → 零重渲染）
+            guard scenePhase == .active else { return }
             diagText = ImgBreaker.shared.diagnostic()
         }
     }

@@ -81,6 +81,9 @@ struct PageScaffold<Content: View>: View {
                 }
             }
             .environment(\.containerWidth, geo.size.width)
+            // R4 P3：真实容器宽度向上发 preference —— 页面在 PageScaffold 实例上
+            // .onPreferenceChange 接住后写入 @State（body 内读到的不再是 393 兜底）
+            .preference(key: PageContainerWidthKey.self, value: geo.size.width)
         }
     }
 
@@ -126,6 +129,13 @@ enum ListScaffoldConst {
 
 /// 滚动 offset（过顶为正）
 struct PageScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// 真实容器宽度（R4 P3：PageScaffold 内 GeometryReader 发出，页面上收；
+/// 替代 393 硬编码兜底 —— 320/375/402/430pt 的 cell 宽一律以实测为准）
+struct PageContainerWidthKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

@@ -27,6 +27,7 @@ public struct CdnSettings: Sendable {
     public var imageCacheDays: Int       // 按文件时间过期; 0=不过期 (默认 30)
     public var coverHalf: Int            // 0=右半 1=左半 2=整张 (默认 0)
     public var testImgMode: Bool         // 测试图片模式 (默认 false)
+    public var allowInsecureHTTP: Bool   // R4 S1：明文 HTTP 镜像显式开关 (默认 false)
 
     public init(
         jdbImgHost: String = "app",
@@ -39,7 +40,8 @@ public struct CdnSettings: Sendable {
         imageCacheMb: Int = 128,
         imageCacheDays: Int = 30,
         coverHalf: Int = 0,
-        testImgMode: Bool = false
+        testImgMode: Bool = false,
+        allowInsecureHTTP: Bool = false
     ) {
         self.jdbImgHost = jdbImgHost
         self.shtMirror = shtMirror
@@ -52,6 +54,7 @@ public struct CdnSettings: Sendable {
         self.imageCacheDays = imageCacheDays
         self.coverHalf = coverHalf
         self.testImgMode = testImgMode
+        self.allowInsecureHTTP = allowInsecureHTTP
     }
 }
 
@@ -452,10 +455,16 @@ public enum CdnRewrite {
     }
 
     /// 归一化: 无协议自动补 https:// (用户不必手输); trim + 去尾随 '/'
+    /// R4 S1：默认补 https；用户输入的 http:// 仅在显式开启 allowInsecureHTTP 时保留，
+    /// 否则强制改写为 https（明文镜像不再静默入库）。
     public static func normalizeUrl(_ u: String) -> String {
         let t = trimEndSlash(u.trimmingCharacters(in: .whitespacesAndNewlines))
         if t.isEmpty { return "" }
-        if t.hasPrefix("http://") || t.hasPrefix("https://") { return t }
+        if t.hasPrefix("https://") { return t }
+        if t.hasPrefix("http://") {
+            if settings().allowInsecureHTTP { return t }
+            return "https://" + t.dropFirst("http://".count)
+        }
         return "https://\(t)"
     }
 
