@@ -190,6 +190,10 @@ enum ActorDetailCopy {
     }
     static let done = "完成"
 
+    // R4 P6：长别名展开（DisclosureGroup）
+    static let moreInfo = "更多资料"
+    static let lessInfo = "收起"
+
     // 收藏 Toast（B7）
     static let toastFavOn = "已收藏"
     static let toastFavOff = "已取消收藏"

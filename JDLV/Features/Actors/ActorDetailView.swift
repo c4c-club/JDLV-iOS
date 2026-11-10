@@ -3,16 +3,16 @@ import JDLVCore
 
 //
 //  ActorDetailView.swift —— 女优详情页（09 B 节 ActorDetailScreen 对位
-//  + 13 §4.5 设计系统 v2）。
+//  + 13 §4.5 设计系统 v2 + R4 P6 版式重构）。
 //
 //  - 状态四态（B2）：loading && actor==null → LoadingBox；error && actor==null → ErrorBox；
 //    actor==null → EmptyBox「未找到该女优」；否则内容。
-//  - 头部信息区（B3）：头像 96×96（AspectImage 1:1 不拉伸）+ 右侧列（姓名 Bold 17 /
-//    name_zht 次级灰 / InfoRow 7 标签：别名/影片数/生日/身高/人气/均分/推特）。
-//  - 作品区（B4/B5，13 §4.5）：「出演影片 (共 N 部)」+ CardGrid 2 列 MovieCard 小图
-//    （等宽等高）+ LoadMoreFooter + PageChip overlay。
-//  - 排序 × 方向 × 标签筛选（B5）：sort/id 提示逐字；标签面板 FilterDropdown → .sheet
-//    （TAG_LIMIT=60 + 「加载更多标签（已显示 N）」全角括号 + 「完成」）。
+//  - R4 P6 版式（规划 §8 验收图）：
+//    profileCard（头像 88×88 + 姓名 2 行 + name_zht + 4 个 InfoChip + Divider +
+//    InfoCell 网格（别名整行/人气/推特；长别名 DisclosureGroup「更多资料」展开可复制））；
+//    moviesSection（标题 + Menu 合并排序/方向 + 标签按钮 + CardGrid 2 列 + LoadMoreFooter）；
+//    底部 overlay = PageChip + ScrollTopFAB 竖排（不压内容：尾部 96pt 余量）。
+//  - 标签 sheet：搜索框 + 已选计数 + LazyVGrid(adaptive 96) + 底部固定「完成」+ tagsHasMore。
 //
 
 struct ActorDetailView: View {
@@ -26,6 +26,10 @@ struct ActorDetailView: View {
 
     @StateObject private var vm: ActorDetailVM
     @State private var showTagPanel = false
+    // R4 P5/P6：回顶阈值 + 长别名展开 + 标签搜索词
+    @State private var showScrollTop = false
+    @State private var aliasExpanded = false
+    @State private var tagQuery = ""
 
     init(aid: String) {
         self.aid = aid
@@ -65,12 +69,6 @@ struct ActorDetailView: View {
                 FavButton(fav: vm.fav) { Task { await vm.toggleFav() } }
             }
         }
-        .overlay(alignment: .bottomTrailing) {
-            PageChip(loaded: vm.items.count, total: vm.total, per: ActorDetailVM.per,
-                     goPage: { p in Task { await vm.goPage(p) } })
-                .padding(.trailing, 12)
-                .padding(.bottom, 16)
-        }
         .sheet(isPresented: $showTagPanel) {
             NavigationStack { tagSheet }
                 .presentationDetents([.large])
@@ -80,78 +78,140 @@ struct ActorDetailView: View {
         .accessibilityIdentifier("secondary_page")
     }
 
-    // MARK: 正文（单 ScrollView + 单 LazyVStack）
+    // MARK: 正文（R4 P6：ScrollViewReader + profileCard + moviesSection + 底部余量 96）
 
     private var content: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                headerBlock          // B3 头部信息区
-                moviesBlock          // B4 出演影片
-                Color.clear.frame(height: 30)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-        }
-    }
-
-    // MARK: B3 头部信息区（头像 96×96 AspectImage + 右侧列）
-
-    private var headerBlock: some View {
-        HStack(alignment: .top, spacing: 12) {
-            AspectImage(url: MovieImg.actorAvatar(vm.actor?.s("avatar_url") ?? ""),
-                        ratio: 1, radius: 10)
-                .frame(width: 96, height: 96)
-            VStack(alignment: .leading, spacing: 2) {
-                AppText(name.isEmpty ? " " : name, lvl: .titleM, maxLines: 2, fontWeight: .bold)
-                let zht = vm.actor?.s("name_zht") ?? ""
-                if !zht.isEmpty {
-                    AppText(zht, lvl: .meta)   // 次级灰（Meta 默认 onSurfaceVariant）
+        ScrollViewReader { proxy in
+            ScrollView {
+                ScrollOffsetReader(space: "actor_detail_space")
+                    .id("actor_top")
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    profileCard
+                    moviesSection
+                    // 尾部余量：PageChip/FAB 不压最后一行（≥8pt 间距要求）
+                    Color.clear.frame(height: 96)
                 }
-                infoRows
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+            }
+            .coordinateSpace(name: "actor_detail_space")
+            .scrollTopOffsetWatcher(show: $showScrollTop)
+            .overlay(alignment: .bottomTrailing) {
+                // R4 P6：PageChip + 回顶 FAB 竖排（detail 无 TabBar → bottom 16）
+                VStack(alignment: .trailing, spacing: 10) {
+                    PageChip(loaded: vm.items.count, total: vm.total, per: ActorDetailVM.per,
+                             goPage: { p in Task { await vm.goPage(p) } })
+                    ScrollTopFAB(visible: showScrollTop) {
+                        withAnimation { proxy.scrollTo("actor_top", anchor: .top) }
+                    }
+                }
+                .padding(.trailing, 12)
+                .padding(.bottom, 16)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// InfoRow 7 标签（"$k: $v"；v 为空整行不显示，B3 逐字）
+    // MARK: 资料卡（R4 P6 版式：88 头像 + chips + Divider + InfoCell 网格）
+
+    private var profileCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                AspectImage(url: MovieImg.actorAvatar(vm.actor?.s("avatar_url") ?? ""),
+                            ratio: 1, radius: 10)
+                    .frame(width: 88, height: 88)
+                VStack(alignment: .leading, spacing: 6) {
+                    AppText(name.isEmpty ? " " : name, lvl: .titleM, maxLines: 2, fontWeight: .bold)
+                        .fixedSize(horizontal: false, vertical: true)
+                    let zht = vm.actor?.s("name_zht") ?? ""
+                    if !zht.isEmpty {
+                        AppText(zht, lvl: .meta)   // 次级灰（Meta 默认 onSurfaceVariant）
+                    }
+                    infoChips
+                }
+            }
+            Divider()
+            infoCells
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(theme.bg1))
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .stroke(theme.line, lineWidth: ComponentMetrics.cardStroke))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// 4 个紧凑 InfoChip（影片数/生日/身高/均分；FlowHStack 超宽自动换行）
     @ViewBuilder
-    private var infoRows: some View {
+    private var infoChips: some View {
         let a = vm.actor
-        VStack(alignment: .leading, spacing: 2) {
-            if let alias = a?.s("other_name"), !alias.isEmpty {
-                infoLine(ActorDetailCopy.infoAlias, alias)
+        FlowHStack(spacing: 6) {
+            if vm.total > 0 {
+                InfoChip(text: "\(ActorDetailCopy.infoVideos) \(vm.total)")
             }
-            let total = vm.total
-            if total > 0 {
-                infoLine(ActorDetailCopy.infoVideos, String(total))
+            if let b = a?.s("birthday"), !b.isEmpty {
+                InfoChip(text: b)
             }
-            if let birthday = a?.s("birthday"), !birthday.isEmpty {
-                infoLine(ActorDetailCopy.infoBirthday, birthday)
-            }
-            if let height = a?.s("height"), !height.isEmpty {
-                infoLine(ActorDetailCopy.infoHeight, height)
-            }
-            let pop = a?.i("popularity") ?? 0
-            if pop > 0 {
-                infoLine(ActorDetailCopy.infoPopularity, String(pop))
+            if let h = a?.s("height"), !h.isEmpty {
+                InfoChip(text: h)
             }
             let avg = a?.d("avg_score_all") ?? 0
             if avg > 0 {
-                infoLine(ActorDetailCopy.infoAvgScore, String(format: "%.2f", avg))
-            }
-            if let twitter = a?.s("twitter"), !twitter.isEmpty {
-                infoLine(ActorDetailCopy.infoTwitter, twitter)
+                InfoChip(text: "\(ActorDetailCopy.infoAvgScore) \(String(format: "%.1f", avg))")
             }
         }
     }
 
-    private func infoLine(_ label: String, _ value: String) -> some View {
-        AppText("\(label): \(value)", lvl: .meta, maxLines: 1)
+    /// 资料格网格：别名整行（超长 → DisclosureGroup 展开）/人气/推特（§8 两列 6pt 间距）
+    @ViewBuilder
+    private var infoCells: some View {
+        let a = vm.actor
+        let alias = a?.s("other_name") ?? ""
+        let pop = a?.i("popularity") ?? 0
+        let twitter = a?.s("twitter") ?? ""
+        if !alias.isEmpty || pop > 0 || !twitter.isEmpty {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 6),
+                                GridItem(.flexible(), spacing: 6)],
+                      spacing: 6) {
+                if !alias.isEmpty {
+                    aliasCell(alias)
+                }
+                if pop > 0 {
+                    InfoCell(label: ActorDetailCopy.infoPopularity, value: String(pop))
+                }
+                if !twitter.isEmpty {
+                    InfoCell(label: ActorDetailCopy.infoTwitter, value: twitter)
+                }
+            }
+        }
     }
 
-    // MARK: B4/B5 出演影片区（排序/方向/标签 + CardGrid 2 列 MovieCard 小图）
+    /// 别名：>24 字（≈2 行）→ DisclosureGroup「更多资料」展开 + textSelection 可复制；
+    /// 短别名直接 2 行截断。整行 = gridCellColumns(2)。
+    @ViewBuilder
+    private func aliasCell(_ alias: String) -> some View {
+        if alias.count > 24 {
+            DisclosureGroup(aliasExpanded ? ActorDetailCopy.lessInfo : ActorDetailCopy.moreInfo,
+                            isExpanded: $aliasExpanded) {
+                Text(alias)
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.text2)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+            } label: {
+                InfoCell(label: ActorDetailCopy.infoAlias,
+                         value: String(alias.prefix(24)) + "…", lines: 1)
+            }
+            .gridCellColumns(2)
+        } else {
+            InfoCell(label: ActorDetailCopy.infoAlias, value: alias, lines: 2)
+                .gridCellColumns(2)
+        }
+    }
 
-    private var moviesBlock: some View {
+    // MARK: 出演影片区（R4 P6：Menu 合并排序/方向 + 标签按钮 + CardGrid 2 列）
+
+    private var moviesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(ActorDetailCopy.moviesTitle(vm.total))
                 .font(.system(size: 14, weight: .bold))
@@ -166,7 +226,7 @@ struct ActorDetailView: View {
                     .padding(.top, 12)
             } else {
                 // R4 P4：content 已有 12pt 水平 padding → 内宽 = pageWidth - 24，
-                // GridMath margin 显式传 0，杜绝「内层 padding + 默认 16 margin」双重扣
+                // GridMath margin 显式传 0，杜绝双重扣（320pt 不裁切）
                 let innerW = pageWidth - 24
                 let cellW = GridMath.cellWidth(pageWidth: innerW, columns: 2, margin: 0)
                 CardGrid(items: vm.items, columns: 2,
@@ -181,30 +241,60 @@ struct ActorDetailView: View {
                     loadingMore: vm.loading && vm.actor != nil,
                     approx: false, hasMore: vm.hasMore,
                     onLoadNext: { Task { await vm.loadNext() } }))
+                    .padding(.bottom, 24)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 16)
     }
 
-    /// 排序/方向/标签入口行（B5：DropdownBox 保留——既有 36pt 控件、B21 口径）
+    /// 工具行：单个 Menu（排序 × 方向二级 Section）+ 标签按钮 —— 不再并排 2 个 DropdownBox
     private var toolbarRow: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                DropdownBox(
-                    label: ActorDetailCopy.sortLabel,
-                    options: ActorDetailCopy.sortOptions.map {
-                        DropdownOption(label: $0.label, value: $0.value)
-                    },
-                    current: vm.sort,
-                    onSelect: { v in Task { await vm.setSort(v) } })
-                DropdownBox(
-                    label: ActorDetailCopy.ascLabel,
-                    options: ActorDetailCopy.ascOptions.map {
-                        DropdownOption(label: $0.label, value: $0.value)
-                    },
-                    current: vm.asc ? "asc" : "desc",
-                    onSelect: { v in Task { await vm.setAsc(v == "asc") } })
+                Menu {
+                    Section(ActorDetailCopy.sortLabel) {
+                        ForEach(ActorDetailCopy.sortOptions, id: \.value) { o in
+                            Button {
+                                Task { await vm.setSort(o.value) }
+                            } label: {
+                                if vm.sort == o.value {
+                                    Label(o.label, systemImage: "checkmark")
+                                } else {
+                                    Text(o.label)
+                                }
+                            }
+                        }
+                    }
+                    Section(ActorDetailCopy.ascLabel) {
+                        ForEach(ActorDetailCopy.ascOptions, id: \.value) { o in
+                            Button {
+                                Task { await vm.setAsc(o.value == "asc") }
+                            } label: {
+                                if (vm.asc ? "asc" : "desc") == o.value {
+                                    Label(o.label, systemImage: "checkmark")
+                                } else {
+                                    Text(o.label)
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 14))
+                        AppText(sortMenuTitle, lvl: .meta)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10))
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: ComponentMetrics.chipHeight)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3.opacity(0.5)))
+                    .overlay(RoundedRectangle(cornerRadius: 8)
+                        .stroke(theme.line, lineWidth: ComponentMetrics.cardStroke))
+                    .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("actor_sort_menu")
                 if !vm.tags.isEmpty {
                     Button {
                         showTagPanel = true
@@ -244,18 +334,35 @@ struct ActorDetailView: View {
         .padding(.vertical, 2)
     }
 
-    // MARK: 标签筛选 sheet（B5：chips + 加载更多 + 完成）
+    /// Menu 标题 = 当前排序项 label（方向并入菜单二级 Section）
+    private var sortMenuTitle: String {
+        ActorDetailCopy.sortOptions.first { $0.value == vm.sort }?.label
+            ?? ActorDetailCopy.sortLabel
+    }
+
+    // MARK: 标签筛选 sheet（R4 P6：搜索 + 已选计数 + adaptive 网格 + 底部固定完成）
 
     private var tagSheet: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 AppText(ActorDetailCopy.tagsPanelTitle, lvl: .bodyS, fontWeight: .bold)
-                // chips：全部（tagId 空）+ 每标签 "{name} ({count})"；点选即查询，再点取消
-                FlowHStack(spacing: 8) {
+                // R4：已选计数（tagId 空 = 0）
+                AppText(tagsSelectedLine, lvl: .meta, color: theme.accent2)
+                    .accessibilityIdentifier("tag_selected_count")
+                TextField("搜索标签", text: $tagQuery)
+                    .font(.system(size: 14))
+                    .foregroundColor(theme.text)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 40)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3.opacity(0.35)))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(theme.line, lineWidth: 1))
+                    .accessibilityIdentifier("tag_search_field")
+                // R4：自适应网格（60 标签滚动不卡；搜索过滤）
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
                     AppToggleChip(label: ActorDetailCopy.tagsAll, selected: vm.tagId.isEmpty) {
                         Task { await vm.setTag("") }
                     }
-                    ForEach(Array(vm.tags.enumerated()), id: \.offset) { _, t in
+                    ForEach(filteredTags, id: \.offset) { _, t in
                         AppToggleChip(
                             label: "\(t.s("name")) (\(t.i("c")))",
                             selected: vm.tagId == t.s("id")) {
@@ -278,21 +385,77 @@ struct ActorDetailView: View {
                     .buttonStyle(.plain)
                     .disabled(vm.tagsLoading)
                 }
-                // 底部确认按钮「完成」（≥48）
-                Button {
-                    showTagPanel = false
-                } label: {
-                    AppText(ActorDetailCopy.done, lvl: .bodyS, color: .white,
-                            textAlign: .center, fontWeight: .medium)
-                        .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
-                        .background(RoundedRectangle(cornerRadius: Radius.card).fill(theme.accent))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(theme.bg1.ignoresSafeArea())
+        .safeAreaInset(edge: .bottom) {
+            // R4：完成按钮固定底部（不再随内容滚动）
+            Button {
+                showTagPanel = false
+            } label: {
+                AppText(ActorDetailCopy.done, lvl: .bodyS, color: .white,
+                        textAlign: .center, fontWeight: .medium)
+                    .frame(maxWidth: .infinity, minHeight: ComponentMetrics.buttonMin)
+                    .background(RoundedRectangle(cornerRadius: Radius.card).fill(theme.accent))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+            .background(theme.bg1.ignoresSafeArea(edges: .bottom))
+        }
+    }
+
+    /// 搜索过滤后的标签（空词 = 全量）
+    private var filteredTags: [(offset: Int, element: Row)] {
+        let q = tagQuery.trimmingCharacters(in: .whitespaces)
+        let all = Array(vm.tags.enumerated())
+        guard !q.isEmpty else { return all }
+        return all.filter { $0.element.s("name").localizedCaseInsensitiveContains(q) }
+    }
+
+    /// 已选计数行（含已选标签名）
+    private var tagsSelectedLine: String {
+        if vm.tagId.isEmpty { return "已选 0 个" }
+        let name = vm.tags.first { $0.s("id") == vm.tagId }?.s("name") ?? vm.tagId
+        return "已选 1 个 · \(name)"
+    }
+}
+
+// MARK: - R4 P6 资料子组件（InfoChip / InfoCell）
+
+/// 紧凑信息 chip（头部 4 枚：影片数/生日/身高/均分）
+private struct InfoChip: View {
+    let text: String
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        AppText(text, lvl: .meta)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 6).fill(theme.bg3.opacity(0.5)))
+    }
+}
+
+/// 资料格（label 上 value 下；value lineLimit + minimumScaleFactor(0.8) 防截断溢出）
+private struct InfoCell: View {
+    let label: String
+    let value: String
+    var lines: Int = 1
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            AppText(label, lvl: .meta, color: theme.text2)
+            Text(value)
+                .font(.system(size: 12))
+                .foregroundColor(theme.text)
+                .lineLimit(lines)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3.opacity(0.35)))
     }
 }
