@@ -128,8 +128,8 @@ final class KeychainLaunchTests: XCTestCase {
     // MARK: setupRequired 加固
 
     func testSetupRequiredRejectsInvalidPortAndEmptyDbs() {
-        s.remoteHost = "10.0.0.5"   // R4：默认 host 为空 → setupRequired；先注入合法 host
         var s = AppSettings()
+        s.remoteHost = "10.0.0.5"   // R4：默认 host 为空 → setupRequired；先注入合法 host
         s.remoteUser = "u"
         s.remotePass = "p"
         XCTAssertFalse(s.setupRequired, "默认 host/port/dbs 合法")
