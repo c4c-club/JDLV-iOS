@@ -13,17 +13,34 @@ final class NavigationToolsUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launchDemo() -> XCUIApplication {
+    private func launchDemo(query: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-JDLV_DEMO", "1",
-                               "-JDLV_DEFAULTS_SUITE", "nav_\(UUID().uuidString.prefix(8))",
-                               "-JDLV_KEYCHAIN_SERVICE", "navks_\(UUID().uuidString.prefix(8))"]
+        var args = ["-JDLV_DEMO", "1",
+                    "-JDLV_DEFAULTS_SUITE", "nav_\(UUID().uuidString.prefix(8))",
+                    "-JDLV_KEYCHAIN_SERVICE", "navks_\(UUID().uuidString.prefix(8))"]
+        if let query {
+            args += ["-JDLV_TEST_SEARCH", query]
+        }
+        app.launchArguments = args
         app.launch()
         return app
     }
 
     private func swipeUp(_ app: XCUIApplication, times: Int) {
-        for _ in 0..<times { app.swipeUp(velocity: .fast) }
+        // R4：iOS 16 兼容——XCUIElement.swipeUp(velocity:) 是 iOS 17+ API，禁用
+        for _ in 0..<times { app.swipeUp() }
+    }
+
+    /// 轮询等待字段值等于期望（XCUI 无值级 wait）
+    @discardableResult
+    private func waitFieldValue(_ field: XCUIElement, equals expected: String,
+                                timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if (field.value as? String) == expected { return true }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return (field.value as? String) == expected
     }
 
     /// R4：Tab 遮挡与 FAB 断言改为「搜索结果态 + browse」（垂直列表滑动可靠）。
