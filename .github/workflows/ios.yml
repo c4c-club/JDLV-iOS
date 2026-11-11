@@ -98,8 +98,10 @@ jobs:
     needs: [guard, core-linux, core-mysql]
     # macos-26 在 2026-11-04 起持续 "not acquired by Runner"（容量）→ 按规划 §2 兜底退 macos-15。
     # destination 由 simctl 动态解析（任意可用 iPhone），不写死机型。
+    # R4：UI 套件扩到 24 用例 + ProductionSmoke 240s conn 等待 → 90min 上限不足（被 GitHub
+    # 静默取消），加到 150min。
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
