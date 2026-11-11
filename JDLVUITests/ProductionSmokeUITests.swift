@@ -102,7 +102,7 @@ final class ProductionSmokeUITests: XCTestCase {
             testButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             result = app.descendants(matching: .any)["settings_test_result"].firstMatch
         }
-        if !result.waitForExistence(timeout: 90) {
+        if !result.waitForExistence(timeout: 240) {
             // CI 环境真实连接偶发挂起（R2 冒烟 29.5s 逼近上限；runner 负载波动）——
             // 如实跳过该步并单列报告，不冒充通过
             let diag = XCTAttachment(screenshot: app.screenshot())

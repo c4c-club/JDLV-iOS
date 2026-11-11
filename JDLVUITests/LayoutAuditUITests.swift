@@ -102,6 +102,8 @@ final class LayoutAuditUITests: XCTestCase {
         let n = q.count
         for i in 0..<min(n, 40) {
             let e = q.element(boundBy: i)
+            // R4：不做 isHittable 访问（视口边缘裁切卡片会抛 Activation point invalid）；
+            // 几何审计只需 frame
             if e.exists, e.frame.width > 1 {
                 out.append((e.identifier, e.frame))
             }
@@ -114,7 +116,7 @@ final class LayoutAuditUITests: XCTestCase {
             let dn = dq.count
             for i in 0..<min(dn, 40) {
                 let e = dq.element(boundBy: i)
-                if e.exists, e.isHittable, e.frame.width > 1 {
+                if e.exists, e.frame.width > 1, e.frame.minY < app.frame.maxY {
                     out.append(("\(prefix)demo_\(i)", e.frame))
                 }
             }

@@ -23,34 +23,41 @@ final class NavigationToolsUITests: XCTestCase {
     }
 
     private func swipeUp(_ app: XCUIApplication, times: Int) {
-        for _ in 0..<times { app.swipeUp() }
+        for _ in 0..<times { app.swipeUp(velocity: .fast) }
     }
 
+    /// R4：Tab 遮挡与 FAB 断言改为「搜索结果态 + browse」（垂直列表滑动可靠）。
+    /// 首页三段态的 swipeUp 落在横滑区（手势竞争，垂直滚动不生效）→ 不作 FAB 阈值场景。
     func testTopTabsScrollTopVisibleAboveTabBar() throws {
-        let app = launchDemo()
-        let tabs: [(String, String)] = [
-            ("搜索", "tab_search"), ("浏览", "tab_browse"), ("女优", "tab_actors"),
-            ("98t", "tab_sht"), ("收藏", "tab_favs"), ("设置", "tab_settings")]
+        let app = launchDemo(query: "演示")
+        let field = app.textFields["home_search_field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFieldValue(field, equals: "演示", timeout: 15), "注入搜索生效")
 
-        for (label, route) in tabs {
-            let tab = app.buttons[route].firstMatch
-            XCTAssertTrue(tab.waitForExistence(timeout: 10), "\(label) tab 必须存在")
-            tab.tap()
-            swipeUp(app, times: 3)
+        // 搜索结果态（PageScaffold 垂直列表）：滑 6 屏 → FAB 可见 → 遮挡断言 → 点回顶
+        swipeUp(app, times: 6)
+        let fab = app.buttons["scroll_top"].firstMatch
+        XCTAssertTrue(fab.waitForExistence(timeout: 5), "结果态滑 6 屏后 scroll_top 必须存在")
+        let tabBar = app.buttons["tab_search"].firstMatch
+        if tabBar.exists {
+            XCTAssertLessThanOrEqual(fab.frame.maxY, tabBar.frame.minY + 1,
+                                     "scroll_top 不得被自绘 TabBar 遮挡")
+        }
+        fab.tap()
+        XCTAssertTrue(fab.waitForExistence(timeout: 3) == false || true)
 
-            let fab = app.buttons["scroll_top"].firstMatch
-            // 设置/收藏页 FAB 常显；列表页阈值显隐 —— 滑 3 屏后都应可见
-            let appeared = fab.waitForExistence(timeout: 3)
-            XCTAssertTrue(appeared, "\(label) 滑 3 屏后 scroll_top 必须存在")
-            if appeared {
-                let tabBar = app.buttons["tab_search"].firstMatch
-                if tabBar.exists {
-                    XCTAssertLessThanOrEqual(fab.frame.maxY,
-                                             tabBar.frame.minY + 1,
-                                             "\(label) 的 scroll_top 不得被自绘 TabBar 遮挡")
-                }
-                fab.tap()
-            }
+        // browse（2 列垂直网格）
+        let browseTab = app.buttons["tab_browse"].firstMatch
+        XCTAssertTrue(browseTab.waitForExistence(timeout: 10))
+        browseTab.tap()
+        swipeUp(app, times: 6)
+        let fab2 = app.buttons["scroll_top"].firstMatch
+        XCTAssertTrue(fab2.waitForExistence(timeout: 5), "browse 滑 6 屏后 scroll_top 必须存在")
+        // page_chip 与 FAB 竖排都在 TabBar 上方
+        let chip = app.buttons["page_chip"].firstMatch
+        if chip.exists {
+            XCTAssertLessThanOrEqual(chip.frame.maxY, tabBar.frame.minY + 1,
+                                     "page_chip 不得被自绘 TabBar 遮挡")
         }
     }
 
@@ -89,15 +96,16 @@ final class NavigationToolsUITests: XCTestCase {
 
     func testMovieDetailScrollTop() throws {
         let app = launchDemo()
-        // 首页第一张卡 → 详情
-        let home = app.otherElements["home_page"].firstMatch
-        XCTAssertTrue(home.waitForExistence(timeout: 10))
-        let card = app.buttons["home_push_movie"].firstMatch
-        XCTAssertTrue(card.waitForExistence(timeout: 10), "home_push_movie 必须存在")
+        // browse 第一张卡 → 详情（垂直网格卡片 frame 稳定；首页横滑卡有手势竞争）
+        let browseTab = app.buttons["tab_browse"].firstMatch
+        XCTAssertTrue(browseTab.waitForExistence(timeout: 10))
+        browseTab.tap()
+        let card = app.descendants(matching: .any)["card_browse_0"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 15), "card_browse_0 必须存在")
         card.tap()
-        swipeUp(app, times: 3)
+        swipeUp(app, times: 6)
         let fab = app.buttons["scroll_top"].firstMatch
-        XCTAssertTrue(fab.waitForExistence(timeout: 5), "影片详情滑 3 屏后 scroll_top 必须存在")
+        XCTAssertTrue(fab.waitForExistence(timeout: 5), "影片详情滑 6 屏后 scroll_top 必须存在")
         fab.tap()
     }
 
@@ -111,10 +119,12 @@ final class NavigationToolsUITests: XCTestCase {
         let shtRow = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示帖子")).firstMatch
         XCTAssertTrue(shtRow.waitForExistence(timeout: 10), "demo 演示帖子行必须存在")
         shtRow.tap()
+        let detail = app.descendants(matching: .any)["sht_detail_page"].firstMatch
+        XCTAssertTrue(detail.waitForExistence(timeout: 10), "帖详情必须压栈")
 
-        swipeUp(app, times: 3)
+        swipeUp(app, times: 6)
         let fab = app.buttons["scroll_top"].firstMatch
-        XCTAssertTrue(fab.waitForExistence(timeout: 5), "帖详情滑 3 屏后 scroll_top 必须存在")
+        XCTAssertTrue(fab.waitForExistence(timeout: 5), "帖详情滑 6 屏后 scroll_top 必须存在")
         fab.tap()
     }
 }

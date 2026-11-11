@@ -38,7 +38,7 @@ final class ActorDetailLayoutUITests: XCTestCase {
         openActorDetail(app)
 
         // 资料卡与工具行不横向溢出
-        let page = app.otherElements["secondary_page"].firstMatch
+        let page = app.descendants(matching: .any)["secondary_page"].firstMatch
         XCTAssertLessThanOrEqual(page.frame.maxX, app.frame.maxX + 1.0,
                                  "详情页内容不得横向溢出")
 

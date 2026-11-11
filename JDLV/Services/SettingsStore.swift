@@ -181,6 +181,14 @@ final class SettingsStore: ObservableObject {
         // （AppBootstrap.box / 隧道 reconcile —— 否则远端连接会拿到空口令）。
         // 启动 Gate 期间主线程 0 次 Keychain 读取（硬规则 14：≤3 次轻量读取 → 本实现 0 次）。
         self.loaded = false
+        // R4 P6 兜底：后台 Keychain 读若异常挂起（模拟器 Keychain 服务偶发慢），
+        // 6s 后强制放行主界面（口令空 → 连接失败显式呈现，绝不静默当成功；
+        // protectedDataAvailable 观察者/下次保存仍会补齐真实口令）
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard let self, !self.loaded else { return }
+            self.loaded = true
+        }
         Task.detached(priority: .userInitiated) { [weak self] in
             var readFailed = false
             var readMsg = ""
