@@ -198,12 +198,20 @@ final class SettingsStore: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 var updated = self.settings
-                updated.localPass = lp
-                updated.remotePass = rp
-                updated.lockSecret = ls
-                self.persistedLocalPass = lp
-                self.persistedRemotePass = rp
-                self.persistedLockSecret = ls
+                // R4：仅当键尚未被任何写入路径管理（persisted 与内存均空）时才采用后台读值，
+                // 避免与并发 updateSettingsNow 的 persisted 缓存竞态（partial-write 回滚测试）
+                if self.persistedLocalPass.isEmpty && updated.localPass.isEmpty {
+                    updated.localPass = lp
+                    self.persistedLocalPass = lp
+                }
+                if self.persistedRemotePass.isEmpty && updated.remotePass.isEmpty {
+                    updated.remotePass = rp
+                    self.persistedRemotePass = rp
+                }
+                if self.persistedLockSecret.isEmpty && updated.lockSecret.isEmpty {
+                    updated.lockSecret = ls
+                    self.persistedLockSecret = ls
+                }
                 self.settings = updated
                 self.secretReadFailed = readFailed
                 self.secretReadMessage = readMsg

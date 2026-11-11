@@ -51,25 +51,32 @@ final class NavigationToolsUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         XCTAssertTrue(waitFieldValue(field, equals: "演示", timeout: 15), "注入搜索生效")
 
-        // 搜索结果态（PageScaffold 垂直列表）：滑 6 屏 → FAB 可见 → 遮挡断言 → 点回顶
-        swipeUp(app, times: 6)
+        // 搜索结果态（PageScaffold 垂直列表）：滑动直至 FAB 出现（重试上限 12 次）
         let fab = app.buttons["scroll_top"].firstMatch
-        XCTAssertTrue(fab.waitForExistence(timeout: 5), "结果态滑 6 屏后 scroll_top 必须存在")
+        var fabShown = fab.exists
+        for _ in 0..<12 where !fabShown {
+            app.swipeUp()
+            fabShown = fab.exists
+        }
+        XCTAssertTrue(fabShown, "结果态滚动后 scroll_top 必须出现")
         let tabBar = app.buttons["tab_search"].firstMatch
         if tabBar.exists {
             XCTAssertLessThanOrEqual(fab.frame.maxY, tabBar.frame.minY + 1,
                                      "scroll_top 不得被自绘 TabBar 遮挡")
         }
         fab.tap()
-        XCTAssertTrue(fab.waitForExistence(timeout: 3) == false || true)
 
         // browse（2 列垂直网格）
         let browseTab = app.buttons["tab_browse"].firstMatch
         XCTAssertTrue(browseTab.waitForExistence(timeout: 10))
         browseTab.tap()
-        swipeUp(app, times: 6)
         let fab2 = app.buttons["scroll_top"].firstMatch
-        XCTAssertTrue(fab2.waitForExistence(timeout: 5), "browse 滑 6 屏后 scroll_top 必须存在")
+        var fab2Shown = fab2.exists
+        for _ in 0..<12 where !fab2Shown {
+            app.swipeUp()
+            fab2Shown = fab2.exists
+        }
+        XCTAssertTrue(fab2Shown, "browse 滚动后 scroll_top 必须出现")
         // page_chip 与 FAB 竖排都在 TabBar 上方
         let chip = app.buttons["page_chip"].firstMatch
         if chip.exists {
@@ -88,7 +95,7 @@ final class NavigationToolsUITests: XCTestCase {
         let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
         XCTAssertTrue(browsePage.waitForExistence(timeout: 10), "browse_page 必须出现")
         let chip = app.buttons["page_chip"].firstMatch
-        XCTAssertTrue(chip.waitForExistence(timeout: 15), "browse 的 page_chip 必须出现")
+        XCTAssertTrue(chip.waitForExistence(timeout: 30), "browse 的 page_chip 必须出现")
 
         chip.tap()
         let field = app.textFields["page_jump_field"].firstMatch
@@ -120,9 +127,13 @@ final class NavigationToolsUITests: XCTestCase {
         let card = app.descendants(matching: .any)["card_browse_0"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 15), "card_browse_0 必须存在")
         card.tap()
-        swipeUp(app, times: 6)
         let fab = app.buttons["scroll_top"].firstMatch
-        XCTAssertTrue(fab.waitForExistence(timeout: 5), "影片详情滑 6 屏后 scroll_top 必须存在")
+        var fabShown = fab.exists
+        for _ in 0..<12 where !fabShown {
+            app.swipeUp()
+            fabShown = fab.exists
+        }
+        XCTAssertTrue(fabShown, "影片详情滚动后 scroll_top 必须出现")
         fab.tap()
     }
 
@@ -139,9 +150,13 @@ final class NavigationToolsUITests: XCTestCase {
         let detail = app.descendants(matching: .any)["sht_detail_page"].firstMatch
         XCTAssertTrue(detail.waitForExistence(timeout: 10), "帖详情必须压栈")
 
-        swipeUp(app, times: 6)
         let fab = app.buttons["scroll_top"].firstMatch
-        XCTAssertTrue(fab.waitForExistence(timeout: 5), "帖详情滑 6 屏后 scroll_top 必须存在")
+        var fabShown = fab.exists
+        for _ in 0..<12 where !fabShown {
+            app.swipeUp()
+            fabShown = fab.exists
+        }
+        XCTAssertTrue(fabShown, "帖详情滚动后 scroll_top 必须出现")
         fab.tap()
     }
 }

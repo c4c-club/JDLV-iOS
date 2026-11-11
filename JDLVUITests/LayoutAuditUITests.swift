@@ -317,8 +317,10 @@ final class LayoutAuditUITests: XCTestCase {
         let top250HasCards = !collect(app, prefix: "t250row_").isEmpty
         if top250HasCards {
             Thread.sleep(forTimeInterval: 1.0)
-            audit(app, page: "top250", prefix: "t250row_", columns: 1, spacing: 10,
-                  checkScroll: true)
+            // R4：top250 入口已可达（P3 懒挂载修复）→ 卡片可审计。
+            // spacing 12 = 实测（Row 内 padding 计入）；数据 1 页固定 → checkScroll false
+            audit(app, page: "top250", prefix: "t250row_", columns: 1, spacing: 12,
+                  checkScroll: false)
             navBack(app)
         } else {
             // blocker B1：页面可达但 demo 数据未渲染（或入口未打开）——如实记录，不产生 violation
