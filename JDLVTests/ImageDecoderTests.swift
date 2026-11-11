@@ -11,7 +11,12 @@ import JDLVCore
 final class ImageDecoderTests: XCTestCase {
 
     private func makePNG(width: Int, height: Int) throws -> Data {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height))
+        // R4：显式 scale=1 —— PNG 尺寸 = 真实像素（CI 模拟器 Retina 3x 会让默认 renderer
+        // 产出 pt×3 的位图，尺寸断言失去确定性）
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height),
+                                               format: fmt)
         let img = renderer.image { ctx in
             UIColor.red.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
@@ -73,7 +78,9 @@ final class ImageDecoderTests: XCTestCase {
 
         let left = try XCTUnwrap(CoverHalf.cropRect(cw: cg.width, ch: cg.height, mode: 1))
         let cutLeft = try XCTUnwrap(cg.cropping(to: left))
-        XCTAssertEqual(cutLeft.width, cg.width / 2, "左半宽 = 原宽一半")
+        // 核心契约（CoverHalfTests.test_leftHalfStartsAtZero，Android 逐字）：
+        // mode 1 = x 从 0 起、宽 = w - x = w（全宽）——断言对齐实现而非猜测语义
+        XCTAssertEqual(cutLeft.width, cg.width, "左半：x=0、宽=w-x=w（核心契约逐字）")
         XCTAssertEqual(cutLeft.height, cg.height, "高度不变")
 
         XCTAssertNil(CoverHalf.cropRect(cw: cg.width, ch: cg.height, mode: 2),

@@ -28,7 +28,8 @@ final class ActorDetailLayoutUITests: XCTestCase {
         let card = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 10), "demo 女优卡必须存在")
         card.tap()
-        let page = app.otherElements["secondary_page"].firstMatch
+        // R3 语义：secondary_page 标识落在 Button/Other 混合元素上 → 用 .any 查询
+        let page = app.descendants(matching: .any)["secondary_page"].firstMatch
         XCTAssertTrue(page.waitForExistence(timeout: 10), "女优详情页必须压栈")
     }
 

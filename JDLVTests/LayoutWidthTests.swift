@@ -41,8 +41,10 @@ final class LayoutWidthTests: XCTestCase {
             let total = cellW * 2 + ComponentMetrics.gridSpacing
             XCTAssertEqual(total, innerW, accuracy: 0.5,
                            "width=\(width)：两列 + spacing == 内宽（左右各 12pt 由页面 padding 负责）")
-            XCTAssertGreaterThan(cellW, (width - 32) / 2 - 0.5,
-                                 "cell 不得比「无双重扣」口径窄 16pt 以上")
+            // 无双重扣守卫（精确公式）：cellW = (内宽 - spacing) / 2；
+            // 若误用「内层 padding + GridMath 默认 16 margin」双重扣 → 少 ~16pt 必挂
+            XCTAssertEqual(cellW, (innerW - ComponentMetrics.gridSpacing) / 2, accuracy: 0.5,
+                           "width=\(width)：cellW 必须精确等于 (内宽 - spacing)/2")
         }
     }
 

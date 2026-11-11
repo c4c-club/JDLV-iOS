@@ -60,7 +60,9 @@ final class NavigationToolsUITests: XCTestCase {
         XCTAssertTrue(browseTab.waitForExistence(timeout: 10))
         browseTab.tap()
 
-        // 等分页加载（chip 渲染条件 loaded>0 || total>0）
+        // 先等 browse 页面出现，再等分页加载（chip 渲染条件 loaded>0 || total>0）
+        let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
+        XCTAssertTrue(browsePage.waitForExistence(timeout: 10), "browse_page 必须出现")
         let chip = app.buttons["page_chip"].firstMatch
         XCTAssertTrue(chip.waitForExistence(timeout: 15), "browse 的 page_chip 必须出现")
 

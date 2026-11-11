@@ -124,7 +124,8 @@ struct HomeView: View {
             emptyHint: queryTrim.isEmpty ? "" : SearchCopy.emptyResultHint,
             skeletonColumns: 2,
             loadMore: loadMoreConfig,
-            showNavTools: resultVisible && !(vm.items ?? []).isEmpty,
+            // R4 P5：三段态也要回顶（首页内容 >1 屏；PageChip 仍按 loaded/total 条件渲染）
+            showNavTools: true,
             pageLoaded: vm.items?.count ?? 0,
             pageTotal: vm.total,
             pagePer: vm.per,

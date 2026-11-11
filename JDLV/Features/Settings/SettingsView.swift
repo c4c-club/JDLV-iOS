@@ -829,6 +829,8 @@ struct SettingsView: View {
         let s = store.settings
         ScrollViewReader { proxy in
         ScrollView {
+            // R4 P5：offset 源（FAB 显隐；R4 修复：此前漏挂导致 settings FAB 永不出现）
+            ScrollOffsetReader(space: "settings_space")
             // R4 P4：LazyVStack —— 卡片进入视口才布局（11 张卡一次性布局的启动成本消除）
             LazyVStack(alignment: .leading, spacing: 10) {
                 // 全局唯一保存状态行（R3 问题 4：单一 SaveStatusView；各卡不再挂）
