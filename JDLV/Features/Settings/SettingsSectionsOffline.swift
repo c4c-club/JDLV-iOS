@@ -35,8 +35,6 @@ struct OfflineIndexCard: View {
     @State private var rebuildConfirm = false
     @State private var clearConfirm = false
 
-    private let tickTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-
     enum LimitTarget: String, Identifiable {
         case jdb, sht
         var id: String { rawValue }
@@ -52,7 +50,14 @@ struct OfflineIndexCard: View {
             rememberKey: "shadow",
             summary: SettingsCopy.summaryShadow(view),
         ) {
+            // R5 P3：1s tick 随【展开内容】创建/销毁（SettingsGroupCard 折叠时不求值
+            // content → timer 不创建、不触发；旧实现 let 属性在卡片构建即每秒触发）
             settingsBlock(view)
+                .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                    // 非前台/未加载零状态写入；只读已建实例（绝不主线程建库）
+                    guard loadedOnce, scenePhase == .active else { return }
+                    st = SettingsIndexHub.shared.syncIfReady?.state ?? SyncState()
+                }
             tagEstimateNote(view)
             estimateNote(view)
             usageBlock
@@ -62,14 +67,9 @@ struct OfflineIndexCard: View {
         .onAppear {
             guard !loadedOnce else { return }
             loadedOnce = true
-            // B06/B22：进卡片刷新统计与实际占用
-            SettingsIndexHub.shared.sync?.refreshStats()
+            // R5 P3：后台预热（IdxDb 打开 + refreshStats 离主线程；B06/B22 语义不变）
+            SettingsIndexHub.shared.warmUpAsync()
             recalcUsage()
-        }
-        .onReceive(tickTimer) { _ in
-            // R4 P4/P5：本卡未可见不触达 hub（不建 IdxDb）；非前台零状态写入
-            guard loadedOnce, scenePhase == .active else { return }
-            st = SettingsIndexHub.shared.sync?.state ?? SyncState()
         }
         // 重建二次确认 AlertDialog（§11.7 逐字）
         .alert(SettingsCopy.rebuildTitle, isPresented: $rebuildConfirm) {
@@ -189,14 +189,9 @@ struct OfflineIndexCard: View {
 
     private func recalcUsage() {
         usagePending = true
-        guard let sync = SettingsIndexHub.shared.sync else {
-            usagePending = false
-            usageText = SettingsCopy.usageText(idxMb: 0, detailMb: 0)
-            return
-        }
-        let idx = sync.idx
+        // R5 P3：sync 懒建 + usageBytes(WAL) 全部在后台线程（绝不主线程 SQLite）
         Task.detached(priority: .utility) {
-            let bytes = idx.usageBytes(fast: false)
+            let bytes = SettingsIndexHub.shared.sync?.idx.usageBytes(fast: false) ?? 0
             await MainActor.run {
                 usagePending = false
                 usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)

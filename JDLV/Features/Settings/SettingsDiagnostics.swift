@@ -408,6 +408,8 @@ final class SettingsIndexHub {
     }
 
     /// SyncCoordinator（懒建一次；建失败恒 nil, 调用方按"未启用"展示）
+    /// R5 P3：含懒建（首次访问在调用线程打开 SQLite）→ 只允许后台线程或用户动作路径调用；
+    /// 主线程展示路径一律用 syncIfReady。
     var sync: SyncCoordinator? {
         if _sync != nil { return _sync }
         if idxFailed { return nil }
@@ -423,6 +425,20 @@ final class SettingsIndexHub {
         } catch {
             idxFailed = true
             return nil
+        }
+    }
+
+    /// R5 P3：已建实例只读访问（绝不触发 IdxDb 构建 —— 主线程展示/定时路径专用）
+    var syncIfReady: SyncCoordinator? { _sync }
+
+    /// R5 P3：后台预热（IdxDb 打开 + refreshStats 全部离主线程；幂等，已建则只重刷统计）。
+    /// 展示路径（卡片 onAppear）调用；结果经 1s tick 或后续读取自然呈现。
+    @discardableResult
+    func warmUpAsync() -> Task<Void, Never> {
+        return Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            _ = self.sync             // 懒建（后台线程；首次含 SQLite 打开）
+            self.sync?.refreshStats() // 统计查询（后台线程；多次 SQLite count/usageBytes）
         }
     }
 

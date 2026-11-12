@@ -80,51 +80,58 @@ final class ProductionSmokeUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["演示影片 001"].exists, "生产模式不得出现 demo 标题")
 
         // ③ 设置页「测试连接」→ 真实成功（含版本号、不含「演示模式」）
-        let settingsTab = app.descendants(matching: .any)["tab_settings"].firstMatch
-        XCTAssertTrue(settingsTab.exists)
-        // R4：tab 点击有转场竞态（生产启动后主线程忙，合成 tap 可能丢失）→
-        // coordinate 强制点击 + 验证落地页 + 重试
-        for _ in 0..<4 {
-            settingsTab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // R5 P3：tab 用 identifier 精确查（label 与隐藏 Tab 内容多匹配，禁用全量扫描兜底）；
+        // 点击后立即断言 settings_page 落地 + 有限重试（不再盲点 4 次）
+        let settingsTab = app.buttons["tab_settings"].firstMatch
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 10), "设置 tab 未找到（tab_settings）")
+        var landed = false
+        for attempt in 0..<3 {
+            settingsTab.tap()
             if app.descendants(matching: .any)["settings_page"].firstMatch
-                .waitForExistence(timeout: 10) { break }
+                .waitForExistence(timeout: 6) { landed = true; break }
+            let d = XCTAttachment(screenshot: app.screenshot())
+            d.name = "diag-tab-land-\(attempt)"
+            d.lifetime = .keepAlways
+            add(d)
         }
-        // 数据源卡默认折叠（非 firstRun 且 user 非空）→ 先展开
+        XCTAssertTrue(landed, "点设置 tab 后 settings_page 未出现（3 次重试；附落地页截图）")
+
+        // settings_group_db identifier 在头行按钮上 → tap 即展开/收起（精确，无坐标）
         let dbGroup = app.descendants(matching: .any)["settings_group_db"].firstMatch
-        XCTAssertTrue(dbGroup.waitForExistence(timeout: 15), "数据源分组卡未找到")
+        XCTAssertTrue(dbGroup.waitForExistence(timeout: 10), "数据源分组卡未找到")
         let testButton = app.descendants(matching: .any)["ds_test_button"].firstMatch
         if !testButton.exists {
             dbGroup.tap()   // 折叠中 → 展开分组
         }
-        XCTAssertTrue(testButton.waitForExistence(timeout: 10), "测试连接按钮未找到")
-        // resilient tap：转场/遮挡下中心坐标兜底，未出结果重试一次
-        if testButton.isHittable {
-            testButton.tap()
-        } else {
-            testButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(testButton.waitForExistence(timeout: 8), "测试连接按钮未找到")
+        // R5 P3：有限次滚动（≤8 次 swipeUp，frame∩window 帧判定，不做 hittable 快照）
+        // → 精确 tap()（任务硬要求：不用坐标点击）
+        var swipes = 0
+        while !(testButton.exists && testButton.frame.intersects(app.frame)) && swipes < 8 {
+            app.swipeUp()
+            usleep(200_000)
+            swipes += 1
         }
-        // R4 P8 诊断：点击后 2s/10s/30s 各截一张，定位 connTest 无输出的挂点
-        for (i, delay) in [(1, 2.0), (2, 8.0), (3, 20.0)] as [(Int, Double)] {
-            Thread.sleep(forTimeInterval: delay)
-            let d = XCTAttachment(screenshot: app.screenshot())
-            d.name = "diag-conn-after-\(i)"
-            d.lifetime = .keepAlways
-            add(d)
-        }
+        XCTAssertTrue(testButton.exists && testButton.frame.intersects(app.frame),
+                      "ds_test_button 滚动 \(swipes) 次后仍未进入可视区（最大滚动次数断言）")
+        testButton.tap()
+        // 结果等待：总预算 90s（60s + 重试点一次 + 30s）；失败附截图 + AX 树 dump
         var result = app.descendants(matching: .any)["settings_test_result"].firstMatch
-        if !result.waitForExistence(timeout: 45) {
-            testButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        if !result.waitForExistence(timeout: 60) {
+            testButton.tap()   // 重试一次（identifier 精确，按钮原位）
             result = app.descendants(matching: .any)["settings_test_result"].firstMatch
         }
-        if !result.waitForExistence(timeout: 240) {
-            // CI 环境真实连接偶发挂起（R2 冒烟 29.5s 逼近上限；runner 负载波动）——
-            // 如实跳过该步并单列报告，不冒充通过
+        if !result.waitForExistence(timeout: 30) {
             let diag = XCTAttachment(screenshot: app.screenshot())
             diag.name = "diag-smoke-conn-hang"
             diag.lifetime = .keepAlways
             add(diag)
-            // R4 P12（V45）：真实连接挂起是功能失败，不得 skip 掩盖
-            XCTFail("settings testConnection result not shown in 90s（真实连接挂起 = 功能失败；附件 diag-smoke-conn-hang）")
+            let dump = XCTAttachment(string: app.debugDescription)
+            dump.name = "diag-tree-hang"
+            dump.lifetime = .keepAlways
+            add(dump)
+            // 真实连接挂起是功能失败，不得 skip 掩盖（R4 P12/V45 原语义）
+            XCTFail("settings testConnection result not shown in 90s（真实连接挂起 = 功能失败）")
             return
         }
         let label = result.label

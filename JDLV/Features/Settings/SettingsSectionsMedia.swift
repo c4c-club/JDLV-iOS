@@ -29,8 +29,6 @@ struct JdbImageCard: View {
     @State private var selfLines: [SettingsDiagnostics.SelfTestLine] = []
     @State private var diagText = ""
 
-    private let diagTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-
     /// 当前 chip 值：app / web / custom（自定义 URL 同字段）
     private var chipValue: String {
         let v = store.settings.jdbImgHost
@@ -95,16 +93,17 @@ struct JdbImageCard: View {
             AppText(diagText.isEmpty ? ImgBreaker.shared.diagnostic() : diagText,
                     lvl: .meta, color: theme.text2)
                 .padding(.top, 4)
+                // R5 P3：1s 轮询随【展开内容】创建/销毁（折叠卡不创建 timer，不每秒空转）
+                .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                    // 非前台零状态写入
+                    guard scenePhase == .active else { return }
+                    diagText = ImgBreaker.shared.diagnostic()
+                }
         }
         .onAppear {
             guard !loaded else { return }
             loaded = true
             customMirror = (chipValue == "custom") ? s.jdbImgHost : ""
-        }
-        .onReceive(diagTimer) { _ in
-            // R4 P5：非前台不刷新（timer 仍在但零状态写入 → 零重渲染）
-            guard scenePhase == .active else { return }
-            diagText = ImgBreaker.shared.diagnostic()
         }
     }
 

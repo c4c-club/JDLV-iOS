@@ -9,6 +9,11 @@ on:
       - '**.md'
   pull_request:
   workflow_dispatch:
+    inputs:
+      ui_filter:
+        description: 'UI 测试过滤（only-testing 目标，逗号分隔，如 JDLVUITests/SettingsUITests,JDLVUITests/ProductionSmokeUITests；空 = 全量。R5 P3 引入，常驻）'
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -172,7 +177,13 @@ jobs:
           # R4 P8：拆 build-for-testing / test-without-building —— 测试 target 编译错误
           # 直接落盘可上传（此前 test target 编译挂时 test.log 未产出，诊断盲区）
           xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData build-for-testing 2>&1 | tee build/build-for-testing.log
-          xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test-without-building 2>&1 | tee build/test.log
+          # R5 P3：workflow_dispatch 输入 ui_filter → only-testing 目标列表（空 = 全量）
+          ONLY=()
+          if [ -n "${{ github.event.inputs.ui_filter || '' }}" ]; then
+            IFS=',' read -ra TARGETS <<< "${{ github.event.inputs.ui_filter }}"
+            for t in "${TARGETS[@]}"; do ONLY+=("-only-testing:${t// /}"); done
+          fi
+          xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test-without-building "${ONLY[@]}" 2>&1 | tee build/test.log
 
       - name: Export UI test attachments
         if: always()

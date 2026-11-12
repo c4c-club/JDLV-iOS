@@ -38,12 +38,51 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(page.waitForExistence(timeout: 10), "settings page not found")
     }
 
-    private func scrollUntilVisible(_ app: XCUIApplication, _ el: XCUIElement, maxSwipes: Int = 14) {
-        var i = 0
-        while !(el.exists && el.isHittable) && i < maxSwipes {
-            app.swipeUp()
-            i += 1
+    /// R5 P3：失败时附截图 + AX 树 dump（可复核，不盲猜）
+    private func failWithDump(_ app: XCUIApplication, _ reason: String,
+                              file: StaticString = #filePath, line: UInt = #line) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "diag-target-miss"
+        shot.lifetime = .keepAlways
+        add(shot)
+        let dump = XCTAttachment(string: app.debugDescription)
+        dump.name = "diag-tree-dump"
+        dump.lifetime = .keepAlways
+        add(dump)
+        XCTFail(reason, file: file, line: line)
+    }
+
+    /// R5 P3：确定性滚动定位（替换旧 while !(exists && isHittable) —— 每次循环对全 app
+    /// 重新求 AX 快照是 "Timed out while evaluating UI query" 的根因）。
+    /// 1) waitForExistence(5)；2) 有限次 swipeUp（默认 ≤12，每次 0.2s），每步只查
+    ///    exists + frame∩window（帧数据，不做 hittable 快照）；3) 找不到 → XCTFail+dump。
+    @discardableResult
+    private func scrollToElement(_ app: XCUIApplication, _ el: XCUIElement,
+                                 maxSwipes: Int = 12,
+                                 file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        if !el.exists && !el.waitForExistence(timeout: 5) {
+            // LazyVStack 未布局时元素不在树里 → 边滚边查
+            for _ in 0..<maxSwipes {
+                app.swipeUp()
+                usleep(200_000)
+                if el.exists { break }
+            }
         }
+        guard el.exists else {
+            failWithDump(app, "\(el) not found after \(maxSwipes) swipes", file: file, line: line)
+            return false
+        }
+        for _ in 0..<maxSwipes {
+            if el.frame.intersects(app.frame) { return true }
+            app.swipeUp()
+            usleep(200_000)
+        }
+        guard el.frame.intersects(app.frame) else {
+            failWithDump(app, "\(el) found but outside window after \(maxSwipes) swipes",
+                         file: file, line: line)
+            return false
+        }
+        return true
     }
 
     private func group(_ app: XCUIApplication, _ key: String) -> XCUIElement {
@@ -54,37 +93,42 @@ final class SettingsUITests: XCTestCase {
 
     func testSettingsWalkthroughAndTestImageModeAnchor() throws {
         let app = launchDemo()
+        // R5 P3 预算测量：设置页打开耗时（点「去设置」/tab → settings_page 出现）
+        let openStart = Date()
         openSettings(app)
+        let openSeconds = Date().timeIntervalSince(openStart)
+        XCTAssertTrue(openSeconds <= 6.0,
+                      "设置页打开 \(String(format: "%.2f", openSeconds))s 超预算（5s + 20% 容差）")
+        recordMeasured("settings_open_seconds", openSeconds)
 
         // ⑧ 关于先展开：about 在页面最底部；此刻所有组收起、页面短 → header 一屏可达。
         //    （先于 11 组全部展开的走查，避免深滚动 + toggle 状态歧义）
-        // header 是 Button（SettingsGroupCard.header）；整卡 identifier 的中心点不在头行 →
-        // 必须点头行文本按钮（title "⑧ 关于"）
-        // 卡 identifier 把整卡合并为单个 a11y 元素（子头行按钮被合并进卡片）→
-        // 点卡片顶部条带（header 区，dy≈0.08）切换展开
         // R3 问题 4：关于改为 AboutView 子页（NavigationLink）—— 测试图开关在子页 Form 内
+        // R5 P3 预算测量：滚到底耗时（settings_group 卡全部收起态滚到 about 链接）
+        let scrollStart = Date()
         let aboutLink = app.buttons["settings_about_link"].firstMatch
-        scrollUntilVisible(app, aboutLink, maxSwipes: 14)
-        XCTAssertTrue(aboutLink.waitForExistence(timeout: 6), "settings_about_link not found")
-        if aboutLink.isHittable { aboutLink.tap() } else {
-            aboutLink.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
+        XCTAssertTrue(scrollToElement(app, aboutLink, maxSwipes: 12),
+                      "settings_about_link 定位失败")
+        let scrollSeconds = Date().timeIntervalSince(scrollStart)
+        XCTAssertTrue(scrollSeconds <= 18.0,
+                      "滚到底 \(String(format: "%.2f", scrollSeconds))s 超预算（15s + 20% 容差）")
+        recordMeasured("settings_scroll_bottom_seconds", scrollSeconds)
+
+        // identifier 在头行按钮上（settings_about_link）→ 精确 tap，不再坐标兜底
+        aboutLink.tap()
         // AppSwitchRow：id 在整行 Button 上（内层 Toggle id = switch_<label>）→ 双路查询
         var sw = app.buttons["about_testimg_switch"].firstMatch
         if !sw.exists { sw = app.switches["about_testimg_switch"].firstMatch }
         XCTAssertTrue(sw.waitForExistence(timeout: 8), "about_testimg_switch not found (DEBUG build expected)")
-        scrollUntilVisible(app, sw, maxSwipes: 10)
+        XCTAssertTrue(scrollToElement(app, sw, maxSwipes: 10), "about_testimg_scroll fail")
 
         // 锚点可能已挂（前序 UI 测试持久化 testImgMode=true）→ 先查再点，避免 ON→OFF 抖动
         let anchorQuery = app.descendants(matching: .any)["testImageModeOn"].firstMatch
         if !anchorQuery.exists {
             // 点击开关（行按钮 / 行内 Toggle 均触发 onChange）→ 逐次点，锚点出现即停（≤4 次）
             for _ in 0..<4 {
-                if sw.isHittable {
-                    sw.tap()
-                } else {
-                    sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-                }
+                scrollToElement(app, sw, maxSwipes: 4)
+                sw.tap()
                 if anchorQuery.waitForExistence(timeout: 3) { break }
             }
         }
@@ -100,15 +144,12 @@ final class SettingsUITests: XCTestCase {
         var anchorFound = anchorQ.exists
         if !anchorFound {
             for _ in 0..<6 {
-                if sw.isHittable {
-                    sw.tap()
-                } else {
-                    sw.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-                }
+                scrollToElement(app, sw, maxSwipes: 4)
+                sw.tap()
                 if anchorQ.waitForExistence(timeout: 4) { anchorFound = true; break }
                 // 兜底：点行文本（Form 行整行可点）
                 let rowText = app.staticTexts["测试图片模式（调试）"].firstMatch
-                if rowText.exists && rowText.isHittable { rowText.tap() }
+                if rowText.exists && rowText.frame.intersects(app.frame) { rowText.tap() }
                 if anchorQ.waitForExistence(timeout: 4) { anchorFound = true; break }
             }
         }
@@ -120,19 +161,27 @@ final class SettingsUITests: XCTestCase {
             : ()
         Thread.sleep(forTimeInterval: 0.8)
 
-        // 11 张分组卡逐组展开走查（无崩溃）—— 只点头行条带（卡片中心 = 展开内容，
-        // 中心 tap 会误触行控件：开关/文本框），头行条带 = 切换展开/收起
+        // 11 张分组卡逐组展开走查（无崩溃）—— settings_group_<key> identifier 就在头行
+        // 按钮上（SettingsGroupCard.header）→ 精确 tap 头行切换展开，无坐标兜底
         let keys = ["db", "proxy", "jdbimg", "shtimg", "theme", "lock",
                     "browse", "semantic", "cache", "shadow"]
         for k in keys {
             let card = group(app, k)
-            scrollUntilVisible(app, card)
-            guard card.exists, card.isHittable else { continue }
-            card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
+            guard scrollToElement(app, card) else { continue }   // 失败已附 dump
+            card.tap()
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
         // 锚点已在本用例前段硬断言（testImageModeOn），store 持久化由单测覆盖
         XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // MARK: 预算数字落盘（R5 P3：before/after 可比，不靠感觉）
+
+    private func recordMeasured(_ name: String, _ seconds: TimeInterval) {
+        let a = XCTAttachment(string: String(format: "%@ = %.3f s", name, seconds))
+        a.name = "perf-\(name)"
+        a.lifetime = .keepAlways
+        add(a)
     }
 
     // MARK: 主题 chip 点击 → 保存三态行出现（无变化/已保存 均可）
@@ -142,14 +191,12 @@ final class SettingsUITests: XCTestCase {
         openSettings(app)
 
         let themeGroup = group(app, "theme")
-        scrollUntilVisible(app, themeGroup)
-        XCTAssertTrue(themeGroup.waitForExistence(timeout: 5), "theme group not found")
-        themeGroup.tap()   // 展开
+        XCTAssertTrue(scrollToElement(app, themeGroup), "theme group 定位失败")
+        themeGroup.tap()   // 展开（identifier 在头行按钮上）
 
         // 点「跟随系统」chip（深色为默认 → 预期「无变化」；文案二态均可接受）
         let chip = app.buttons["跟随系统"].firstMatch
-        scrollUntilVisible(app, chip)
-        if chip.exists {
+        if scrollToElement(app, chip, maxSwipes: 8) {
             chip.tap()
             let state = app.descendants(matching: .any)["settings_save_state"].firstMatch
             XCTAssertTrue(state.waitForExistence(timeout: 5), "save state line not shown")

@@ -346,9 +346,14 @@ struct SemanticModelCard: View {
 
     private func refreshEmbInfo() {
         guard installed else { return }
-        let st = SettingsIndexHub.shared.embStats()
-        if let st {
-            embInfo = SettingsCopy.embInfoLine(st.count, bytes: st.bytes)
+        // R5 P3：EmbStore 懒开 + count/usageBytes 全部在后台线程（绝不主线程 SQLite）
+        Task.detached(priority: .utility) {
+            let st = SettingsIndexHub.shared.embStats()
+            await MainActor.run {
+                if let st {
+                    embInfo = SettingsCopy.embInfoLine(st.count, bytes: st.bytes)
+                }
+            }
         }
     }
 }
