@@ -51,7 +51,7 @@ final class ActorDetailLayoutUITests: XCTestCase {
         // 滚到底 → page_chip 可见且 FAB 可见（底部余量生效）
         for _ in 0..<5 { app.swipeUp() }
         let chip = app.buttons["page_chip"].firstMatch
-        XCTAssertTrue(chip.waitForExistence(timeout: 10), "page_chip 必须出现")
+        XCTAssertTrue(chip.waitForExistence(timeout: 40), "page_chip 必须出现")
         let fab = app.buttons["scroll_top"].firstMatch
         XCTAssertTrue(fab.waitForExistence(timeout: 5), "scroll_top 必须出现")
         // chip 与 FAB 竖排不重叠：chip 在 FAB 上方

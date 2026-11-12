@@ -82,7 +82,12 @@ final class ProductionSmokeUITests: XCTestCase {
         // ③ 设置页「测试连接」→ 真实成功（含版本号、不含「演示模式」）
         let settingsTab = app.descendants(matching: .any)["tab_settings"].firstMatch
         XCTAssertTrue(settingsTab.exists)
-        settingsTab.tap()
+        // R4：tab 点击有转场竞态（曾观察到落在 98t 错误态）→ 验证落地页并重试
+        for _ in 0..<3 {
+            settingsTab.tap()
+            if app.descendants(matching: .any)["settings_page"].firstMatch
+                .waitForExistence(timeout: 8) { break }
+        }
         // 数据源卡默认折叠（非 firstRun 且 user 非空）→ 先展开
         let dbGroup = app.descendants(matching: .any)["settings_group_db"].firstMatch
         XCTAssertTrue(dbGroup.waitForExistence(timeout: 15), "数据源分组卡未找到")

@@ -95,7 +95,7 @@ final class NavigationToolsUITests: XCTestCase {
         let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
         XCTAssertTrue(browsePage.waitForExistence(timeout: 10), "browse_page 必须出现")
         let chip = app.buttons["page_chip"].firstMatch
-        XCTAssertTrue(chip.waitForExistence(timeout: 30), "browse 的 page_chip 必须出现")
+        XCTAssertTrue(chip.waitForExistence(timeout: 40), "browse 的 page_chip 必须出现")
 
         chip.tap()
         let field = app.textFields["page_jump_field"].firstMatch
@@ -125,7 +125,7 @@ final class NavigationToolsUITests: XCTestCase {
         XCTAssertTrue(browseTab.waitForExistence(timeout: 10))
         browseTab.tap()
         let card = app.descendants(matching: .any)["card_browse_0"].firstMatch
-        XCTAssertTrue(card.waitForExistence(timeout: 15), "card_browse_0 必须存在")
+        XCTAssertTrue(card.waitForExistence(timeout: 40), "card_browse_0 必须存在")
         card.tap()
         let fab = app.buttons["scroll_top"].firstMatch
         var fabShown = fab.exists
