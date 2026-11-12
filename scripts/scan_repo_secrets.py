@@ -21,15 +21,44 @@ import subprocess
 import sys
 
 PATTERNS = [
-    ("password_assign", r"(password|passwd|pwd)\s*[:=]\s*[\"'][^\"']{3,}[\"']"),
-    ("sql_identified_by", r"IDENTIFIED\s+(WITH\s+\S+\s+)?BY\s+[\"'][^\"']+[\"']"),
-    ("mysql_env_password", r"MYSQL_[A-Z_]*PASSWORD\s*[:=]\s*\S+"),
-    ("runner_env_pass", r"(TEST_RUNNER_|JDLV_)[A-Z_]*PASS\s*[:=]\s*\S+"),
-    ("mysql_url_creds", r"mysql://[^\s:]+:[^\s@]+@"),
-    ("jdbc_mysql", r"jdbc:mysql"),
+    # (name, python_regex, grep_hint)
+    # grep_hint: a loose POSIX-ERE filter for `git grep -E` in head mode.
+    # POSIX ERE does not support \s inside bracket expressions, so the hint
+    # must stay engine-agnostic; the python_regex is the authoritative
+    # matcher for every mode.
+    ("password_assign", r"(password|passwd|pwd)\s*[:=]\s*[\"'][^\"']{3,}[\"']",
+     "(password|passwd|pwd)"),
+    ("sql_identified_by", r"IDENTIFIED\s+(WITH\s+\S+\s+)?BY\s+[\"'][^\"']+[\"']",
+     "IDENTIFIED"),
+    ("mysql_env_password", r"MYSQL_[A-Z_]*PASSWORD\s*[:=]\s*\S+",
+     "MYSQL_"),
+    ("runner_env_pass", r"(TEST_RUNNER_|JDLV_)[A-Z_]*PASS\s*[:=]\s*\S+",
+     "PASS"),
+    ("mysql_url_creds", r"mysql://[^\s:]+:[^\s@]+@",
+     "mysql://"),
+    ("jdbc_mysql", r"jdbc:mysql", "jdbc:mysql"),
+    ("private_key_block", r"BEGIN [A-Z ]*PRIVATE KEY", "PRIVATE KEY"),
 ]
 
 DOCS_EXCLUDE_SUBSTR = "07_证据"
+
+# Synthetic (non-credential) value forms, exempted narrowly:
+#
+# 1. CI-only keys whose value is the per-run ephemeral github.run_id
+#    expression (exact unquoted form). Any other key or any other
+#    expression still hits; a real literal always hits.
+# 2. The fixture/docs placeholder token __SET_IN_CI__ as the entire value
+#    (optionally quoted): synthetic by construction, not a credential.
+SYNTHETIC_RUN_ID = re.compile(
+    r"(MYSQL_ROOT_PASSWORD|JDLV_TEST_MYSQL_PASS)\s*[:=]\s*"
+    r"\$\{\{\s*github\.run_id\s*\}\}\s*$"
+)
+PLACEHOLDER_SET_IN_CI = re.compile(r"[:=]\s*[\"']?__SET_IN_CI__[\"']?\s*$")
+
+
+def is_synthetic(content):
+    return bool(SYNTHETIC_RUN_ID.search(content)
+                or PLACEHOLDER_SET_IN_CI.search(content))
 
 
 def load_allowlist(path):
@@ -67,7 +96,7 @@ def git(root, *args):
 
 def scan_text_lines(text):
     """Yield (line_no, pattern, match_len) for a decoded text block."""
-    for name, pat in PATTERNS:
+    for name, pat, _hint in PATTERNS:
         rx = re.compile(pat, re.IGNORECASE)
         for i, line in enumerate(text.splitlines(), 1):
             m = rx.search(line)
@@ -78,9 +107,9 @@ def scan_text_lines(text):
 def mode_head(root, rules, lines):
     files_seen = set()
     hits = 0
-    for name, pat in PATTERNS:
+    for name, pat, hint in PATTERNS:
         try:
-            out = git(root, "grep", "-I", "-n", "-E", "-i", "-e", pat)
+            out = git(root, "grep", "-I", "-n", "-E", "-i", "-e", hint)
         except RuntimeError:
             continue  # no match -> git grep exits 1; RuntimeError raised on >1
         except Exception:
@@ -94,6 +123,10 @@ def mode_head(root, rules, lines):
                 continue
             if is_allowed(rules, path, content):
                 lines.append("ALLOWED path=%s line=%s pattern=%s (allowlist)" %
+                             (path, line_no, name))
+                continue
+            if is_synthetic(content):
+                lines.append("ALLOWED path=%s line=%s pattern=%s (synthetic)" %
                              (path, line_no, name))
                 continue
             files_seen.add(path)
@@ -157,6 +190,10 @@ def mode_history(root, rules, lines):
                     lines.append("ALLOWED obj=%s path=%s line=%d pattern=%s (allowlist)" %
                                  (sha[:12], path, line_no, name))
                     continue
+                if is_synthetic(content_line):
+                    lines.append("ALLOWED obj=%s path=%s line=%d pattern=%s (synthetic)" %
+                                 (sha[:12], path, line_no, name))
+                    continue
                 objs.add(sha[:12])
                 hits += 1
                 lines.append("HIT obj=%s path=%s line=%d pattern=%s match_len=%d" %
@@ -194,6 +231,10 @@ def mode_docs(root, rules, lines):
                     lines.append("ALLOWED path=%s line=%d pattern=%s (allowlist)" %
                                  (rel, line_no, name))
                     continue
+                if is_synthetic(content_line):
+                    lines.append("ALLOWED path=%s line=%d pattern=%s (synthetic)" %
+                                 (rel, line_no, name))
+                    continue
                 files_seen.add(rel)
                 hits += 1
                 lines.append("HIT path=%s line=%d pattern=%s match_len=%d" %
@@ -219,6 +260,10 @@ def mode_ipa(root, rules, lines):
                 content_line = text.splitlines()[line_no - 1]
                 if is_allowed(rules, rel, content_line):
                     lines.append("ALLOWED path=%s line=%d pattern=%s (allowlist)" %
+                                 (rel, line_no, name))
+                    continue
+                if is_synthetic(content_line):
+                    lines.append("ALLOWED path=%s line=%d pattern=%s (synthetic)" %
                                  (rel, line_no, name))
                     continue
                 files_seen.add(rel)

@@ -30,7 +30,9 @@ RPAT="(IDENTIFIED[[:space:]]+.*BY[[:space:]]*[\"'][^\"'\$]|[A-Z_]*PASSWORD[[:spa
 rcred_hits=$(git grep -InE "$RPAT" -- . | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
 [ -z "$rcred_hits" ] || { echo 'guard FAIL: credential value literals in tracked tree'; echo "$rcred_hits"; exit 1; }
 if [ -d docs ]; then
-  doccred=$(grep -rInE "$PAT" docs --exclude-dir=07_证据 2>/dev/null | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
+  # R5：23_分段执行_R5 是规划/任务文件目录，其正反自测示例按设计含「带引号的
+  # 合成口令字面量形态」，属扫描 fixture 而非凭据；仅该目录豁免，24_证据 照常全扫。
+  doccred=$(grep -rInE "$PAT" docs --exclude-dir=07_证据 --exclude-dir=23_分段执行_R5 2>/dev/null | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
   [ -z "$doccred" ] || { echo 'guard FAIL: credential literals in local docs/'; echo "$doccred"; exit 1; }
   git check-ignore -q docs/ || { echo 'guard FAIL: docs/ not gitignored'; exit 1; }
 fi
