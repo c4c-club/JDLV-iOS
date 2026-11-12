@@ -395,8 +395,9 @@ final class SettingsIndexHub {
         return base.path.hasSuffix("/") ? base.path : base.path + "/"
     }
 
-    /// WarmSettings 提供器（AppSettings → WarmSettings 映射）
-    static func warmSettings(_ s: AppSettings) -> WarmSettings {
+    /// WarmSettings 提供器（AppSettings → WarmSettings 映射；纯函数 → nonisolated，
+    /// 供后台 warmUpAsync 构建的 SyncCoordinator settings 闭包在任意线程调用）
+    nonisolated static func warmSettings(_ s: AppSettings) -> WarmSettings {
         WarmSettings(
             enabled: s.shadowEnabled,
             idxMode: s.shadowMode == 1,
