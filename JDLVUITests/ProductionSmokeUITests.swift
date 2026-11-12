@@ -102,6 +102,14 @@ final class ProductionSmokeUITests: XCTestCase {
         } else {
             testButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
+        // R4 P8 诊断：点击后 2s/10s/30s 各截一张，定位 connTest 无输出的挂点
+        for (i, delay) in [(1, 2.0), (2, 8.0), (3, 20.0)] as [(Int, Double)] {
+            Thread.sleep(forTimeInterval: delay)
+            let d = XCTAttachment(screenshot: app.screenshot())
+            d.name = "diag-conn-after-\(i)"
+            d.lifetime = .keepAlways
+            add(d)
+        }
         var result = app.descendants(matching: .any)["settings_test_result"].firstMatch
         if !result.waitForExistence(timeout: 45) {
             testButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
