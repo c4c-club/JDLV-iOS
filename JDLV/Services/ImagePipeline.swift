@@ -531,7 +531,7 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
     func entry(_ key: Key, body: @escaping @Sendable () async throws -> Value) -> Task<Value, Error> {
         lock.lock()
         if let e = inflight[key] {
-            let t = e.task
+            let t = e.task!   // 装配不变量：入字典前 task 已赋值
             lock.unlock()
             return t
         }
@@ -540,14 +540,14 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
         lock.lock()
         // 双检：并发插入窗口保留先到者，取消后到者（理论窗口，防御性）
         if let cur = inflight[key] {
-            let t = cur.task
+            let t = cur.task!
             lock.unlock()
-            e.task.cancel()
+            e.task!.cancel()
             return t
         }
         inflight[key] = e
         lock.unlock()
-        return e.task
+        return e.task!
     }
 
     private func makeEntry(key: Key, body: @escaping @Sendable () async throws -> Value) -> Entry {
@@ -571,7 +571,7 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
         lock.lock()
         let e = inflight.removeValue(forKey: key)
         lock.unlock()
-        e?.task.cancel()
+        e?.task!.cancel()
     }
 
     /// 测试/诊断：键当前是否在飞（含已退出但未移除的残留条目 —— 恒应为 false）
