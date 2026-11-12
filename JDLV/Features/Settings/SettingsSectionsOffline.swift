@@ -64,12 +64,15 @@ struct OfflineIndexCard: View {
             progressBlock(view)
             buttonsGrid
         }
-        .onAppear {
+        .task {
             guard !loadedOnce else { return }
             loadedOnce = true
-            // R5 P3：后台预热（IdxDb 打开 + refreshStats 离主线程；B06/B22 语义不变）
-            SettingsIndexHub.shared.warmUpAsync()
-            recalcUsage()
+            // R5 P3：后台预热（IdxDb 打开 + refreshStats + usageBytes 全离主线程），
+            // 完成后回主 actor 更新占用文案（.task 本体在 MainActor）
+            usagePending = true
+            let bytes = await SettingsIndexHub.shared.warmUpAsync().value
+            usagePending = false
+            usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)
         }
         // 重建二次确认 AlertDialog（§11.7 逐字）
         .alert(SettingsCopy.rebuildTitle, isPresented: $rebuildConfirm) {
@@ -189,13 +192,16 @@ struct OfflineIndexCard: View {
 
     private func recalcUsage() {
         usagePending = true
-        // R5 P3：sync 懒建 + usageBytes(WAL) 全部在后台线程（绝不主线程 SQLite）
-        Task.detached(priority: .utility) {
-            let bytes = SettingsIndexHub.shared.sync?.idx.usageBytes(fast: false) ?? 0
-            await MainActor.run {
-                usagePending = false
-                usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)
+        Task { @MainActor in
+            // R5 P3：usageBytes(WAL) 在后台线程；已建实例直接算，未建则走 warmUpAsync（后台建）
+            let bytes: Int64
+            if let idx = SettingsIndexHub.shared.syncIfReady?.idx {
+                bytes = await Task.detached(priority: .utility) { idx.usageBytes(fast: false) }.value
+            } else {
+                bytes = await SettingsIndexHub.shared.warmUpAsync().value
             }
+            usagePending = false
+            usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)
         }
     }
 

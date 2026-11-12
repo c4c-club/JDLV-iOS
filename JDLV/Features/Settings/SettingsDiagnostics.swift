@@ -431,27 +431,39 @@ final class SettingsIndexHub {
     /// R5 P3：已建实例只读访问（绝不触发 IdxDb 构建 —— 主线程展示/定时路径专用）
     var syncIfReady: SyncCoordinator? { _sync }
 
-    /// R5 P3：后台预热（IdxDb 打开 + refreshStats 全部离主线程；幂等，已建则只重刷统计）。
-    /// 展示路径（卡片 onAppear）调用；结果经 1s tick 或后续读取自然呈现。
-    @discardableResult
-    func warmUpAsync() -> Task<Void, Never> {
-        return Task.detached(priority: .utility) { [weak self] in
-            guard let self else { return }
-            _ = self.sync             // 懒建（后台线程；首次含 SQLite 打开）
-            self.sync?.refreshStats() // 统计查询（后台线程；多次 SQLite count/usageBytes）
-        }
-    }
+    /// R5 P3：后台构建结果登记（仅 warmUpAsync 的 MainActor.run 中调用；已有实例则丢弃后台副本）
+    func adoptBuiltSync(_ c: SyncCoordinator) { if _sync == nil { _sync = c } }
+    /// R5 P3：后台构建失败登记
+    func markIdxFailed() { idxFailed = true }
 
-    /// 实际占用重算（idx = IdxDb.usageBytes(fast:false) 含 WAL；详情缓存 ShadowDb 未接线 → 0）
-    func recalcUsage() -> (idxMb: Double, detailMb: Double) {
-        guard let sync else { return (0, 0) }
-        let idx = Double(sync.idx.usageBytes(fast: false)) / 1_048_576.0
-        return (idx, 0.0)
+    /// R5 P3：后台预热（IdxDb 打开 + refreshStats + 实际占用全部离主线程；幂等）。
+    /// SQLite I/O 在 detached 上下文执行，@MainActor 只做结果登记（无 I/O）。
+    /// 返回 usageBytes(fast:false)（含 WAL）；未启用/失败 → 0。
+    /// 注意：若用户动作路径先在主线程懒建了实例，后台副本将被 adoptBuiltSync 丢弃（防双实例）。
+    @discardableResult
+    func warmUpAsync() -> Task<Int64, Never> {
+        let box = self.box
+        let dir = Self.supportDir
+        return Task.detached(priority: .utility) {
+            do {
+                let idx = try IdxDb(directory: dir)
+                let coordinator = SyncCoordinator(
+                    idx: idx,
+                    source: WarmDbSourceFactory(),
+                    settings: { SettingsIndexHub.warmSettings(box.settings) })
+                coordinator.refreshStats()
+                await MainActor.run { SettingsIndexHub.shared.adoptBuiltSync(coordinator) }
+                return idx.usageBytes(fast: false)
+            } catch {
+                await MainActor.run { SettingsIndexHub.shared.markIdxFailed() }
+                return 0
+            }
+        }
     }
 
     // MARK: EmbStore（语义向量缓存）
 
-    /// 懒开 EmbStore（失败恒 nil）
+    /// 懒开 EmbStore（失败恒 nil）—— 仅用户动作路径调用；展示路径用 embStatsAsync
     private func emb() -> EmbStore? {
         if _emb != nil { return _emb }
         if embFailed { return nil }
@@ -459,6 +471,31 @@ final class SettingsIndexHub {
             let store = try EmbStore(directory: Self.supportDir)
             _emb = store
             return store
+        } catch {
+            embFailed = true
+            return nil
+        }
+    }
+
+    /// R5 P3：后台打开 EmbStore + 统计（懒建离主线程；@MainActor 只做已建实例读取/登记）。
+    /// 展示路径（SemanticModelCard.onAppear）专用。
+    @MainActor
+    func embStatsAsync() async -> (count: Int, bytes: Int64)? {
+        if let e = _emb {
+            return await Task.detached(priority: .utility) { [e] in
+                guard let c = try? e.count(), let b = try? e.usageBytes() else { return nil }
+                return (Int(c), b)
+            }.value
+        }
+        if embFailed { return nil }
+        let dir = Self.supportDir
+        do {
+            let e = try await Task.detached(priority: .utility) { try EmbStore(directory: dir) }.value
+            if _emb == nil { _emb = e }
+            return await Task.detached(priority: .utility) { [e] in
+                guard let c = try? e.count(), let b = try? e.usageBytes() else { return nil }
+                return (Int(c), b)
+            }.value
         } catch {
             embFailed = true
             return nil

@@ -346,13 +346,10 @@ struct SemanticModelCard: View {
 
     private func refreshEmbInfo() {
         guard installed else { return }
-        // R5 P3：EmbStore 懒开 + count/usageBytes 全部在后台线程（绝不主线程 SQLite）
-        Task.detached(priority: .utility) {
-            let st = SettingsIndexHub.shared.embStats()
-            await MainActor.run {
-                if let st {
-                    embInfo = SettingsCopy.embInfoLine(st.count, bytes: st.bytes)
-                }
+        // R5 P3：EmbStore 懒开 + 统计离主线程（embStatsAsync 内部 detached；@MainActor 只登记）
+        Task { @MainActor in
+            if let st = await SettingsIndexHub.shared.embStatsAsync() {
+                embInfo = SettingsCopy.embInfoLine(st.count, bytes: st.bytes)
             }
         }
     }
