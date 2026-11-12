@@ -25,9 +25,14 @@ import JDLVCore
 /// 设置变换（等价 Android `{ it.copy(...) }`）
 public typealias SettingsTransform = (inout AppSettings) -> Void
 
+/// R5 P2：Keychain 写通道抽象（测试注入可控延迟/故障的 fake；生产实现 = KeychainWriter）
+protocol KeychainWriting: Sendable {
+    func set(_ value: String, forKey key: String) async -> Result<Void, KeychainStore.KeyStatus>
+}
+
 /// R4 P4：Keychain 物理写入走串行后台 actor（SecItem 调用离主线程；任务 05 §7.5.3）。
 /// 原子化预写/回滚的顺序与 persisted* 缓存逻辑仍在 @MainActor SettingsStore（actor 只做单次 set）。
-private actor KeychainWriter {
+actor KeychainWriter: KeychainWriting {
     func set(_ value: String, forKey key: String) -> Result<Void, KeychainStore.KeyStatus> {
         KeychainStore.setResult(value, forKey: key)
     }
@@ -121,8 +126,21 @@ final class SettingsStore: ObservableObject {
     private var persistedRemotePass = ""
     private var persistedLockSecret = ""
 
-    /// R4 P4：Keychain 物理写入执行器（串行后台 actor；见文件头说明）
-    private let keychainWriter = KeychainWriter()
+    /// R4 P4：Keychain 物理写入执行器（串行后台 actor；见文件头说明）。
+    /// R5 P2：测试可注入可控延迟/故障的 KeychainWriting fake。
+    private let keychainWriter: any KeychainWriting
+
+    /// R5 P2 串行落盘：全局 FIFO 写链尾。三条写通道与自愈路径的 persist 全部链接到
+    /// 链尾之后执行（物理写入跨通道全局有序，旧快照绝不覆盖新快照）。
+    /// 测试可 await persistTail?.value 做确定性 barrier（不靠 sleep）。
+    private(set) var persistTail: Task<Void, Never>?
+
+    /// R5 P2：单调代际，每次值有变的写请求 +1；只增不回退（测试断言最终代际）。
+    private(set) var persistGeneration: UInt64 = 0
+
+    /// R5 P2：通道一（updateSettings）合并标记 —— 链上已有待执行的合并节点时，
+    /// 新请求只更新内存快照（节点执行时读取内存最新值），连续快速修改只产生一次物理写。
+    private var coalescePending = false
 
     enum PersistError: Error {
         case keychainWrite(String)
@@ -166,8 +184,9 @@ final class SettingsStore: ObservableObject {
 
     // MARK: - init（R4 P6：UserDefaults 同步 + Keychain 三键后台读）
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, keychainWriter: any KeychainWriting = KeychainWriter()) {
         self.defaults = defaults
+        self.keychainWriter = keychainWriter
         KeychainStore.applyLaunchArgFaults(ProcessInfo.processInfo.arguments)
         var s: AppSettings
         if let data = defaults.data(forKey: AppSettings.storageDefaultsKey) {
@@ -226,7 +245,7 @@ final class SettingsStore: ObservableObject {
     }
 
     /// 单键读取（A7/R7：失败 → 空串 + 失败标记，区分 itemNotFound；init 期静态版）
-    /// nonisolated：init 的 detached 闭包在任意线程直调（KeychainStore 静态 API 线程安全）
+    /// nonisolated：init 的 detached 闭包与 retry 后台读取在任意线程直调（KeychainStore 静态 API 线程安全）
     nonisolated private static func loadSecretStatic(_ key: String, _ failed: inout Bool, _ msg: inout String) -> String {
         switch KeychainStore.getResult(key) {
         case .success(let v):
@@ -249,45 +268,42 @@ final class SettingsStore: ObservableObject {
         }
     }
 
-    /// 重试读取：全部成功 → 清失败态 + 刷新内存 + 移除观察者
+    /// 重试读取：全部成功 → 清失败态 + 刷新内存 + 移除观察者。
+    /// R5 P2：Keychain 读取移到后台（MainActor 不得同步调 KeychainStore.getResult），
+    /// 读毕 hop 回主 actor 更新状态；失败则保留失败态 + 刷新文案（可再次重试）。
     func retrySecretLoads() {
         guard secretReadFailed else { return }
-        var anyFail = false
-        var msgs: String = ""
-        let lp = readOrTrack(SecretKey.localPass, &anyFail, &msgs)
-        let rp = readOrTrack(SecretKey.remotePass, &anyFail, &msgs)
-        let ls = readOrTrack(SecretKey.lockSecret, &anyFail, &msgs)
-        guard !anyFail else {
-            secretReadMessage = msgs
-            return
-        }
-        secretReadFailed = false
-        secretReadMessage = ""
-        var s = settings
-        if lp != persistedLocalPass { s.localPass = lp; persistedLocalPass = lp }
-        if rp != persistedRemotePass { s.remotePass = rp; persistedRemotePass = rp }
-        if ls != persistedLockSecret { s.lockSecret = ls; persistedLockSecret = ls }
-        settings = s
-        if let o = protectedDataObserver {
-            NotificationCenter.default.removeObserver(o)
-            protectedDataObserver = nil
-        }
-    }
-
-    private func readOrTrack(_ key: String, _ anyFail: inout Bool, _ msgs: inout String) -> String {
-        switch KeychainStore.getResult(key) {
-        case .success(let v):
-            return v ?? ""
-        case .failure(let st):
-            anyFail = true
-            msgs = st.message
-            return ""
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var anyFail = false
+            var msgs: String = ""
+            let lp = SettingsStore.loadSecretStatic(SecretKey.localPass, &anyFail, &msgs)
+            let rp = SettingsStore.loadSecretStatic(SecretKey.remotePass, &anyFail, &msgs)
+            let ls = SettingsStore.loadSecretStatic(SecretKey.lockSecret, &anyFail, &msgs)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if anyFail {
+                    // 仍失败：保留 secretReadFailed 态，刷新文案（观察者已挂，下次再试）
+                    self.secretReadMessage = msgs
+                    return
+                }
+                self.secretReadFailed = false
+                self.secretReadMessage = ""
+                var s = self.settings
+                if lp != self.persistedLocalPass { s.localPass = lp; self.persistedLocalPass = lp }
+                if rp != self.persistedRemotePass { s.remotePass = rp; self.persistedRemotePass = rp }
+                if ls != self.persistedLockSecret { s.lockSecret = ls; self.persistedLockSecret = ls }
+                self.settings = s
+                if let o = self.protectedDataObserver {
+                    NotificationCenter.default.removeObserver(o)
+                    self.protectedDataObserver = nil
+                }
+            }
         }
     }
 
     /// A-7 自愈：`lockEnabled && lockType != "biometric" && lockSecret 空`（切换认证方式残留）
     /// → 自动写回 lockEnabled=false, lockType="none", lockSecret=""，防永久锁死。
-    /// R4 P4：persist 已 async（KeychainWriter 后台写）→ 自愈改为 fire-and-forget Task，
+    /// R5 P2：persist 链接到全局 FIFO 写链（与其它写通道全局有序），fire-and-forget，
     /// 不阻断启动（内存态先按 fixed 生效由下一次保存兜底 —— 原语义不变）。
     private func healResidualLockIfNeeded() {
         let s = settings
@@ -296,15 +312,12 @@ final class SettingsStore: ObservableObject {
         fixed.lockEnabled = false
         fixed.lockType = "none"
         fixed.lockSecret = ""
+        settings = fixed
+        let task = enqueuePersist(snapshot: { fixed },
+                                  applyMemoryOnSuccess: false, old: nil)
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await self.persist(fixed)
-                self.settings = fixed
-                self.healedResidualLock = true
-            } catch {
-                // 自愈落盘失败不阻断启动（内存态已修正，下次保存会再写）
-            }
+            let r = await task.value
+            if r == .saved { self?.healedResidualLock = true }
         }
     }
 
@@ -366,14 +379,46 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    // MARK: - R5 P2 串行落盘（全局 FIFO 写链）
+
+    /// 把一次 persist 链接到全局 FIFO 写链尾（persistTail）。跨通道全局有序：
+    /// 通道一（updateSettings 合并）、通道二/三（updateSettingsNow/autoSave）、自愈
+    /// 都经本入口；节点在 MainActor 串行执行，前节点完成才开始下一节点。
+    /// - snapshot：执行时点取快照（通道一合并语义：读内存最新值；其它通道传捕获值）。
+    /// - applyMemoryOnSuccess：通道二/三写成功后回写内存（原语义：写成功才更新）。
+    /// - old：副作用 diff 基线（nil = 不触发副作用，自愈路径）。
+    /// 返回结果任务（通道二/三 await）；链尾由包装节点推进，await persistTail 做确定性 barrier。
+    private func enqueuePersist(snapshot: @escaping @MainActor () -> AppSettings,
+                                applyMemoryOnSuccess: Bool,
+                                old: AppSettings?) -> Task<SaveResult, Never> {
+        let prev = persistTail
+        let task = Task { @MainActor [weak self] () -> SaveResult in
+            guard let self else { return .failed }
+            await prev?.value
+            let s = snapshot()
+            do {
+                try await self.persist(s)
+                if applyMemoryOnSuccess { self.settings = s }
+                if let old { self.onPersistedEffects?(old, s) }
+                self.noteFinished(.saved)
+                return .saved
+            } catch {
+                self.noteFinished(.failed)
+                return .failed
+            }
+        }
+        persistTail = Task { _ = await task.value }
+        return task
+    }
+
     // MARK: - 写通道一：updateSettings（轻量，立即落盘，无三态回调）
 
     /// 主题/视图/每页数量等纯展示设置用；落盘失败不阻断内存生效（下次保存重写）。
     /// A3/R3：副作用只在【落盘成功】后经 onPersistedEffects 单入口执行。
     /// R3 问题 4：值未变 → .noChange；落盘异常 → .failed；成功 → .saved。
-    /// R4 P4：persist 已 async（KeychainWriter 后台写）→ 本通道保持同步签名（VM 有大量
-    /// 同步调用方），落盘部分改 fire-and-forget Task：内存立即生效（原语义），后台完成后
-    /// 触发副作用/三态。
+    /// R5 P2：本通道内存立即生效，落盘链接到全局 FIFO 写链；链上已有待执行合并节点时
+    /// 不再排新节点（节点执行时点读取内存最新快照）—— 连续快速修改只产生一次物理写、
+    /// 中间态不落盘；写【期间】的新请求排下一节点（节点执行开始即清合并标记）。
     func updateSettings(_ transform: SettingsTransform) {
         var next = settings
         transform(&next)
@@ -384,17 +429,15 @@ final class SettingsStore: ObservableObject {
         noteSaving()
         let old = settings
         settings = next   // 内存立即生效（原语义：失败不回滚，下次保存重写）
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await self.persist(next)
-                self.onPersistedEffects?(old, next)
-                self.noteFinished(.saved)
-            } catch {
-                // 落盘失败：内存已生效（展示态），但不触发运行时副作用（A3：失败不触发）
-                self.noteFinished(.failed)
-            }
-        }
+        persistGeneration += 1
+        guard !coalescePending else { return }   // 已有节点待执行 → 只更新内存（合并）
+        coalescePending = true
+        _ = enqueuePersist(
+            snapshot: { [weak self] in
+                self?.coalescePending = false   // 执行开始清标记：persist 期间的新请求排下一节点
+                return self?.settings ?? next
+            },
+            applyMemoryOnSuccess: false, old: old)
     }
 
     // MARK: - 写通道二：updateSettingsNow（挂起等落盘；首启配置/上限对话框用）
@@ -402,6 +445,8 @@ final class SettingsStore: ObservableObject {
     /// 值未变 → NO_CHANGE（不写盘）；落盘异常 → FAILED；否则 SAVED。
     /// A3/R3：SAVED 才执行副作用（onPersistedEffects），FAILED 一律不触发。
     /// R3 问题 4：saveState 同步出口（不再依赖每卡 bus）。
+    /// R5 P2：persist 链接到全局 FIFO 写链尾（与通道一/自愈跨通道全局有序），
+    /// 调用方 await 本节点结果（原挂起语义不变）。
     @discardableResult
     func updateSettingsNow(_ transform: @escaping SettingsTransform) async -> SaveResult {
         var next = settings
@@ -411,17 +456,10 @@ final class SettingsStore: ObservableObject {
             return .noChange
         }
         noteSaving()
-        do {
-            try await persist(next)
-            let old = settings
-            settings = next
-            onPersistedEffects?(old, next)
-            noteFinished(.saved)
-            return .saved
-        } catch {
-            noteFinished(.failed)
-            return .failed
-        }
+        let old = settings
+        persistGeneration += 1
+        let task = enqueuePersist(snapshot: { next }, applyMemoryOnSuccess: true, old: old)
+        return await task.value
     }
 
     // MARK: - 写通道三：autoSave（三态；副作用接线留 P8/P12）

@@ -83,14 +83,19 @@ enum AppBootstrap {
 
     // MARK: AppSettings → MySQLPoolSettings（① 纯映射）
 
-    /// 端口非法（非数字/0/65535+）或 host/user/pass 空 → nil（Db 层显式抛
-    /// 「数据源未配置」，禁止静默空串建连）；其余字段一一映射。
+    /// 端口非法（非数字/0/65535+）或 host/user 空 → nil（Db 层显式抛
+    /// 「数据源未配置」，禁止静默空串建连）；
+    /// R5 P2 空口令规则（选 A，与 Settings.setupRequired 对齐）：
+    ///   local 源允许空口令（MySQLPool 空串 → 发 nil，服务端空口令账号语义）；
+    ///   remote 源仍要求非空（公网库不放行无口令账号）；
+    /// 其余字段一一映射。
     static func mysqlSettings(_ s: AppSettings) -> MySQLPoolSettings? {
         let port = Int(s.port) ?? 0
         guard port > 0, port <= 65535,
-              !s.host.isEmpty, !s.user.isEmpty, !s.pass.isEmpty else {
+              !s.host.isEmpty, !s.user.isEmpty else {
             return nil
         }
+        if !s.isLocal && s.pass.isEmpty { return nil }
         return MySQLPoolSettings(
             host: s.host, port: port, user: s.user, pass: s.pass,
             jdbDb: s.jdbDb, shtDb: s.shtDb,

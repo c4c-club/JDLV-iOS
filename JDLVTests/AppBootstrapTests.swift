@@ -8,7 +8,9 @@ import JDLVCore
 //  覆盖：
 //  - AppSettings → MySQLPoolSettings 全字段等值映射（R-V1「settingsProvider?() 全字段
 //    == 持久化配置」）；
-//  - 端口非法 / host/user/pass 空 → nil（Db 层显式「数据源未配置」，不静默空串）；
+//  - 端口非法 / host/user 空 → nil（Db 层显式「数据源未配置」，不静默空串）；
+//  - 空口令四象限（R5 P2 规则 A）：local 空口令放行 / local 有口令放行 /
+//    remote 空口令拒绝 / remote 有口令放行 —— setupRequired 与 mysqlSettings 双路径；
 //  - injectRuntime：MySQLPool.shared.settingsProvider/hasNetwork 接的是快照盒与
 //    NetworkStateBox（网络标志随注入状态变化）；CdnRewrite 同源 + applyHostOnly；
 //  - nil provider：Db.query 抛「数据源未配置」、Db.check 返回 false；
@@ -116,7 +118,63 @@ final class AppBootstrapTests: XCTestCase {
 
         s.remoteUser = "u_it"
         s.remotePass = ""
-        XCTAssertNil(AppBootstrap.mysqlSettings(s), "pass 空必须 nil")
+        XCTAssertNil(AppBootstrap.mysqlSettings(s), "remote pass 空 → nil（remote 源仍要求非空）")
+    }
+
+    // MARK: 2b. 空口令四象限（R5 P2 规则 A：local 允许空口令 / remote 仍必须非空）
+
+    /// 本地 + 空口令 → 放行（MySQLPool 空串 → 发 nil）
+    func testEmptyPasswordLocalAllowed() {
+        var s = fixtureSettings()
+        s.dbSrc = "local"
+        s.localHost = "127.0.0.1"
+        s.localPort = "3306"
+        s.localUser = "root"
+        s.localPass = ""
+        s.localJdb = "jdb_local"
+        s.localSht = "sht_local"
+
+        XCTAssertFalse(s.setupRequired, "local 源空口令不得触发首启门禁")
+        let p = AppBootstrap.mysqlSettings(s)
+        XCTAssertNotNil(p, "local + 空口令必须放行（规则 A）")
+        XCTAssertEqual(p?.pass, "", "空口令原样透传（MySQLPool 层空串 → 发 nil）")
+
+        // remote 侧 setupRequired 对照：同字段空 pass 必须拦截
+        var r = fixtureSettings()
+        r.remotePass = ""
+        XCTAssertTrue(r.setupRequired, "remote 源空口令必须触发首启门禁")
+    }
+
+    /// 本地 + 有口令 → 放行
+    func testPasswordLocalPasses() {
+        var s = fixtureSettings()
+        s.dbSrc = "local"
+        s.localHost = "127.0.0.1"
+        s.localPort = "3306"
+        s.localUser = "app"
+        s.localPass = "lp_it"
+        s.localJdb = "jdb_local"
+        s.localSht = "sht_local"
+
+        XCTAssertFalse(s.setupRequired)
+        let p = AppBootstrap.mysqlSettings(s)
+        XCTAssertNotNil(p, "local + 有口令放行")
+        XCTAssertEqual(p?.pass, "lp_it")
+    }
+
+    /// remote + 空口令 → 拒绝（模型 + 映射双路径）
+    func testEmptyPasswordRemoteRejected() {
+        var s = fixtureSettings()
+        s.remotePass = ""
+        XCTAssertTrue(s.setupRequired, "remote 空口令 → setupRequired")
+        XCTAssertNil(AppBootstrap.mysqlSettings(s), "remote 空口令 → nil")
+    }
+
+    /// remote + 有口令 → 放行
+    func testPasswordRemotePasses() {
+        var s = fixtureSettings()
+        XCTAssertFalse(s.setupRequired, "remote 全字段合法 → 不需引导")
+        XCTAssertNotNil(AppBootstrap.mysqlSettings(s), "remote + 有口令放行")
     }
 
     // MARK: 3. injectRuntime：provider/hasNetwork/CdnRewrite 同源
