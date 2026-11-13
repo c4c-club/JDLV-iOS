@@ -50,7 +50,9 @@ final class Router: ObservableObject {
     @Published var tab: String = Router.startTab {
         didSet {
             if oldValue != tab {
-                settingsPerfLog.notice("router.tab \(oldValue, privacy: .public) -> \(tab, privacy: .public)")
+                let from = oldValue
+                let to = tab
+                settingsPerfLog.notice("router.tab \(from, privacy: .public) -> \(to, privacy: .public)")
             }
         }
     }
