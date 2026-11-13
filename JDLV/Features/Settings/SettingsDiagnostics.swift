@@ -274,10 +274,10 @@ private actor ConnTestGate {
 
     func run(_ s: AppSettings) async -> String {
         // R5 P3 §2A：conn 全程埋点（不含任何口令/主机值）
-        settingsPerfLog.notice("conn: begin", privacy: .public)
+        settingsPerfLog.notice("conn: begin")
         let t0 = Date()
         defer {
-            settingsPerfLog.notice("conn: end \(Date().timeIntervalSince(t0))s", privacy: .public)
+            settingsPerfLog.notice("conn: end \(Date().timeIntervalSince(t0))s")
         }
         // ① 草稿 → 连接参数（端口非法/host/user/pass 空 → 显式「数据源未配置」）
         guard var ps = AppBootstrap.mysqlSettings(s) else {
@@ -291,7 +291,7 @@ private actor ConnTestGate {
 
         let t0p = Perf.nowMs()
         var versions: [String] = []
-        settingsPerfLog.notice("conn: ping-begin", privacy: .public)
+        settingsPerfLog.notice("conn: ping-begin")
         for which in ["jdb", "sht"] {
             switch await MySQLPool.shared.ping(which: which, settings: ps) {
             case .success(let info):
@@ -306,7 +306,7 @@ private actor ConnTestGate {
                     hint: SettingsDiagnostics.hintFor(layer))
             }
         }
-        settingsPerfLog.notice("conn: ping-ok \(Perf.nowMs() - t0p)ms", privacy: .public)
+        settingsPerfLog.notice("conn: ping-ok \(Perf.nowMs() - t0p)ms")
         return SettingsDiagnostics.formatSuccess(elapsedMs: Perf.nowMs() - t0p, versions: versions)
     }
 }
