@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
 import JDLVCore
-import os
 
 //
 //  Router.swift —— 路由骨架（07 A3 路由表 / A4 导航不变量）。
@@ -52,7 +51,7 @@ final class Router: ObservableObject {
             if oldValue != tab {
                 let from = oldValue
                 let to = tab
-                settingsPerfLog.notice("router.tab \(from, privacy: .public) -> \(to, privacy: .public)")
+                perfNote("router.tab \(from) -> \(to)")
             }
         }
     }

@@ -26,11 +26,37 @@
 
 import Foundation
 import JDLVCore
-import os
 
-/// R5 P3 §2A：设置页主线程卡顿实测埋点（public os_log，CI 用 simctl log show 导出）。
+/// R5 P3 §2A：设置页主线程卡顿实测埋点（文件落盘；CI 导出步骤经
+/// simctl get_app_container 拷出 —— os_log/log stream 在 CI 侧不可靠）。
 /// 只记时间线与耗时，不记任何设置值/口令。
-let settingsPerfLog = Logger(subsystem: "com.jdlv.ios", category: "settings-perf")
+enum PerfFileLog {
+    private static let queue = DispatchQueue(label: "jdlv.perffilelog")
+    static var fileURL: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("jdlv-perf.log")
+    }
+    static func append(_ line: String) {
+        queue.sync {
+            let df = DateFormatter()
+            df.dateFormat = "HH:mm:ss.SSS"
+            let out = df.string(from: Date()) + " " + line + "
+"
+            let data = out.data(using: .utf8) ?? Data()
+            if let fh = FileHandle(forWritingAtPath: fileURL.path) {
+                fh.seekToEndOfFile()
+                fh.write(data)
+                try? fh.close()
+            } else {
+                try? data.write(to: fileURL)
+            }
+        }
+    }
+}
+
+/// 埋点统一入口（时间线/耗时；无值输出）
+func perfNote(_ line: String) {
+    PerfFileLog.append(line)
+}
 
 // MARK: - 测试连接 / 图床自检 / 缓存清理
 
@@ -274,10 +300,10 @@ private actor ConnTestGate {
 
     func run(_ s: AppSettings) async -> String {
         // R5 P3 §2A：conn 全程埋点（不含任何口令/主机值）
-        settingsPerfLog.notice("conn: begin")
+        perfNote("conn: begin")
         let t0 = Date()
         defer {
-            settingsPerfLog.notice("conn: end \(Date().timeIntervalSince(t0))s")
+            perfNote("conn: end \(Date().timeIntervalSince(t0))s")
         }
         // ① 草稿 → 连接参数（端口非法/host/user/pass 空 → 显式「数据源未配置」）
         guard var ps = AppBootstrap.mysqlSettings(s) else {
@@ -291,7 +317,7 @@ private actor ConnTestGate {
 
         let t0p = Perf.nowMs()
         var versions: [String] = []
-        settingsPerfLog.notice("conn: ping-begin")
+        perfNote("conn: ping-begin")
         for which in ["jdb", "sht"] {
             switch await MySQLPool.shared.ping(which: which, settings: ps) {
             case .success(let info):
@@ -306,7 +332,7 @@ private actor ConnTestGate {
                     hint: SettingsDiagnostics.hintFor(layer))
             }
         }
-        settingsPerfLog.notice("conn: ping-ok \(Perf.nowMs() - t0p)ms")
+        perfNote("conn: ping-ok \(Perf.nowMs() - t0p)ms")
         return SettingsDiagnostics.formatSuccess(elapsedMs: Perf.nowMs() - t0p, versions: versions)
     }
 }
@@ -459,23 +485,23 @@ final class SettingsIndexHub {
         let box = self.box
         let dir = Self.supportDir
         return Task.detached(priority: .utility) {
-            settingsPerfLog.notice("warmUp: idxdb-begin")
+            perfNote("warmUp: idxdb-begin")
             let t0 = Date()
             do {
                 let idx = try IdxDb(directory: dir)
-                settingsPerfLog.notice("warmUp: idxdb-open \(Date().timeIntervalSince(t0))s")
+                perfNote("warmUp: idxdb-open \(Date().timeIntervalSince(t0))s")
                 let coordinator = SyncCoordinator(
                     idx: idx,
                     source: WarmDbSourceFactory(),
                     settings: { SettingsIndexHub.warmSettings(box.settings) })
                 coordinator.refreshStats()
-                settingsPerfLog.notice("warmUp: refreshStats \(Date().timeIntervalSince(t0))s")
+                perfNote("warmUp: refreshStats \(Date().timeIntervalSince(t0))s")
                 await MainActor.run { SettingsIndexHub.shared.adoptBuiltSync(coordinator) }
                 let bytes = idx.usageBytes(fast: false)
-                settingsPerfLog.notice("warmUp: usage \(Date().timeIntervalSince(t0))s bytes=\(bytes, privacy: .public)")
+                perfNote("warmUp: usage \(Date().timeIntervalSince(t0))s bytes=\(bytes, privacy: .public)")
                 return bytes
             } catch {
-                settingsPerfLog.error("warmUp: failed \(Date().timeIntervalSince(t0))s")
+                perfNote("warmUp: failed \(Date().timeIntervalSince(t0))s")
                 await MainActor.run { SettingsIndexHub.shared.markIdxFailed() }
                 return 0
             }
@@ -510,20 +536,20 @@ final class SettingsIndexHub {
         }
         if embFailed { return nil }
         let dir = Self.supportDir
-        settingsPerfLog.notice("embStats: embstore-begin")
+        perfNote("embStats: embstore-begin")
         let t0 = Date()
         do {
             let e = try await Task.detached(priority: .utility) { try EmbStore(directory: dir) }.value
-            settingsPerfLog.notice("embStats: embstore-open \(Date().timeIntervalSince(t0))s")
+            perfNote("embStats: embstore-open \(Date().timeIntervalSince(t0))s")
             if _emb == nil { _emb = e }
             let st: (count: Int, bytes: Int64)? = await Task.detached(priority: .utility) { [e] in
                 guard let c = try? e.count(), let b = try? e.usageBytes() else { return nil }
                 return (Int(c), b)
             }.value
-            settingsPerfLog.notice("embStats: done \(Date().timeIntervalSince(t0))s")
+            perfNote("embStats: done \(Date().timeIntervalSince(t0))s")
             return st
         } catch {
-            settingsPerfLog.error("embStats: failed \(Date().timeIntervalSince(t0))s")
+            perfNote("embStats: failed \(Date().timeIntervalSince(t0))s")
             embFailed = true
             return nil
         }

@@ -210,7 +210,14 @@ jobs:
           mkdir -p build/attachments
           xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/attachments || echo 'no attachments (non-blocking evidence export)'
           # R5 P3 §2A：导出应用埋点日志（settings-perf subsystem），对齐 idle 卡点实测
-          cp build/app-perf-log.txt build/attachments/app-perf-log.txt 2>/dev/null || echo 'no app perf log captured' > build/attachments/app-perf-log.txt
+          # R5 P3 2A: copy the app-internal perf log out of the data container
+          UDID=$(xcrun simctl list devices | grep -E "iPhone 17 Pro" | grep -oE "[0-9A-F-]{36}" | head -1 || true)
+          APPCONT=$(xcrun simctl get_app_container "$UDID" com.jdlv.ios data 2>/dev/null || true)
+          if [ -n "$APPCONT" ] && [ -f "$APPCONT/tmp/jdlv-perf.log" ]; then
+            cp "$APPCONT/tmp/jdlv-perf.log" build/attachments/app-perf-log.txt || true
+          else
+            echo "no app perf log (APPCONT=$APPCONT)" > build/attachments/app-perf-log.txt
+          fi
           # 附件重命名：xcresulttool 以 UUID 落盘 → 按 manifest.json 还原真实附件名
           # （NN-页面名.png / layout-report.json / screenshots-manifest.json）
           python3 - <<'PYRENAME'
