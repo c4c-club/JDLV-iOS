@@ -25,17 +25,26 @@ final class SettingsUITests: XCTestCase {
         return app
     }
 
-    /// 进入设置页（首启门禁「去设置」或主界面「设置」tab）
-    private func openSettings(_ app: XCUIApplication) {
+    /// 进入设置页（首启门禁「去设置」或主界面「设置」tab）。
+    /// 返回【打开耗时】—— 从点击入口元素到 settings_page 出现（launch/门禁等待不计入，
+    /// R5 P3：CI 上 "Setting up automation session" 曾占用 78s，计入会假阴超预算）。
+    @discardableResult
+    private func openSettings(_ app: XCUIApplication) -> TimeInterval {
         let goSettings = app.buttons["first_run_go_settings"]
         if goSettings.waitForExistence(timeout: 8) {
+            let openStart = Date()
             goSettings.tap()   // FirstRunSetup「去设置」→ P12 完整设置页
+            let page = app.descendants(matching: .any)["settings_page"].firstMatch
+            XCTAssertTrue(page.waitForExistence(timeout: 10), "settings page not found")
+            return Date().timeIntervalSince(openStart)
         } else {
             XCTAssertTrue(tabExists(app, "设置", "settings"), "设置 tab not found")
+            let openStart = Date()
             tabLabeled(app, "设置", "settings").tap()
+            let page = app.descendants(matching: .any)["settings_page"].firstMatch
+            XCTAssertTrue(page.waitForExistence(timeout: 10), "settings page not found")
+            return Date().timeIntervalSince(openStart)
         }
-        let page = app.descendants(matching: .any)["settings_page"].firstMatch
-        XCTAssertTrue(page.waitForExistence(timeout: 10), "settings page not found")
     }
 
     /// R5 P3：失败时附截图 + AX 树 dump（可复核，不盲猜）
@@ -93,10 +102,10 @@ final class SettingsUITests: XCTestCase {
 
     func testSettingsWalkthroughAndTestImageModeAnchor() throws {
         let app = launchDemo()
-        // R5 P3 预算测量：设置页打开耗时（点「去设置」/tab → settings_page 出现）
-        let openStart = Date()
-        openSettings(app)
-        let openSeconds = Date().timeIntervalSince(openStart)
+        // R5 P3 预算测量：设置页打开耗时（点击入口 → settings_page 出现；
+        // launch/门禁等待不计入 —— run 43331622094 证据：automation session 卡 78s
+        // 计入后 13.34s 假阴超预算）
+        let openSeconds = openSettings(app)
         XCTAssertTrue(openSeconds <= 6.0,
                       "设置页打开 \(String(format: "%.2f", openSeconds))s 超预算（5s + 20% 容差）")
         recordMeasured("settings_open_seconds", openSeconds)

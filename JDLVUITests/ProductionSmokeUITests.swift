@@ -74,8 +74,10 @@ final class ProductionSmokeUITests: XCTestCase {
         XCTAssertTrue(searchTab.waitForExistence(timeout: 20), "生产启动必须直达主界面（种子配置合法）")
 
         // ② 首页出现 fixture 真实标题（生产 Q 链路真实查询 MySQL；demo 标题不得出现）
+        // R5 P3：等待窗口 25→45s —— run 43331622094 证据：XCUITest automation session
+        // 卡顿 78s 后 MySQL 冷池建连 >25s；断言本身不变（必须出现真实 fixture 标题）
         let smokeTitle = app.staticTexts["冒烟影片 S001"]
-        XCTAssertTrue(smokeTitle.waitForExistence(timeout: 25),
+        XCTAssertTrue(smokeTitle.waitForExistence(timeout: 45),
                       "首页必须出现 fixture 真实标题（生产数据链路）")
         XCTAssertFalse(app.staticTexts["演示影片 001"].exists, "生产模式不得出现 demo 标题")
 
