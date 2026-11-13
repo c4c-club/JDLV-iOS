@@ -81,9 +81,11 @@ final class SettingsUITests: XCTestCase {
             failWithDump(app, "\(el) not found after \(maxSwipes) swipes", file: file, line: line)
             return false
         }
+        // R5 P3：按元素在视口上方/下方决定滑动方向（走查从页底回顶部找 db 卡需向上回滚）
         for _ in 0..<maxSwipes {
-            if el.frame.intersects(app.frame) { return true }
-            app.swipeUp()
+            let f = el.frame
+            if f.intersects(app.frame) { return true }
+            if f.maxY < 0 { app.swipeDown() } else { app.swipeUp() }
             usleep(200_000)
         }
         guard el.frame.intersects(app.frame) else {
