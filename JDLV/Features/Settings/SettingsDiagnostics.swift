@@ -26,6 +26,11 @@
 
 import Foundation
 import JDLVCore
+import os
+
+/// R5 P3 §2A：设置页主线程卡顿实测埋点（public os_log，CI 用 simctl log show 导出）。
+/// 只记时间线与耗时，不记任何设置值/口令。
+let settingsPerfLog = Logger(subsystem: "com.jdlv.ios", category: "settings-perf")
 
 // MARK: - 测试连接 / 图床自检 / 缓存清理
 
@@ -446,16 +451,23 @@ final class SettingsIndexHub {
         let box = self.box
         let dir = Self.supportDir
         return Task.detached(priority: .utility) {
+            settingsPerfLog.notice("warmUp: idxdb-begin", privacy: .public)
+            let t0 = Date()
             do {
                 let idx = try IdxDb(directory: dir)
+                settingsPerfLog.notice("warmUp: idxdb-open \(Date().timeIntervalSince(t0))s", privacy: .public)
                 let coordinator = SyncCoordinator(
                     idx: idx,
                     source: WarmDbSourceFactory(),
                     settings: { SettingsIndexHub.warmSettings(box.settings) })
                 coordinator.refreshStats()
+                settingsPerfLog.notice("warmUp: refreshStats \(Date().timeIntervalSince(t0))s", privacy: .public)
                 await MainActor.run { SettingsIndexHub.shared.adoptBuiltSync(coordinator) }
-                return idx.usageBytes(fast: false)
+                let bytes = idx.usageBytes(fast: false)
+                settingsPerfLog.notice("warmUp: usage \(Date().timeIntervalSince(t0))s bytes=\(bytes)", privacy: .public)
+                return bytes
             } catch {
+                settingsPerfLog.error("warmUp: failed \(Date().timeIntervalSince(t0))s", privacy: .public)
                 await MainActor.run { SettingsIndexHub.shared.markIdxFailed() }
                 return 0
             }
@@ -490,14 +502,20 @@ final class SettingsIndexHub {
         }
         if embFailed { return nil }
         let dir = Self.supportDir
+        settingsPerfLog.notice("embStats: embstore-begin", privacy: .public)
+        let t0 = Date()
         do {
             let e = try await Task.detached(priority: .utility) { try EmbStore(directory: dir) }.value
+            settingsPerfLog.notice("embStats: embstore-open \(Date().timeIntervalSince(t0))s", privacy: .public)
             if _emb == nil { _emb = e }
-            return await Task.detached(priority: .utility) { [e] in
+            let st = await Task.detached(priority: .utility) { [e] in
                 guard let c = try? e.count(), let b = try? e.usageBytes() else { return nil }
                 return (Int(c), b)
             }.value
+            settingsPerfLog.notice("embStats: done \(Date().timeIntervalSince(t0))s", privacy: .public)
+            return st
         } catch {
+            settingsPerfLog.error("embStats: failed \(Date().timeIntervalSince(t0))s", privacy: .public)
             embFailed = true
             return nil
         }

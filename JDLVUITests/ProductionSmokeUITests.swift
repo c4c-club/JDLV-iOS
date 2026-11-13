@@ -128,18 +128,10 @@ final class ProductionSmokeUITests: XCTestCase {
         }
         XCTAssertTrue(stable, "ds_test_button 滚动 \(swipes) 次后未稳定进入可视区（最大滚动次数断言）")
         testButton.tap()   // 精确 tap（任务硬要求：不用坐标点击）
-        // 结果等待：总预算 90s（60s + 视状态重试 + 30s）；失败附截图 + AX 树 dump
-        var result = app.descendants(matching: .any)["settings_test_result"].firstMatch
-        if !result.waitForExistence(timeout: 60) {
-            // R5 P3：首次 tap 已触发测试 → 按钮 busy=disabled（disabled 再 tap 报
-            // not-hittable，run 43453232958 证据）。仅在按钮仍 idle 时重试一次
-            //（= 首次 tap 未注册）；busy 而无结果 = 连接挂起，直接进入失败取证。
-            if testButton.exists && testButton.isEnabled {
-                testButton.tap()
-            }
-            result = app.descendants(matching: .any)["settings_test_result"].firstMatch
-        }
-        if !result.waitForExistence(timeout: 30) {
+        // 结果等待：最多 90s（§4 单 tap 语义：点击后等待结果区域出现；不重试 ——
+        // busy disabled 按钮再 tap 报 not-hittable，run 43467328563 :138 证据）
+        let result = app.descendants(matching: .any)["settings_test_result"].firstMatch
+        if !result.waitForExistence(timeout: 90) {
             let diag = XCTAttachment(screenshot: app.screenshot())
             diag.name = "diag-smoke-conn-hang"
             diag.lifetime = .keepAlways
