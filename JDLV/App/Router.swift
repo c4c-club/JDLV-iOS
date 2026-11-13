@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import JDLVCore
+import os
 
 //
 //  Router.swift —— 路由骨架（07 A3 路由表 / A4 导航不变量）。
@@ -44,7 +45,15 @@ final class Router: ObservableObject {
     static let startTab = "search"
 
     /// 当前选中 Tab
-    @Published var tab: String = Router.startTab
+    /// R5 P3 §2A：tab 翻转埋点（public os_log；冒烟 conn 等待期间 app 自行回到首页，
+    /// 无任何代码路径赋值 tab="search" —— 记录翻转时刻/来源序列定位）
+    @Published var tab: String = Router.startTab {
+        didSet {
+            if oldValue != tab {
+                settingsPerfLog.notice("router.tab \\(oldValue, privacy: .public) -> \\(tab, privacy: .public)", privacy: .public)
+            }
+        }
+    }
 
     // 每 Tab 独立 path（状态保存/恢复）
     @Published var searchPath: [Route] = []

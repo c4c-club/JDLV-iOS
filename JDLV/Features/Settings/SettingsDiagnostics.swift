@@ -273,6 +273,12 @@ enum SettingsDiagnostics {
 private actor ConnTestGate {
 
     func run(_ s: AppSettings) async -> String {
+        // R5 P3 §2A：conn 全程埋点（不含任何口令/主机值）
+        settingsPerfLog.notice("conn: begin", privacy: .public)
+        let t0 = Date()
+        defer {
+            settingsPerfLog.notice("conn: end \(Date().timeIntervalSince(t0))s", privacy: .public)
+        }
         // ① 草稿 → 连接参数（端口非法/host/user/pass 空 → 显式「数据源未配置」）
         guard var ps = AppBootstrap.mysqlSettings(s) else {
             let layer = "数据源未配置：主机/端口/账号/口令不完整（\(s.host):\(s.port)）"
@@ -283,8 +289,9 @@ private actor ConnTestGate {
         //    否则直连（草稿尚未保存，隧道仍指旧目标）
         ps = ProxyTunnelManager.effectiveSettings(ps, tunnel: s.proxyDb) ?? ps
 
-        let t0 = Perf.nowMs()
+        let t0p = Perf.nowMs()
         var versions: [String] = []
+        settingsPerfLog.notice("conn: ping-begin", privacy: .public)
         for which in ["jdb", "sht"] {
             switch await MySQLPool.shared.ping(which: which, settings: ps) {
             case .success(let info):
@@ -299,7 +306,8 @@ private actor ConnTestGate {
                     hint: SettingsDiagnostics.hintFor(layer))
             }
         }
-        return SettingsDiagnostics.formatSuccess(elapsedMs: Perf.nowMs() - t0, versions: versions)
+        settingsPerfLog.notice("conn: ping-ok \(Perf.nowMs() - t0p)ms", privacy: .public)
+        return SettingsDiagnostics.formatSuccess(elapsedMs: Perf.nowMs() - t0p, versions: versions)
     }
 }
 
