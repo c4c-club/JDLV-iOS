@@ -128,10 +128,15 @@ final class ProductionSmokeUITests: XCTestCase {
         }
         XCTAssertTrue(stable, "ds_test_button 滚动 \(swipes) 次后未稳定进入可视区（最大滚动次数断言）")
         testButton.tap()   // 精确 tap（任务硬要求：不用坐标点击）
-        // 结果等待：总预算 90s（60s + 重试点一次 + 30s）；失败附截图 + AX 树 dump
+        // 结果等待：总预算 90s（60s + 视状态重试 + 30s）；失败附截图 + AX 树 dump
         var result = app.descendants(matching: .any)["settings_test_result"].firstMatch
         if !result.waitForExistence(timeout: 60) {
-            testButton.tap()   // 重试一次（identifier 精确，按钮原位）
+            // R5 P3：首次 tap 已触发测试 → 按钮 busy=disabled（disabled 再 tap 报
+            // not-hittable，run 43453232958 证据）。仅在按钮仍 idle 时重试一次
+            //（= 首次 tap 未注册）；busy 而无结果 = 连接挂起，直接进入失败取证。
+            if testButton.exists && testButton.isEnabled {
+                testButton.tap()
+            }
             result = app.descendants(matching: .any)["settings_test_result"].firstMatch
         }
         if !result.waitForExistence(timeout: 30) {
