@@ -183,7 +183,10 @@ jobs:
             IFS=',' read -ra TARGETS <<< "${{ github.event.inputs.ui_filter }}"
             for t in "${TARGETS[@]}"; do ONLY+=("-only-testing:${t// /}"); done
           fi
+          set +e
           xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test-without-building "${ONLY[@]}" 2>&1 | tee build/test.log
+          TEST_RC=$?
+          set -e
           # R5 P3 2A: capture app perf log right after Test (sim still booted; explicit UDID)
           UDID=$(xcrun simctl list devices | grep -E "Booted" | grep -oE "[0-9A-F-]{36}" | head -1 || true)
           if [ -n "$UDID" ]; then
@@ -191,6 +194,7 @@ jobs:
           else
             echo 'no booted simulator at capture time' > build/app-perf-log.txt
           fi
+          exit $TEST_RC
 
       - name: Export UI test attachments
         if: always()
