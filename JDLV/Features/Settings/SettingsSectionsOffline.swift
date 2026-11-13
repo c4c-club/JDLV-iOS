@@ -74,14 +74,14 @@ struct OfflineIndexCard: View {
             loadedOnce = true
             // R5 P3 §2A：物化埋点（public os_log；CI simctl log show 导出后可对齐
             // "App event loop idle notification" 卡点）
-            settingsPerfLog.notice("offlineCard.task: begin", privacy: .public)
+            settingsPerfLog.notice("offlineCard.task: begin")
             // R5 P3：后台预热（IdxDb 打开 + refreshStats + usageBytes 全离主线程），
             // 完成后回主 actor 更新占用文案（.task 本体在 MainActor）
             usagePending = true
             let bytes = await SettingsIndexHub.shared.warmUpAsync().value
             usagePending = false
             usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)
-            settingsPerfLog.notice("offlineCard.task: done", privacy: .public)
+            settingsPerfLog.notice("offlineCard.task: done")
         }
         // 重建二次确认 AlertDialog（§11.7 逐字）
         .alert(SettingsCopy.rebuildTitle, isPresented: $rebuildConfirm) {

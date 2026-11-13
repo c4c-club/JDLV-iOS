@@ -508,7 +508,7 @@ final class SettingsIndexHub {
             let e = try await Task.detached(priority: .utility) { try EmbStore(directory: dir) }.value
             settingsPerfLog.notice("embStats: embstore-open \(Date().timeIntervalSince(t0))s")
             if _emb == nil { _emb = e }
-            let st = await Task.detached(priority: .utility) { [e] in
+            let st: (count: Int, bytes: Int64)? = await Task.detached(priority: .utility) { [e] in
                 guard let c = try? e.count(), let b = try? e.usageBytes() else { return nil }
                 return (Int(c), b)
             }.value
