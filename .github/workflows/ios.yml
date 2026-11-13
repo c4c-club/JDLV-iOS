@@ -184,6 +184,13 @@ jobs:
             for t in "${TARGETS[@]}"; do ONLY+=("-only-testing:${t// /}"); done
           fi
           xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test-without-building "${ONLY[@]}" 2>&1 | tee build/test.log
+          # R5 P3 2A: capture app perf log right after Test (sim still booted; explicit UDID)
+          UDID=$(xcrun simctl list devices | grep -E "Booted" | grep -oE "[0-9A-F-]{36}" | head -1 || true)
+          if [ -n "$UDID" ]; then
+            xcrun simctl spawn "$UDID" log show --last 60m --style compact --predicate 'process == "JDLV"' > build/app-perf-log.txt 2>&1 || echo 'app perf log capture failed' > build/app-perf-log.txt
+          else
+            echo 'no booted simulator at capture time' > build/app-perf-log.txt
+          fi
 
       - name: Export UI test attachments
         if: always()
@@ -191,9 +198,7 @@ jobs:
           mkdir -p build/attachments
           xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/attachments || echo 'no attachments (non-blocking evidence export)'
           # R5 P3 §2A：导出应用埋点日志（settings-perf subsystem），对齐 idle 卡点实测
-          xcrun simctl spawn booted log show --last 45m --style compact \
-            --predicate 'process == "JDLV"' \
-            > build/attachments/app-perf-log.txt 2>&1 || echo 'app perf log capture failed (non-blocking)'
+          cp build/app-perf-log.txt build/attachments/app-perf-log.txt 2>/dev/null || echo 'no app perf log captured' > build/attachments/app-perf-log.txt
           # 附件重命名：xcresulttool 以 UUID 落盘 → 按 manifest.json 还原真实附件名
           # （NN-页面名.png / layout-report.json / screenshots-manifest.json）
           python3 - <<'PYRENAME'
