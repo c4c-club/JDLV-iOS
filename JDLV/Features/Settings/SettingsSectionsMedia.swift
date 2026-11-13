@@ -89,21 +89,23 @@ struct JdbImageCard: View {
                 AppServices.shared.showToast(SettingsCopy.resetCoolingToast)
             }
 
-            // 失败率诊断行（1s 轮询；Img.kt 逐字模板）
+            // 失败率诊断行（Img.kt 逐字模板）
+            // R5 P3：改为事件驱动刷新（展开时 + 自检完成 + 回前台）—— 设置页上失败率
+            // 静态，1s 轮询的每秒状态写入使主 runloop 永不空闲，XCUITest 等待静默
+            // 60s 超时（run 43453232958 "App event loop idle notification not received"）。
             AppText(diagText.isEmpty ? ImgBreaker.shared.diagnostic() : diagText,
                     lvl: .meta, color: theme.text2)
                 .padding(.top, 4)
-                // R5 P3：1s 轮询随【展开内容】创建/销毁（折叠卡不创建 timer，不每秒空转）
-                .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-                    // 非前台零状态写入
-                    guard scenePhase == .active else { return }
-                    diagText = ImgBreaker.shared.diagnostic()
-                }
         }
         .onAppear {
             guard !loaded else { return }
             loaded = true
             customMirror = (chipValue == "custom") ? s.jdbImgHost : ""
+            diagText = ImgBreaker.shared.diagnostic()   // 展开即可见 → 首刷
+        }
+        .onChange(of: scenePhase) { phase in
+            // 回前台刷新一次（后台不写状态；仅相位变化这一次写入，非周期）
+            if phase == .active { diagText = ImgBreaker.shared.diagnostic() }
         }
     }
 
@@ -121,6 +123,7 @@ struct JdbImageCard: View {
             let lines = await SettingsDiagnostics.runSelfTest()
             selfBusy = false
             selfLines = lines
+            diagText = ImgBreaker.shared.diagnostic()   // 自检完成 → 刷新失败率行
         }
     }
 }

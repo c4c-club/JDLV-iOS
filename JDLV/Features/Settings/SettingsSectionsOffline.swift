@@ -54,9 +54,14 @@ struct OfflineIndexCard: View {
             // content → timer 不创建、不触发；旧实现 let 属性在卡片构建即每秒触发）
             settingsBlock(view)
                 .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-                    // 非前台/未加载零状态写入；只读已建实例（绝不主线程建库）
-                    guard loadedOnce, scenePhase == .active else { return }
-                    st = SettingsIndexHub.shared.syncIfReady?.state ?? SyncState()
+                    // R5 P3：仅在【同步任务运行中】每秒写 st（进度可见性所需）；
+                    // 空闲时不写状态 —— 每秒写入使主 runloop 永不空闲，XCUITest
+                    // "App event loop idle notification" 等待超时（run 43453232958）。
+                    // 空闲态的统计由 warmUpAsync/refreshStats/按钮动作刷新。
+                    guard loadedOnce, scenePhase == .active,
+                          let sync = SettingsIndexHub.shared.syncIfReady,
+                          sync.isRunning() else { return }
+                    st = sync.state
                 }
             tagEstimateNote(view)
             estimateNote(view)
