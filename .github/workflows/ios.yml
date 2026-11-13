@@ -192,7 +192,7 @@ jobs:
           xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/attachments || echo 'no attachments (non-blocking evidence export)'
           # R5 P3 §2A：导出应用埋点日志（settings-perf subsystem），对齐 idle 卡点实测
           xcrun simctl spawn booted log show --last 45m --style compact \
-            --predicate 'subsystem == "com.jdlv.ios" AND category == "settings-perf"' \
+            --predicate '(subsystem == "com.jdlv.ios" AND category == "settings-perf") OR process == "JDLV"' \
             > build/attachments/app-perf-log.txt 2>/dev/null || echo 'no app perf log (non-blocking)'
           # 附件重命名：xcresulttool 以 UUID 落盘 → 按 manifest.json 还原真实附件名
           # （NN-页面名.png / layout-report.json / screenshots-manifest.json）

@@ -48,12 +48,15 @@ final class SettingsUITests: XCTestCase {
         }
     }
 
-    /// settings_page 断言（identifier 在 ScrollView 上 → 类型化查询优先，全树兜底）
+    /// settings_page 断言 —— 必须是【激活根】（run 43480345138 diag-tree-hang 证据：
+    /// .accessibilityHidden 不会把非激活 tab 根移出 AX 树，只查存在会假阳性）。
+    /// 激活判据 = settings_group_db（首卡，恒存在）isHittable。
     private func assertSettingsPage(_ app: XCUIApplication) {
-        let typed = app.scrollViews["settings_page"].firstMatch
-        if typed.waitForExistence(timeout: 10) { return }
-        let any = app.descendants(matching: .any)["settings_page"].firstMatch
-        XCTAssertTrue(any.waitForExistence(timeout: 10), "settings page not found")
+        let dbGroup = app.descendants(matching: .any)["settings_group_db"].firstMatch
+        if dbGroup.waitForExistence(timeout: 8) && dbGroup.isHittable { return }
+        let page = app.descendants(matching: .any)["settings_page"].firstMatch
+        XCTAssertTrue(page.waitForExistence(timeout: 5) && page.isHittable,
+                      "settings page not active（隐藏根干扰或 tab 未切换）")
     }
 
     /// R5 P3：失败时附截图 + AX 树 dump（可复核，不盲猜）

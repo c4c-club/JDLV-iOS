@@ -82,25 +82,27 @@ final class ProductionSmokeUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["演示影片 001"].exists, "生产模式不得出现 demo 标题")
 
         // ③ 设置页「测试连接」→ 真实成功（含版本号、不含「演示模式」）
-        // R5 P3：tab 用 identifier 精确查（label 与隐藏 Tab 内容多匹配，禁用全量扫描兜底）；
-        // 点击后立即断言 settings_page 落地 + 有限重试（不再盲点 4 次）
+        // R5 P3：tab 用 identifier 精确查；点击后断言设置页【可交互】——
+        // ★ 关键证据（run 43480345138 diag-tree-hang）：SwiftUI 的 .accessibilityHidden
+        // 并不会把非激活 tab 根从 AX 树移除（home_page 与 settings_page 并存），
+        // 只查存在会命中隐藏根 → 假阳性落地、后续 tap 全部 not-hittable。
+        // 落地判据 = settings_group_db 存在且 isHittable（激活根才可命中）。
         let settingsTab = app.buttons["tab_settings"].firstMatch
         XCTAssertTrue(settingsTab.waitForExistence(timeout: 10), "设置 tab 未找到（tab_settings）")
+        let dbGroup = app.descendants(matching: .any)["settings_group_db"].firstMatch
         var landed = false
-        for attempt in 0..<3 {
+        for attempt in 0..<4 {
             settingsTab.tap()
-            if app.descendants(matching: .any)["settings_page"].firstMatch
-                .waitForExistence(timeout: 6) { landed = true; break }
+            if dbGroup.waitForExistence(timeout: 4) && dbGroup.isHittable {
+                landed = true
+                break
+            }
             let d = XCTAttachment(screenshot: app.screenshot())
             d.name = "diag-tab-land-\(attempt)"
             d.lifetime = .keepAlways
             add(d)
         }
-        XCTAssertTrue(landed, "点设置 tab 后 settings_page 未出现（3 次重试；附落地页截图）")
-
-        // settings_group_db identifier 在头行按钮上 → tap 即展开/收起（精确，无坐标）
-        let dbGroup = app.descendants(matching: .any)["settings_group_db"].firstMatch
-        XCTAssertTrue(dbGroup.waitForExistence(timeout: 10), "数据源分组卡未找到")
+        XCTAssertTrue(landed, "设置 tab 点击后 settings_group_db 未进入可命中状态（4 次重试；繁忙主线程合成 tap 丢失 + 隐藏根干扰）")
         let testButton = app.descendants(matching: .any)["ds_test_button"].firstMatch
         if !testButton.exists {
             dbGroup.tap()   // 折叠中 → 展开分组
@@ -117,16 +119,21 @@ final class ProductionSmokeUITests: XCTestCase {
             usleep(200_000)
             swipes += 1
         }
-        // R5 P3 稳定确认：滚动惯性未停时 frame 迁移 → tap 报 not-hittable
-        // （run 43338529818 证据：按钮在视口内 {{28,672},{346,48}} tap 仍失败）
+        // R5 P3：滚动惯性等待（帧两次采样一致 + isHittable 激活根确认才算稳定）
+        //（run 43467328563 :138：可见帧 tap 仍 not-hittable = 惯性位移或隐藏根）
         var stable = false
-        for _ in 0..<3 {
-            usleep(300_000)
-            if testButton.exists && testButton.frame.intersects(app.frame) { stable = true; break }
-            app.swipeUp()
-            usleep(200_000)
+        for _ in 0..<10 {
+            usleep(500_000)
+            if !testButton.exists { continue }
+            let f1 = testButton.frame
+            usleep(500_000)
+            if testButton.exists, testButton.isHittable, testButton.frame == f1,
+               f1.intersects(app.frame) {
+                stable = true
+                break
+            }
         }
-        XCTAssertTrue(stable, "ds_test_button 滚动 \(swipes) 次后未稳定进入可视区（最大滚动次数断言）")
+        XCTAssertTrue(stable, "ds_test_button 滚动 \(swipes) 次后未稳定且可命中（最大滚动次数断言）")
         testButton.tap()   // 精确 tap（任务硬要求：不用坐标点击）
         // 结果等待：最多 90s（§4 单 tap 语义：点击后等待结果区域出现；不重试 ——
         // busy disabled 按钮再 tap 报 not-hittable，run 43467328563 :138 证据）
