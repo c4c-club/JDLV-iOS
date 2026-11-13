@@ -34,17 +34,26 @@ final class SettingsUITests: XCTestCase {
         if goSettings.waitForExistence(timeout: 8) {
             let openStart = Date()
             goSettings.tap()   // FirstRunSetup「去设置」→ P12 完整设置页
-            let page = app.descendants(matching: .any)["settings_page"].firstMatch
-            XCTAssertTrue(page.waitForExistence(timeout: 10), "settings page not found")
+            // 首帧/构建落定（繁忙主线程上 AX 快照易超时：run 43338529818 walk :86）
+            Thread.sleep(forTimeInterval: 1.0)
+            assertSettingsPage(app)
             return Date().timeIntervalSince(openStart)
         } else {
             XCTAssertTrue(tabExists(app, "设置", "settings"), "设置 tab not found")
             let openStart = Date()
             tabLabeled(app, "设置", "settings").tap()
-            let page = app.descendants(matching: .any)["settings_page"].firstMatch
-            XCTAssertTrue(page.waitForExistence(timeout: 10), "settings page not found")
+            Thread.sleep(forTimeInterval: 1.0)
+            assertSettingsPage(app)
             return Date().timeIntervalSince(openStart)
         }
+    }
+
+    /// settings_page 断言（identifier 在 ScrollView 上 → 类型化查询优先，全树兜底）
+    private func assertSettingsPage(_ app: XCUIApplication) {
+        let typed = app.scrollViews["settings_page"].firstMatch
+        if typed.waitForExistence(timeout: 10) { return }
+        let any = app.descendants(matching: .any)["settings_page"].firstMatch
+        XCTAssertTrue(any.waitForExistence(timeout: 10), "settings page not found")
     }
 
     /// R5 P3：失败时附截图 + AX 树 dump（可复核，不盲猜）
@@ -87,6 +96,16 @@ final class SettingsUITests: XCTestCase {
             if f.intersects(app.frame) { return true }
             if f.maxY < 0 { app.swipeDown() } else { app.swipeUp() }
             usleep(200_000)
+        }
+        // R5 P3 稳定确认：滚动惯性未停时 frame 会迁移 → tap 报 not-hittable
+        // （run 43338529818 证据：ds_test_button 在视口内 tap 仍失败）。300ms 后仍在视口才通过。
+        usleep(300_000)
+        if el.exists && el.frame.intersects(app.frame) { return true }
+        for _ in 0..<3 {
+            let f = el.frame
+            if f.intersects(app.frame) { return true }
+            if f.maxY < 0 { app.swipeDown() } else { app.swipeUp() }
+            usleep(400_000)
         }
         guard el.frame.intersects(app.frame) else {
             failWithDump(app, "\(el) found but outside window after \(maxSwipes) swipes",
@@ -206,12 +225,16 @@ final class SettingsUITests: XCTestCase {
         themeGroup.tap()   // 展开（identifier 在头行按钮上）
 
         // 点「跟随系统」chip（深色为默认 → 预期「无变化」；文案二态均可接受）
+        // R5 P3：chip 在展开内容里 —— 展开 tap 偶发丢失（繁忙主线程）→ 未出现则重试一次
         let chip = app.buttons["跟随系统"].firstMatch
-        if scrollToElement(app, chip, maxSwipes: 8) {
-            chip.tap()
-            let state = app.descendants(matching: .any)["settings_save_state"].firstMatch
-            XCTAssertTrue(state.waitForExistence(timeout: 5), "save state line not shown")
+        if !chip.waitForExistence(timeout: 4) {
+            themeGroup.tap()
+            XCTAssertTrue(chip.waitForExistence(timeout: 4), "theme group 未展开（chip 未出现）")
         }
+        XCTAssertTrue(scrollToElement(app, chip, maxSwipes: 8), "chip 定位失败")
+        chip.tap()
+        let state = app.descendants(matching: .any)["settings_save_state"].firstMatch
+        XCTAssertTrue(state.waitForExistence(timeout: 5), "save state line not shown")
         XCTAssertEqual(app.state, .runningForeground)
     }
 

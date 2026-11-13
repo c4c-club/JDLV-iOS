@@ -105,18 +105,29 @@ final class ProductionSmokeUITests: XCTestCase {
         if !testButton.exists {
             dbGroup.tap()   // 折叠中 → 展开分组
         }
+        if !testButton.waitForExistence(timeout: 5) {
+            // R5 P3：展开 tap 偶发丢失（繁忙主线程）→ 重试一次
+            dbGroup.tap()
+        }
         XCTAssertTrue(testButton.waitForExistence(timeout: 8), "测试连接按钮未找到")
         // R5 P3：有限次滚动（≤8 次 swipeUp，frame∩window 帧判定，不做 hittable 快照）
-        // → 精确 tap()（任务硬要求：不用坐标点击）
         var swipes = 0
         while !(testButton.exists && testButton.frame.intersects(app.frame)) && swipes < 8 {
             app.swipeUp()
             usleep(200_000)
             swipes += 1
         }
-        XCTAssertTrue(testButton.exists && testButton.frame.intersects(app.frame),
-                      "ds_test_button 滚动 \(swipes) 次后仍未进入可视区（最大滚动次数断言）")
-        testButton.tap()
+        // R5 P3 稳定确认：滚动惯性未停时 frame 迁移 → tap 报 not-hittable
+        // （run 43338529818 证据：按钮在视口内 {{28,672},{346,48}} tap 仍失败）
+        var stable = false
+        for _ in 0..<3 {
+            usleep(300_000)
+            if testButton.exists && testButton.frame.intersects(app.frame) { stable = true; break }
+            app.swipeUp()
+            usleep(200_000)
+        }
+        XCTAssertTrue(stable, "ds_test_button 滚动 \(swipes) 次后未稳定进入可视区（最大滚动次数断言）")
+        testButton.tap()   // 精确 tap（任务硬要求：不用坐标点击）
         // 结果等待：总预算 90s（60s + 重试点一次 + 30s）；失败附截图 + AX 树 dump
         var result = app.descendants(matching: .any)["settings_test_result"].firstMatch
         if !result.waitForExistence(timeout: 60) {
