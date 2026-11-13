@@ -497,7 +497,7 @@ final class SettingsIndexHub {
                 perfNote("warmUp: refreshStats \(Date().timeIntervalSince(t0))s")
                 await MainActor.run { SettingsIndexHub.shared.adoptBuiltSync(coordinator) }
                 let bytes = idx.usageBytes(fast: false)
-                perfNote("warmUp: usage \(Date().timeIntervalSince(t0))s bytes=\(bytes, privacy: .public)")
+                perfNote("warmUp: usage \(Date().timeIntervalSince(t0))s bytes=\(bytes)")
                 return bytes
             } catch {
                 perfNote("warmUp: failed \(Date().timeIntervalSince(t0))s")
