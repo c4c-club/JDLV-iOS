@@ -39,8 +39,7 @@ enum PerfFileLog {
         queue.sync {
             let df = DateFormatter()
             df.dateFormat = "HH:mm:ss.SSS"
-            let out = df.string(from: Date()) + " " + line + "
-"
+            let out = df.string(from: Date()) + " " + line + "\n"
             let data = out.data(using: .utf8) ?? Data()
             if let fh = FileHandle(forWritingAtPath: fileURL.path) {
                 fh.seekToEndOfFile()
