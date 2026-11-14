@@ -42,6 +42,10 @@ TOP_ALLOWED = {"Info.plist", "JDLV", "PkgInfo", "Assets.car", "embedded.mobilepr
 def allowed(rel):
     parts = rel.replace("\\", "/").split("/")
     if len(parts) == 1:
+        # R5 P3：actool 对单尺寸 AppIcon.appiconset 会在 IPA 根部落 AppIcon*.png
+        #（资源编译器产物，非白名单外杂物 —— run 43566448663 首次过滤运行执行到本门禁暴露）
+        if parts[0].startswith("AppIcon") and parts[0].endswith(".png"):
+            return True
         return parts[0] in TOP_ALLOWED
     top = parts[0]
     if top == "Frameworks" and len(parts) >= 2 and parts[1].endswith(".framework"):
