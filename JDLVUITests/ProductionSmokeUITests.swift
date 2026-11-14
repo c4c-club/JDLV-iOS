@@ -119,21 +119,27 @@ final class ProductionSmokeUITests: XCTestCase {
             usleep(200_000)
             swipes += 1
         }
-        // R5 P3：滚动惯性等待（帧两次采样一致 + isHittable 激活根确认才算稳定）
-        //（run 43467328563 :138：可见帧 tap 仍 not-hittable = 惯性位移或隐藏根）
+        // R5 P3：滚动惯性等待（帧两次采样一致 + isHittable + 视口上半区）。
+        // 上半区要求：按钮贴 TabBar 边缘时回弹会把帧推到 796+（TabBar 之下），
+        // tap 坐标落到相邻提示行而丢失（run 43508420064 / 43545460960 证据）。
         var stable = false
         for _ in 0..<10 {
             usleep(500_000)
             if !testButton.exists { continue }
             let f1 = testButton.frame
             usleep(500_000)
-            if testButton.exists, testButton.isHittable, testButton.frame == f1,
-               f1.intersects(app.frame) {
+            let f2 = testButton.frame
+            if testButton.exists, testButton.isHittable, f1 == f2,
+               f2.intersects(app.frame), f2.maxY < app.frame.height * 0.5 {
                 stable = true
                 break
             }
+            if testButton.exists, testButton.frame.maxY >= app.frame.height * 0.5 {
+                app.swipeUp()   // 仍在下半区 → 继续把它推上去
+                usleep(200_000)
+            }
         }
-        XCTAssertTrue(stable, "ds_test_button 滚动 \(swipes) 次后未稳定且可命中（最大滚动次数断言）")
+        XCTAssertTrue(stable, "ds_test_button 滚动 \(swipes) 次后未稳定停在视口上半区且可命中（最大滚动次数断言）")
         // R5 P3：tap 后必须确认按钮进入 busy（或结果已出）—— 滚动回弹可能让 tap
         // 坐标落在相邻提示文字上而丢失（run 43508420064 F1 证据：挂起时按钮弹到
         // y=796 被 TabBar 遮住，tap 坐标命中提示行）。未触发则重稳定+重试（≤3 次）。
