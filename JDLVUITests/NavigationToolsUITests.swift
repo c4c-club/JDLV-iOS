@@ -98,17 +98,18 @@ final class NavigationToolsUITests: XCTestCase {
         return (field.value as? String) == expected
     }
 
-    /// R5 P4：FAB/page_chip 断言集中在 browse（2 列垂直网格，内容足量可滚动）。
-    /// 原搜索结果态段删除：demo「演示」结果行数不足时页面不可滚动，FAB 國值场景
-    /// 不成立（J1 dump-scroll_top-result 实证 app 停在三段态首页）。
-    func testTopTabsScrollTopVisibleAboveTabBar() throws {
+    /// R5 P4：导航工具单会话顺序流（合并原 4 个用例）。
+    /// 依据：LayoutAudit 的长会话在 CI 上 AX 标识符暴露稳定（10 页全审 0 violation），
+    /// 而每用例重启 app 的会话抖动（J2-J4）→ 同会话顺序覆盖同等内容。
+    /// 覆盖：FAB 显隐/遮挡 → page_chip 遮挡 → 跳页 sheet 越界/合法 →
+    /// movie 详情 scroll_top → sht 详情 scroll_top。任一必需元素缺失 = XCTFail。
+    func testNavigationToolsFlow() throws {
         let app = launchDemo()
         let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
         selectTab(app, "browse", proof: browsePage)
-        let fabEl = app.buttons["scroll_top"].firstMatch
-        // 数据就绪前 FAB 不会出现 → 自愈窗口（ErrorBox 重试）
-        waitHealed(app, fabEl, timeout: 40)
 
+        // A) FAB + page_chip（browse 2 列垂直网格，132 页数据可滚动）
+        waitHealed(app, app.buttons["scroll_top"].firstMatch, timeout: 45)
         swipeUp(app, times: 12)
         let fab = try requireExists(app.buttons["scroll_top"].firstMatch,
                                     "scroll_top-browse", app, timeout: 10)
@@ -118,28 +119,15 @@ final class NavigationToolsUITests: XCTestCase {
                                  "scroll_top 不得被自绘 TabBar 遮挡")
         fab.tap()
 
-        // page_chip 与 FAB 竖排都在 TabBar 上方
         let chip = try requireExists(app.buttons["page_chip"].firstMatch,
                                      "page_chip-browse", app, timeout: 10)
         XCTAssertLessThanOrEqual(chip.frame.maxY, tabBar.frame.minY + 1,
                                  "page_chip 不得被自绘 TabBar 遮挡")
-    }
 
-    func testPageJumpOnBrowse() throws {
-        let app = launchDemo()
-        let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
-        selectTab(app, "browse", proof: browsePage)
-
-        // 分页加载（chip 渲染条件 loaded>0 || total>0）—— demo 懒建表竞态自愈
-        let chipEl = app.buttons["page_chip"].firstMatch
-        waitHealed(app, chipEl, timeout: 60)
-        let chip = try requireExists(chipEl, "page_chip-browse", app, timeout: 5)
-
+        // B) 跳页 sheet：越界 9999 保持 → 合法 2 关闭（§8.4 边界）
         chip.tap()
         let field = app.textFields["page_jump_field"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5), "跳页 sheet 必须弹出")
-
-        // 越界 9999 → sheet 保持 + 提示（§8.4 边界）
         field.tap()
         field.typeText("9999")
         let go = app.buttons["page_jump_go"].firstMatch
@@ -147,48 +135,32 @@ final class NavigationToolsUITests: XCTestCase {
         go.tap()
         XCTAssertTrue(field.waitForExistence(timeout: 3),
                       "越界跳页必须保持 sheet（页码超出范围提示）")
-
-        // 合法第 2 页 → sheet 关闭
         field.tap()
         field.typeText("2")
         go.tap()
         XCTAssertFalse(field.waitForExistence(timeout: 3),
                        "合法跳页后 sheet 必须关闭")
-    }
 
-    func testMovieDetailScrollTop() throws {
-        let app = launchDemo()
-        // browse 第一张卡 → 详情（垂直网格卡片 frame 稳定；首页横滑卡有手势竞争）
-        let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
-        selectTab(app, "browse", proof: browsePage)
-        // R5 P4：精确 id 在部分 AX 会话中被容器合并吞掉（J3/J4 dump）——
-        // 全部查询走有界等待（J5 实证：无界 count 查询可挂死整个 job → 150min 超时）
+        // C) browse 首卡 → movie 详情 scroll_top
         let cardEl = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "card_browse_")).firstMatch
-        waitHealed(app, cardEl, timeout: 45)
+        waitHealed(app, cardEl, timeout: 30)
         let card = try requireExists(cardEl, "card_browse_0", app, timeout: 5)
         card.tap()
         swipeUp(app, times: 12)
-        let fab = try requireExists(app.buttons["scroll_top"].firstMatch,
-                                    "scroll_top-movie", app, timeout: 10)
-        fab.tap()
-    }
+        let mFab = try requireExists(app.buttons["scroll_top"].firstMatch,
+                                     "scroll_top-movie", app, timeout: 10)
+        mFab.tap()
 
-    func testShtDetailScrollTop() throws {
-        let app = launchDemo()
+        // D) sht「演示帖子」行 → 帖详情 scroll_top
         let shtRow = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示帖子")).firstMatch
-        selectTab(app, "sht", proof: shtRow)
-        waitHealed(app, shtRow, timeout: 40)
-
-        // 进帖详情（与 ScreenshotsUITests 同锚点：demo「演示帖子」行）
         XCTAssertTrue(shtRow.waitForExistence(timeout: 10), "demo 演示帖子行必须存在")
         shtRow.tap()
         let detail = app.descendants(matching: .any)["sht_detail_page"].firstMatch
         XCTAssertTrue(detail.waitForExistence(timeout: 10), "帖详情必须压栈")
-
         swipeUp(app, times: 12)
-        let fab = try requireExists(app.buttons["scroll_top"].firstMatch,
-                                    "scroll_top-sht", app, timeout: 10)
-        fab.tap()
+        let sFab = try requireExists(app.buttons["scroll_top"].firstMatch,
+                                     "scroll_top-sht", app, timeout: 10)
+        sFab.tap()
     }
 }
