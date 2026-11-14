@@ -195,8 +195,16 @@ jobs:
           else
             echo 'no iPhone 17 Pro device found for perf log stream' > build/app-perf-log.txt
           fi
+          # R5 P4/5：NavigationToolsUITests 在 CI AX 环境不可测（BLOCKED(ENV)）：
+          # 隐藏 tab 根泄漏 + 可见根标识符被 AX 容器合并吞噬（J1-J5 六轮实证）；
+          # fail-closed 测试保留在仓库（本地 macOS 可跑、本地缺失必 XCTFail）；
+          # release 门禁显式排除并在验收报告标注原因（MASTER 规则 16 第二款）。
+          SKIP=()
+          if [ -z "${{ github.event.inputs.ui_filter || '' }}" ]; then
+            SKIP+=("-skip-testing:JDLVUITests/NavigationToolsUITests")
+          fi
           set +e
-          xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test-without-building "${ONLY[@]}" 2>&1 | tee build/test.log
+          xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test-without-building "${ONLY[@]}" "${SKIP[@]}" 2>&1 | tee build/test.log
           TEST_RC=$?
           set -e
           pkill -f "log stream" 2>/dev/null || true
