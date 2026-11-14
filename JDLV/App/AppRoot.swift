@@ -161,6 +161,10 @@ struct AppRoot: View {
                     }
                     .opacity(router.tab == t.route ? 1 : 0)
                     .allowsHitTesting(router.tab == t.route)
+                    // R5 P4：accessibilityHidden 对 NavigationStack 子树实测不完全生效
+                    //（J3 dump：隐藏 home 根的 294 处元素泄漏进 AX 树，可见根的
+                    // card_browse_N 标识符反被吞）→ 隐藏根用 children:.ignore 整棵摘除
+                    .accessibilityElement(children: router.tab == t.route ? .contain : .ignore)
                     .accessibilityHidden(router.tab != t.route)
                 } else if router.tab == t.route {
                     // 首次切入当帧的占位：避免 onChange 插入前的白屏一帧
