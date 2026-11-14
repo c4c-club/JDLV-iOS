@@ -100,7 +100,7 @@ final class SettingsUITests: XCTestCase {
             let f = el.frame
             if f.intersects(app.frame) { return true }
             if f.maxY < 0 { app.swipeDown() } else { app.swipeUp() }
-            usleep(200_000)
+            usleep(350_000)
         }
         // R5 P3 稳定确认：滚动惯性未停时 frame 会迁移 → tap 报 not-hittable
         // （run 43338529818 证据：ds_test_button 在视口内 tap 仍失败）。300ms 后仍在视口才通过。
@@ -142,7 +142,9 @@ final class SettingsUITests: XCTestCase {
         // R5 P3 预算测量：滚到底耗时（settings_group 卡全部收起态滚到 about 链接）
         let scrollStart = Date()
         let aboutLink = app.buttons["settings_about_link"].firstMatch
-        XCTAssertTrue(scrollToElement(app, aboutLink, maxSwipes: 12),
+        // R5 P3：maxSwipes 12→9、步进 200→350ms —— 减少长滚动环的 AX 求值密度
+        //（负载 runner 上快照 60s 硬超时：run 43557923415 / 43560675378 证据）
+        XCTAssertTrue(scrollToElement(app, aboutLink, maxSwipes: 9),
                       "settings_about_link 定位失败")
         let scrollSeconds = Date().timeIntervalSince(scrollStart)
         XCTAssertTrue(scrollSeconds <= 18.0,
