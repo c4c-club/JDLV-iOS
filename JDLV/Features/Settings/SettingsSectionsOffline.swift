@@ -20,6 +20,7 @@ import JDLVCore
 struct OfflineIndexCard: View {
 
 
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
 
@@ -33,8 +34,6 @@ struct OfflineIndexCard: View {
     @State private var limitTarget: LimitTarget? = nil
     @State private var rebuildConfirm = false
     @State private var clearConfirm = false
-
-    private let tickTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     enum LimitTarget: String, Identifiable {
         case jdb, sht
@@ -51,22 +50,38 @@ struct OfflineIndexCard: View {
             rememberKey: "shadow",
             summary: SettingsCopy.summaryShadow(view),
         ) {
+            // R5 P3：1s tick 随【展开内容】创建/销毁（SettingsGroupCard 折叠时不求值
+            // content → timer 不创建、不触发；旧实现 let 属性在卡片构建即每秒触发）
             settingsBlock(view)
+                .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                    // R5 P3：仅在【同步任务运行中】每秒写 st（进度可见性所需）；
+                    // 空闲时不写状态 —— 每秒写入使主 runloop 永不空闲，XCUITest
+                    // "App event loop idle notification" 等待超时（run 43453232958）。
+                    // 空闲态的统计由 warmUpAsync/refreshStats/按钮动作刷新。
+                    guard loadedOnce, scenePhase == .active,
+                          let sync = SettingsIndexHub.shared.syncIfReady,
+                          sync.isRunning() else { return }
+                    st = sync.state
+                }
             tagEstimateNote(view)
             estimateNote(view)
             usageBlock
             progressBlock(view)
             buttonsGrid
         }
-        .onAppear {
+        .task {
             guard !loadedOnce else { return }
             loadedOnce = true
-            // B06/B22：进卡片刷新统计与实际占用
-            SettingsIndexHub.shared.sync?.refreshStats()
-            recalcUsage()
-        }
-        .onReceive(tickTimer) { _ in
-            st = SettingsIndexHub.shared.sync?.state ?? SyncState()
+            // R5 P3 §2A：物化埋点（public os_log；CI simctl log show 导出后可对齐
+            // "App event loop idle notification" 卡点）
+            perfNote("offlineCard.task: begin")
+            // R5 P3：后台预热（IdxDb 打开 + refreshStats + usageBytes 全离主线程），
+            // 完成后回主 actor 更新占用文案（.task 本体在 MainActor）
+            usagePending = true
+            let bytes = await SettingsIndexHub.shared.warmUpAsync().value
+            usagePending = false
+            usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)
+            perfNote("offlineCard.task: done")
         }
         // 重建二次确认 AlertDialog（§11.7 逐字）
         .alert(SettingsCopy.rebuildTitle, isPresented: $rebuildConfirm) {
@@ -186,18 +201,16 @@ struct OfflineIndexCard: View {
 
     private func recalcUsage() {
         usagePending = true
-        guard let sync = SettingsIndexHub.shared.sync else {
-            usagePending = false
-            usageText = SettingsCopy.usageText(idxMb: 0, detailMb: 0)
-            return
-        }
-        let idx = sync.idx
-        Task.detached(priority: .utility) {
-            let bytes = idx.usageBytes(fast: false)
-            await MainActor.run {
-                usagePending = false
-                usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)
+        Task { @MainActor in
+            // R5 P3：usageBytes(WAL) 在后台线程；已建实例直接算，未建则走 warmUpAsync（后台建）
+            let bytes: Int64
+            if let idx = SettingsIndexHub.shared.syncIfReady?.idx {
+                bytes = await Task.detached(priority: .utility) { idx.usageBytes(fast: false) }.value
+            } else {
+                bytes = await SettingsIndexHub.shared.warmUpAsync().value
             }
+            usagePending = false
+            usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)
         }
     }
 

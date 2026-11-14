@@ -14,6 +14,7 @@ import JDLVCore
 struct FavsView: View {
     @EnvironmentObject private var router: Router
     @EnvironmentObject private var services: AppServices
+    @Environment(\.tabBarInset) private var envTabBarInset
     @Environment(\.appTheme) private var theme
 
     @StateObject private var vm: FavsVM
@@ -78,9 +79,14 @@ struct FavsView: View {
 
     private var listContent: some View {
         Group {
-            if rows.isEmpty {
+            if let err = vm.error {
+                // R4 P9：读取失败显式态（与空收藏区分；可重试）
+                ErrorBox(text: err, onRetry: { Task { await vm.reload() } })
+            } else if rows.isEmpty {
                 EmptyBox(text: FavsCopy.emptyText)
             } else {
+                // R4 P5：回顶（List 无可靠 offset 源 → 非空即常显；tab 根页 inset = 环境值）
+                ScrollViewReader { proxy in
                 List {
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                         FavRowCard(row: r) {
@@ -97,10 +103,17 @@ struct FavsView: View {
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     }
+                    Color.clear
+                        .frame(height: 0)
+                        .id("favs_top")
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .refreshable { await vm.reload() }
+                .scrollTopOverlay(visible: true, bottomInset: envTabBarInset) {
+                    withAnimation { proxy.scrollTo("favs_top", anchor: .top) }
+                }
+                }
             }
         }
     }

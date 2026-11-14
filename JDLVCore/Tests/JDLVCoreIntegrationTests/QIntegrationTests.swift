@@ -55,7 +55,7 @@ final class QIntegrationTests: XCTestCase {
     static let host = ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_HOST"] ?? "127.0.0.1"
     static let port = Int(ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_PORT"] ?? "3306")!
     static let user = ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_USER"] ?? "root"
-    static let pass = ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_PASS"] ?? "root"
+    static let pass = ProcessInfo.processInfo.environment["JDLV_TEST_MYSQL_PASS"].flatMap { $0.isEmpty ? nil : $0 }   // R4：空/未设 = nil（不发口令；MySQL8 空口令账号语义）
     static let dbName = "jdlv_it_q"
     static let altDbName = "jdlv_it_q_alt"   // 稀疏库：缺 makers/codes/articles 表
 
@@ -93,7 +93,7 @@ final class QIntegrationTests: XCTestCase {
     @discardableResult
     func boot() async throws -> MySQLPoolSettings {
         let s = MySQLPoolSettings(
-            host: Self.host, port: Self.port, user: Self.user, pass: Self.pass,
+            host: Self.host, port: Self.port, user: Self.user, pass: Self.pass ?? "",   // String? → pool 设置非可选；空串由 pool 转 nil 连接
             jdbDb: Self.dbName, shtDb: Self.dbName, tls: false,
             connectTimeout: 5, queryTimeout: 8)
         Db.configure(settingsProvider: { s }, hasNetwork: { true })
@@ -1484,14 +1484,14 @@ final class QIntegrationTests: XCTestCase {
     func test_Q_taxonomy_fallbackAndArticlesMissingOnSparseDb() async throws {
         try await boot()
         let alt = MySQLPoolSettings(
-            host: Self.host, port: Self.port, user: Self.user, pass: Self.pass,
+            host: Self.host, port: Self.port, user: Self.user, pass: Self.pass ?? "",   // String? → pool 设置非可选；空串由 pool 转 nil 连接
             jdbDb: Self.altDbName, shtDb: Self.dbName, tls: false,
             connectTimeout: 5, queryTimeout: 8)
         Db.configure(settingsProvider: { alt }, hasNetwork: { true })
         Db.reset()
         defer {
             let main = MySQLPoolSettings(
-                host: Self.host, port: Self.port, user: Self.user, pass: Self.pass,
+                host: Self.host, port: Self.port, user: Self.user, pass: Self.pass ?? "",   // String? → pool 设置非可选；空串由 pool 转 nil 连接
                 jdbDb: Self.dbName, shtDb: Self.dbName, tls: false,
                 connectTimeout: 5, queryTimeout: 8)
             Db.configure(settingsProvider: { main }, hasNetwork: { true })

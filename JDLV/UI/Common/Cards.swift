@@ -14,25 +14,34 @@ import JDLVCore
 //
 
 // MARK: - 卡片容器（v2：CardShell；保留 cardChrome 给未迁移调用方）
+// R4 P4：默认无逐卡阴影（每 cell 一次离屏渲染 → 滚动 GPU/CPU 双高）；
+// 列表/网格卡片 elevated:false（默认）只留 1pt 描边 + clipShape；详情头部/弹层可 elevated:true。
 
 struct CardChrome: ViewModifier {
+    /// true = 保留阴影（详情页头部/弹层等少数场景）
+    var elevated: Bool = false
+
     @Environment(\.appTheme) private var theme
 
     func body(content: Content) -> some View {
-        content
+        let base = content
             .background(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner).fill(theme.bg1))
             .overlay(
                 RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner)
                     .stroke(theme.line, lineWidth: ComponentMetrics.cardStroke)
             )
-            .shadow(color: .black.opacity(0.12),
-                    radius: ComponentMetrics.cardElevation,
-                    y: ComponentMetrics.cardElevation / 2)
+        if elevated {
+            base.shadow(color: .black.opacity(0.12),
+                        radius: ComponentMetrics.cardElevation,
+                        y: ComponentMetrics.cardElevation / 2)
+        } else {
+            base
+        }
     }
 }
 
 extension View {
-    func cardChrome() -> some View { modifier(CardChrome()) }
+    func cardChrome(elevated: Bool = false) -> some View { modifier(CardChrome(elevated: elevated)) }
 }
 
 // MARK: - 已读小圆点（6pt primary）

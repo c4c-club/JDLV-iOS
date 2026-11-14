@@ -27,6 +27,36 @@
 import Foundation
 import JDLVCore
 
+/// R5 P3 §2A：设置页主线程卡顿实测埋点（文件落盘；CI 导出步骤经
+/// simctl get_app_container 拷出 —— os_log/log stream 在 CI 侧不可靠）。
+/// 只记时间线与耗时，不记任何设置值/口令。
+enum PerfFileLog {
+    private static let queue = DispatchQueue(label: "jdlv.perffilelog")
+    static var fileURL: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("jdlv-perf.log")
+    }
+    static func append(_ line: String) {
+        queue.sync {
+            let df = DateFormatter()
+            df.dateFormat = "HH:mm:ss.SSS"
+            let out = df.string(from: Date()) + " " + line + "\n"
+            let data = out.data(using: .utf8) ?? Data()
+            if let fh = FileHandle(forWritingAtPath: fileURL.path) {
+                fh.seekToEndOfFile()
+                fh.write(data)
+                try? fh.close()
+            } else {
+                try? data.write(to: fileURL)
+            }
+        }
+    }
+}
+
+/// 埋点统一入口（时间线/耗时；无值输出）
+func perfNote(_ line: String) {
+    PerfFileLog.append(line)
+}
+
 // MARK: - 测试连接 / 图床自检 / 缓存清理
 
 enum SettingsDiagnostics {
@@ -39,6 +69,47 @@ enum SettingsDiagnostics {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-JDLV_DEMO"), i + 1 < args.count else { return false }
         return args[i + 1] == "1"
+    }
+
+    // MARK: 诊断日志正文（AboutView「导出诊断日志」共用；R4 抽出为可单测纯函数）
+
+    /// R4 P14/V47：host 脱敏 —— IPv4 保留前两段（如 192.168.*.*）；域名保留首尾段
+    /// （mysql.example.com → mysql.*.com）；两段 → 首段.*；端口由调用方原样保留。
+    static func maskHost(_ host: String) -> String {
+        let parts = host.split(separator: ".").map(String.init)
+        if parts.count == 4, parts.allSatisfy({ !$0.isEmpty && Int($0) != nil }) {
+            return "\(parts[0]).\(parts[1]).*.*"
+        }
+        if parts.count >= 3 {
+            return "\(parts[0]).*.\(parts[parts.count - 1])"
+        }
+        if parts.count == 2 {
+            return "\(parts[0]).*"
+        }
+        return host.isEmpty ? host : "***"
+    }
+
+    /// R4 门禁：诊断文本不得包含任何口令值（remotePass/localPass/lockSecret），
+    /// host 一律脱敏（V47：不含完整内网 IP）。metaLines 由调用方给（时间/版本/设备等）。
+    static func diagnosticLines(s: AppSettings, metaLines: [String]) -> [String] {
+        var lines = metaLines
+        // 数据源摘要（不含口令）：本地 jdb/sht 库名 · 远程 脱敏host:port
+        let local = [s.localJdb, s.localSht].filter { !$0.isEmpty }.joined(separator: "/")
+        let remote = s.remoteHost.isEmpty ? "" : "\(maskHost(s.remoteHost)):\(s.remotePort)"
+        var parts: [String] = []
+        if !local.isEmpty { parts.append("本地 \(local)") }
+        if !remote.isEmpty { parts.append("远程 \(remote)") }
+        lines.append("数据源: " + (parts.isEmpty ? "未配置" : parts.joined(separator: " · ")))
+        lines.append("dbSrc: \(s.dbSrc) · queryTimeout: \(s.queryTimeout)s · connectTimeout: \(s.connectTimeout)s")
+        let proxy = s.proxyHost.isEmpty
+            ? "未配置"
+            : "\(maskHost(s.proxyHost)):\(s.proxyPort)"
+        lines.append("代理: \(proxy)")
+        lines.append("输入法: \(KeyboardDiagnostics.activeModesDescription)")
+        #if DEBUG
+        lines.append("testImgMode: \(s.testImgMode)")
+        #endif
+        return lines
     }
 
     // MARK: 测试连接（§13；① 与 ② 共用）
@@ -54,7 +125,20 @@ enum SettingsDiagnostics {
             // demo：不触碰 Db（不发任何网络/数据库调用），明示未发起连接
             return "演示模式：未发起数据库连接"
         }
-        return await connGate.run(s)
+        // R5 P3：外层看门狗 30s —— 单步超时（connect 5s / query 2s）理论 ≤15s，超过即视为
+        // 链路挂起并显式失败（真实连接挂起曾致 UI 90s+ 无任何结果呈现）。
+        return await withTaskGroup(of: String.self) { group in
+            group.addTask { await SettingsDiagnostics.connGate.run(s) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                perfNote("conn: watchdog-fired")
+                return "✗ 测试连接超时（30s 无响应 —— 连接链路挂起）"
+            }
+            let first = await group.next() ?? "连接失败"
+            group.cancelAll()
+            perfNote("conn: resolved")
+            return first
+        }
     }
 
     /// 两卡（① 数据源 / ② 代理）共用的成功/失败后续（A4：处理口径一致）：
@@ -227,6 +311,12 @@ enum SettingsDiagnostics {
 private actor ConnTestGate {
 
     func run(_ s: AppSettings) async -> String {
+        // R5 P3 §2A：conn 全程埋点（不含任何口令/主机值）
+        perfNote("conn: begin")
+        let t0 = Date()
+        defer {
+            perfNote("conn: end \(Date().timeIntervalSince(t0))s")
+        }
         // ① 草稿 → 连接参数（端口非法/host/user/pass 空 → 显式「数据源未配置」）
         guard var ps = AppBootstrap.mysqlSettings(s) else {
             let layer = "数据源未配置：主机/端口/账号/口令不完整（\(s.host):\(s.port)）"
@@ -237,8 +327,9 @@ private actor ConnTestGate {
         //    否则直连（草稿尚未保存，隧道仍指旧目标）
         ps = ProxyTunnelManager.effectiveSettings(ps, tunnel: s.proxyDb) ?? ps
 
-        let t0 = Perf.nowMs()
+        let t0p = Perf.nowMs()
         var versions: [String] = []
+        perfNote("conn: ping-begin")
         for which in ["jdb", "sht"] {
             switch await MySQLPool.shared.ping(which: which, settings: ps) {
             case .success(let info):
@@ -253,7 +344,8 @@ private actor ConnTestGate {
                     hint: SettingsDiagnostics.hintFor(layer))
             }
         }
-        return SettingsDiagnostics.formatSuccess(elapsedMs: Perf.nowMs() - t0, versions: versions)
+        perfNote("conn: ping-ok \(Perf.nowMs() - t0p)ms")
+        return SettingsDiagnostics.formatSuccess(elapsedMs: Perf.nowMs() - t0p, versions: versions)
     }
 }
 
@@ -291,7 +383,8 @@ final class SettingsSnapshotBox: @unchecked Sendable {
             imageCacheMb: s.imageCacheMb,
             imageCacheDays: s.imageCacheDays,
             coverHalf: s.coverHalf,
-            testImgMode: s.testImgMode)
+            testImgMode: s.testImgMode,
+            allowInsecureHTTP: s.allowInsecureHTTP)
     }
 }
 
@@ -353,8 +446,9 @@ final class SettingsIndexHub {
         return base.path.hasSuffix("/") ? base.path : base.path + "/"
     }
 
-    /// WarmSettings 提供器（AppSettings → WarmSettings 映射）
-    static func warmSettings(_ s: AppSettings) -> WarmSettings {
+    /// WarmSettings 提供器（AppSettings → WarmSettings 映射；纯函数 → nonisolated，
+    /// 供后台 warmUpAsync 构建的 SyncCoordinator settings 闭包在任意线程调用）
+    nonisolated static func warmSettings(_ s: AppSettings) -> WarmSettings {
         WarmSettings(
             enabled: s.shadowEnabled,
             idxMode: s.shadowMode == 1,
@@ -366,6 +460,8 @@ final class SettingsIndexHub {
     }
 
     /// SyncCoordinator（懒建一次；建失败恒 nil, 调用方按"未启用"展示）
+    /// R5 P3：含懒建（首次访问在调用线程打开 SQLite）→ 只允许后台线程或用户动作路径调用；
+    /// 主线程展示路径一律用 syncIfReady。
     var sync: SyncCoordinator? {
         if _sync != nil { return _sync }
         if idxFailed { return nil }
@@ -384,16 +480,49 @@ final class SettingsIndexHub {
         }
     }
 
-    /// 实际占用重算（idx = IdxDb.usageBytes(fast:false) 含 WAL；详情缓存 ShadowDb 未接线 → 0）
-    func recalcUsage() -> (idxMb: Double, detailMb: Double) {
-        guard let sync else { return (0, 0) }
-        let idx = Double(sync.idx.usageBytes(fast: false)) / 1_048_576.0
-        return (idx, 0.0)
+    /// R5 P3：已建实例只读访问（绝不触发 IdxDb 构建 —— 主线程展示/定时路径专用）
+    var syncIfReady: SyncCoordinator? { _sync }
+
+    /// R5 P3：后台构建结果登记（仅 warmUpAsync 的 MainActor.run 中调用；已有实例则丢弃后台副本）
+    func adoptBuiltSync(_ c: SyncCoordinator) { if _sync == nil { _sync = c } }
+    /// R5 P3：后台构建失败登记
+    func markIdxFailed() { idxFailed = true }
+
+    /// R5 P3：后台预热（IdxDb 打开 + refreshStats + 实际占用全部离主线程；幂等）。
+    /// SQLite I/O 在 detached 上下文执行，@MainActor 只做结果登记（无 I/O）。
+    /// 返回 usageBytes(fast:false)（含 WAL）；未启用/失败 → 0。
+    /// 注意：若用户动作路径先在主线程懒建了实例，后台副本将被 adoptBuiltSync 丢弃（防双实例）。
+    @discardableResult
+    func warmUpAsync() -> Task<Int64, Never> {
+        let box = self.box
+        let dir = Self.supportDir
+        return Task.detached(priority: .utility) {
+            perfNote("warmUp: idxdb-begin")
+            let t0 = Date()
+            do {
+                let idx = try IdxDb(directory: dir)
+                perfNote("warmUp: idxdb-open \(Date().timeIntervalSince(t0))s")
+                let coordinator = SyncCoordinator(
+                    idx: idx,
+                    source: WarmDbSourceFactory(),
+                    settings: { SettingsIndexHub.warmSettings(box.settings) })
+                coordinator.refreshStats()
+                perfNote("warmUp: refreshStats \(Date().timeIntervalSince(t0))s")
+                await MainActor.run { SettingsIndexHub.shared.adoptBuiltSync(coordinator) }
+                let bytes = idx.usageBytes(fast: false)
+                perfNote("warmUp: usage \(Date().timeIntervalSince(t0))s bytes=\(bytes)")
+                return bytes
+            } catch {
+                perfNote("warmUp: failed \(Date().timeIntervalSince(t0))s")
+                await MainActor.run { SettingsIndexHub.shared.markIdxFailed() }
+                return 0
+            }
+        }
     }
 
     // MARK: EmbStore（语义向量缓存）
 
-    /// 懒开 EmbStore（失败恒 nil）
+    /// 懒开 EmbStore（失败恒 nil）—— 仅用户动作路径调用；展示路径用 embStatsAsync
     private func emb() -> EmbStore? {
         if _emb != nil { return _emb }
         if embFailed { return nil }
@@ -402,6 +531,37 @@ final class SettingsIndexHub {
             _emb = store
             return store
         } catch {
+            embFailed = true
+            return nil
+        }
+    }
+
+    /// R5 P3：后台打开 EmbStore + 统计（懒建离主线程；@MainActor 只做已建实例读取/登记）。
+    /// 展示路径（SemanticModelCard.onAppear）专用。
+    @MainActor
+    func embStatsAsync() async -> (count: Int, bytes: Int64)? {
+        if let e = _emb {
+            return await Task.detached(priority: .utility) { [e] in
+                guard let c = try? e.count(), let b = try? e.usageBytes() else { return nil }
+                return (Int(c), b)
+            }.value
+        }
+        if embFailed { return nil }
+        let dir = Self.supportDir
+        perfNote("embStats: embstore-begin")
+        let t0 = Date()
+        do {
+            let e = try await Task.detached(priority: .utility) { try EmbStore(directory: dir) }.value
+            perfNote("embStats: embstore-open \(Date().timeIntervalSince(t0))s")
+            if _emb == nil { _emb = e }
+            let st: (count: Int, bytes: Int64)? = await Task.detached(priority: .utility) { [e] in
+                guard let c = try? e.count(), let b = try? e.usageBytes() else { return nil }
+                return (Int(c), b)
+            }.value
+            perfNote("embStats: done \(Date().timeIntervalSince(t0))s")
+            return st
+        } catch {
+            perfNote("embStats: failed \(Date().timeIntervalSince(t0))s")
             embFailed = true
             return nil
         }

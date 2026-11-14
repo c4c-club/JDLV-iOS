@@ -44,7 +44,17 @@ final class Router: ObservableObject {
     static let startTab = "search"
 
     /// 当前选中 Tab
-    @Published var tab: String = Router.startTab
+    /// R5 P3 §2A：tab 翻转埋点（public os_log；冒烟 conn 等待期间 app 自行回到首页，
+    /// 无任何代码路径赋值 tab="search" —— 记录翻转时刻/来源序列定位）
+    @Published var tab: String = Router.startTab {
+        didSet {
+            if oldValue != tab {
+                let from = oldValue
+                let to = tab
+                perfNote("router.tab \(from) -> \(to)")
+            }
+        }
+    }
 
     // 每 Tab 独立 path（状态保存/恢复）
     @Published var searchPath: [Route] = []

@@ -116,12 +116,13 @@ extension MemoryBrowseCache: ShtCacheStore {}
 // MARK: - 已读/收藏批量标记（E9：kind = "sht"）
 
 struct ShtMarkSource {
-    var historySet: ([String]) -> Set<String>
-    var favSet: ([String]) -> Set<String>
-    var historyIs: (String) -> Bool
-    var favIs: (String) -> Bool
-    var historyMark: (String, String) -> Void
-    var favToggle: (String, String) -> Bool
+    // R4 P6：标记闭包 async（LocalStoreActor 串行后台执行，SQLite 离主线程）
+    var historySet: ([String]) async throws -> Set<String>
+    var favSet: ([String]) async throws -> Set<String>
+    var historyIs: (String) async -> Bool
+    var favIs: (String) async -> Bool
+    var historyMark: (String, String) async -> Void
+    var favToggle: (String, String) async -> Bool
 
     static func empty() -> ShtMarkSource {
         ShtMarkSource(
@@ -151,17 +152,32 @@ struct ShtMarkSource {
                 })
         }
         #endif
-        guard let store = BrowseMarks.shared else { return .empty() }
+        // R4 P6：闭包内首次经 BrowseMarks.open() 后台打开；单条查询失败按未标记展示
+        // （列表 badge 语义；错误呈现门禁 V42 由 FavsVM/BrowseVM 承担）
         return ShtMarkSource(
-            historySet: { ids in (try? store.historySet(kind: "sht", ids: ids)) ?? [] },
-            favSet: { ids in (try? store.favSet(kind: "sht", ids: ids)) ?? [] },
-            historyIs: { tid in (try? store.historyIs(kind: "sht", itemId: tid)) ?? false },
-            favIs: { tid in (try? store.favIs(kind: "sht", itemId: tid)) ?? false },
+            historySet: { ids in
+                guard let a = await BrowseMarks.open() else { return [] }
+                return (try? await a.historySet(kind: "sht", ids: ids)) ?? []
+            },
+            favSet: { ids in
+                guard let a = await BrowseMarks.open() else { return [] }
+                return (try? await a.favSet(kind: "sht", ids: ids)) ?? []
+            },
+            historyIs: { tid in
+                guard let a = await BrowseMarks.open() else { return false }
+                return (try? await a.historyIs(kind: "sht", id: tid)) ?? false
+            },
+            favIs: { tid in
+                guard let a = await BrowseMarks.open() else { return false }
+                return (try? await a.favIs(kind: "sht", id: tid)) ?? false
+            },
             historyMark: { tid, title in
-                _ = try? store.historyMark(kind: "sht", itemId: tid, title: title)
+                guard let a = await BrowseMarks.open() else { return }
+                _ = try? await a.historyMark(kind: "sht", id: tid, title: title)
             },
             favToggle: { tid, title in
-                (try? store.favToggle(kind: "sht", itemId: tid, title: title)) ?? false
+                guard let a = await BrowseMarks.open() else { return false }
+                return (try? await a.favToggle(kind: "sht", id: tid, title: title)) ?? false
             })
     }
 }
@@ -458,7 +474,7 @@ final class ShtVM: ObservableObject {
             fuzzy: fuzzy, semantic: semantic, sort: sort, per: per, page: targetPage)
         // ① TTL 内缓存命中（路径一致，同样写锚点/计数）
         if let hit = cache.get(key, ttlMinutes: Self.LIST_TTL_MINUTES) {
-            apply(hit, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
+            await apply(hit, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
             await countIfNeeded(rid: rid, append: append, targetPage: targetPage)
             return
         }
@@ -475,7 +491,7 @@ final class ShtVM: ObservableObject {
                 threshold: Float(store?.settings.semThreshold ?? 10) / 100.0)
             guard rid == reqId else { return }   // 旧响应一律丢弃
             cache.put(key, d)
-            apply(d, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
+            await apply(d, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
             await countIfNeeded(rid: rid, append: append, targetPage: targetPage)
         } catch {
             guard rid == reqId else { return }
@@ -489,7 +505,7 @@ final class ShtVM: ObservableObject {
             }
             // ③ stale（无视 TTL）→ SWR 回退；无 stale → ErrText + fromRefresh 时 Fail
             if let stale = cache.stale(key) {
-                apply(stale, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
+                await apply(stale, rid: rid, append: append, targetPage: targetPage, fromRefresh: fromRefresh)
                 return
             }
             loading = false
@@ -524,7 +540,7 @@ final class ShtVM: ObservableObject {
     /// hasMore=满页推断；readIds/favIds 批量 union
     private func apply(
         _ d: [String: Any], rid: Int, append: Bool, targetPage: Int, fromRefresh: Bool
-    ) {
+    ) async {
         guard rid == reqId else { return }
         let fresh = d["items"] as? [Row] ?? []
         let prev = items ?? []
@@ -569,8 +585,9 @@ final class ShtVM: ObservableObject {
         if let marks = marks {
             let ids = merged.map { $0.s("tid") }.filter { !$0.isEmpty }
             if !ids.isEmpty {
-                let read = marks.historySet(ids)
-                let fav = marks.favSet(ids)
+                // R4 P6：标记查询 async（单条失败按未标记展示；badge 缺失不清空既有数据）
+                let read = (try? await marks.historySet(ids)) ?? []
+                let fav = (try? await marks.favSet(ids)) ?? []
                 if rid == reqId {
                     readIds = readIds.union(read)
                     favIds = favIds.union(fav)

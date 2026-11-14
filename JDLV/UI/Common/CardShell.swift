@@ -14,12 +14,14 @@ struct CardShell<Content: View>: View {
     var width: CGFloat? = nil
     var height: CGFloat? = nil
     var padding: CGFloat = 0
+    /// R4 P4：true 才挂阴影（详情页头部/弹层等少数场景）；列表/网格卡片默认 false
+    var elevated: Bool = false
     @ViewBuilder var content: () -> Content
 
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        content()
+        let base = content()
             .padding(padding)
             .frame(width: width, height: height, alignment: .topLeading)
             .background(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner).fill(theme.bg1))
@@ -28,8 +30,12 @@ struct CardShell<Content: View>: View {
                     .stroke(theme.line, lineWidth: ComponentMetrics.cardStroke)
             )
             .clipShape(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner))
-            .shadow(color: .black.opacity(0.12),
-                    radius: ComponentMetrics.cardElevation,
-                    y: ComponentMetrics.cardElevation / 2)
+        if elevated {
+            base.shadow(color: .black.opacity(0.12),
+                        radius: ComponentMetrics.cardElevation,
+                        y: ComponentMetrics.cardElevation / 2)
+        } else {
+            base
+        }
     }
 }

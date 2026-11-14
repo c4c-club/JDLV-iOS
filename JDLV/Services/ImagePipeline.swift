@@ -3,8 +3,17 @@ import CryptoKit
 import JDLVCore
 
 /// 图片加载协议（P7 图片管线入口; kind 决定桶与头）
+/// R4 P4：maxPixel = 解码像素上限（最长边像素，0 = 不限全尺寸；灯箱/全屏用 0）。
+/// AspectImage/PosterImage 按实际 frame×scale 计算 maxPixel 传入。
 protocol ImageLoading {
-    func image(url: String, kind: CdnKind, half: Int) async -> UIImage?
+    func image(url: String, kind: CdnKind, half: Int, maxPixel: Int) async -> UIImage?
+}
+
+extension ImageLoading {
+    /// 兼容旧调用点（未关心像素上限的调用 → 全尺寸单次解码）
+    func image(url: String, kind: CdnKind, half: Int) async -> UIImage? {
+        await image(url: url, kind: kind, half: half, maxPixel: 0)
+    }
 }
 
 /// 拉取失败（对齐 Android 拦截器链的失败分支: shell(code,msg) / IOException）
@@ -42,12 +51,16 @@ final class ImagePipeline: ImageLoading {
 
     // MARK: - 缓存
 
-    /// 内存 NSCache（≤100MB; cost = 位图字节）
+    /// 内存 NSCache（R4 P4：128MB / countLimit 200; cost = 位图字节 w*h*4；内存告警全清）
     private let memCache: NSCache<NSString, UIImage> = {
         let c = NSCache<NSString, UIImage>()
-        c.totalCostLimit = 100 * 1024 * 1024
+        c.totalCostLimit = 128 * 1024 * 1024
+        c.countLimit = 200
         return c
     }()
+
+    /// 内存告警 observer token（deinit 移除；singleton 常驻，防御性清理）
+    private var memWarnToken: NSObjectProtocol?
 
     private let diskLock = NSLock()
     private var lastCleanupAt: Int64 = 0
@@ -59,39 +72,42 @@ final class ImagePipeline: ImageLoading {
         return base.appendingPathComponent("jdlv_img", isDirectory: true)
     }
 
-    // MARK: - in-flight 去重
+    // MARK: - in-flight 去重（R5 P2：确定性移除）
 
-    private final class Inflight {
-        let task: Task<Data, Error>
-        var refs = 0
-        var done = false
-        init(task: Task<Data, Error>) {
-            self.task = task
-            Task { [weak self] in
-                _ = try? await task.value
-                self?.done = true
-            }
-        }
-    }
-
-    private let inflightLock = NSLock()
-    private var inflight: [String: Inflight] = [:]
+    private let inflightGate = InflightGate<String, Data>()
 
     // MARK: - URLSession 池（jdb/98t 各自代理开关; 关闭直连）
 
     private let sessionLock = NSLock()
     private var sessions: [String: URLSession] = [:]
 
+    /// 网络抓取并发上限（R4 P4：AsyncSemaphore(4)；含磁盘读以外的全部网络等待）
+    private static let fetchGate = AsyncSemaphore(4)
+
     private init() {
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         cleanupDiskIfNeeded()
+        // R4 P4：系统内存告警 → 全清内存缓存（§6.3）
+        memWarnToken = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                self?.memCache.removeAllObjects()
+            }
+    }
+
+    deinit {
+        if let t = memWarnToken {
+            NotificationCenter.default.removeObserver(t)
+        }
     }
 
     // MARK: - 入口（协议方法）
 
     /// 图片加载: kind 决定桶与头; half = coverHalf 模式（0 右半 / 1 左半 / 2 整张）。
+    /// R4 P4：maxPixel = 降采样上限（最长边像素；0 = 不限）。磁盘读与解码全部在后台线程，
+    /// 单次降采样解码（CGImageSourceCreateThumbnailAtIndex），不再全尺寸 UIImage(data:)。
     /// 冷却判定用**重写后的最终 URL**（Android Img.url 语义）。
-    func image(url: String, kind: CdnKind, half: Int) async -> UIImage? {
+    func image(url: String, kind: CdnKind, half: Int, maxPixel: Int) async -> UIImage? {
         #if DEBUG
         if TestImages.enabled() { return TestImages.testImage(for: url) }
         #endif
@@ -101,26 +117,31 @@ final class ImagePipeline: ImageLoading {
         if u.isEmpty { return nil }
         if ImgBreaker.shared.isBucketCooling(kind.bucket) { return nil }
         if ImgBreaker.shared.isUrlCooling(u) { return nil }
-        if let hit = memCache.object(forKey: u as NSString) {
-            return applyHalf(hit, half)
+        // R4 P4：变体缓存键 u|maxPixel|half —— 命中即最终图（含半图裁切，免重复裁）
+        let mkey = Self.memKey(u, maxPixel, half)
+        if let hit = memCache.object(forKey: mkey as NSString) {
+            return hit
         }
-        if let data = diskRead(u) {
-            if let img = UIImage(data: data) {
-                memCache.setObject(img, forKey: u as NSString, cost: pixelCost(img))
-                return applyHalf(img, half)
-            }
-            try? FileManager.default.removeItem(at: diskURL(u))   // 坏缓存清除
+        // R4 P4：磁盘读 + 降采样解码都在 utility 后台（绝不主线程 Data(contentsOf:)/解码）
+        if let img = await loadFromDisk(u, maxPixel: maxPixel) {
+            return cacheVariant(mkey, img, half: half)
         }
-        let entry = inflightEntry(u, kind: kind)
-        defer { finishInflight(u, entry) }
+        let entry = inflightGate.entry(u) { [weak self] in
+            guard let self else { throw FetchFailure("pipeline deallocated") }
+            // R4 P4：网络抓取并发上限 4（等待者不占许可；被取消的任务恢复后立即释放）
+            await Self.fetchGate.acquire()
+            defer { Self.fetchGate.release() }
+            if Task.isCancelled { throw CancellationError() }
+            return try await self.loadNetwork(u, kind)
+        }
         do {
-            let data = try await entry.task.value
-            guard let img = UIImage(data: data) else {
+            let data = try await entry.value
+            guard let img = await decodeDetached(data, maxPixel: maxPixel) else {
                 ImgBreaker.shared.recordFailure(u, error: "ImageDataInvalid")
                 return nil
             }
             ImgBreaker.shared.recordSuccess(u)
-            return applyHalf(img, half)
+            return cacheVariant(mkey, img, half: half)
         } catch is CancellationError {
             return nil
         } catch {
@@ -131,42 +152,44 @@ final class ImagePipeline: ImageLoading {
         }
     }
 
+    // MARK: - R4 P4 降采样辅助
+
+    /// 内存缓存键：URL|最大像素|半图模式（§6.3 缓存键 u|maxPixel|half）
+    private static func memKey(_ u: String, _ maxPixel: Int, _ half: Int) -> String {
+        "\(u)|\(maxPixel)|\(half)"
+    }
+
+    /// 半图裁切（对降采样后的缩略图裁，绝不对原图）+ 写入变体缓存
+    private func cacheVariant(_ mkey: String, _ decoded: UIImage, half: Int) -> UIImage {
+        let final = applyHalf(decoded, half)
+        memCache.setObject(final, forKey: mkey as NSString, cost: pixelCost(final))
+        return final
+    }
+
+    /// 磁盘读 + 降采样解码（Task.detached utility；磁盘 I/O 与解码都离主线程）。
+    /// 坏缓存（可读但解码失败）删除文件后返回 nil → 调用方继续走网络（原语义保留）。
+    private func loadFromDisk(_ u: String, maxPixel: Int) async -> UIImage? {
+        await Task.detached(priority: .utility) { [weak self] in
+            guard let self, let data = self.diskRead(u) else { return nil }
+            if let img = ImageDecoder.downsample(data, maxPixel: maxPixel) { return img }
+            try? FileManager.default.removeItem(at: self.diskURL(u))   // 坏缓存清除
+            return nil
+        }.value
+    }
+
+    /// 网络字节 → 降采样位图（Task.detached；解码不占主线程）
+    private func decodeDetached(_ data: Data, maxPixel: Int) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) {
+            ImageDecoder.downsample(data, maxPixel: maxPixel)
+        }.value
+    }
+
     /// 滚动取消: 取消该 URL 的在飞加载（同 URL 多等待方共享同一 Task, 取消波及
     /// 全部等待方 —— 简化点, 已记录移植报告）
     func cancel(for url: String) {
         guard let g = ImgBreaker.guarded(url) else { return }
         let key = CdnRewrite.rewrite(g)
-        inflightLock.lock()
-        let e = inflight.removeValue(forKey: key)
-        inflightLock.unlock()
-        e?.task.cancel()
-    }
-
-    // MARK: - in-flight
-
-    private func inflightEntry(_ key: String, kind: CdnKind) -> Inflight {
-        inflightLock.lock()
-        if let e = inflight[key] {
-            e.refs += 1
-            inflightLock.unlock()
-            return e
-        }
-        let e = Inflight(task: Task<Data, Error> { [weak self] in
-            guard let self else { throw FetchFailure("pipeline deallocated") }
-            return try await self.loadNetwork(key, kind)
-        })
-        inflight[key] = e
-        inflightLock.unlock()
-        return e
-    }
-
-    private func finishInflight(_ key: String, _ entry: Inflight) {
-        inflightLock.lock()
-        entry.refs -= 1
-        if let cur = inflight[key], cur === entry, entry.done {
-            inflight.removeValue(forKey: key)
-        }
-        inflightLock.unlock()
+        inflightGate.cancel(key)
     }
 
     // MARK: - 网络层（含解码/验证/备用图床）
@@ -388,15 +411,16 @@ final class ImagePipeline: ImageLoading {
 
     // MARK: - 缓存读写
 
+    /// R4 P4：只落磁盘（原始字节共享给所有 maxPixel 变体）；内存缓存由调用方按
+    /// 变体键（降采样+半图后）写入，不再在此处全尺寸解码。
     private func cacheWrite(_ u: String, _ data: Data) {
-        guard let img = UIImage(data: data) else { return }
-        memCache.setObject(img, forKey: u as NSString, cost: pixelCost(img))
         diskWrite(u, data)
     }
 
+    /// R4 P4：cost = 位图字节 w*h*4（§6.3）
     private func pixelCost(_ img: UIImage) -> Int {
         guard let cg = img.cgImage else { return 1 }
-        return cg.bytesPerRow * cg.height
+        return cg.width * cg.height * 4
     }
 
     private func diskURL(_ key: String) -> URL {
@@ -477,5 +501,91 @@ final class ImagePipeline: ImageLoading {
               let rect = CoverHalf.cropRect(cw: cg.width, ch: cg.height, mode: half),
               let cut = cg.cropping(to: rect) else { return img }
         return UIImage(cgImage: cut, scale: img.scale, orientation: img.imageOrientation)
+    }
+}
+
+// MARK: - InflightGate（R5 P2：in-flight 去重门，泛型抽出可独立单测）
+
+/// 同键并发 → 复用同一 Task；任务体退出（成功/失败/取消）时在同一 Task 内
+/// 确定性移除条目（defer 先于任何等待者恢复）—— 杜绝 R4 版「观察者 Task 与
+/// finishInflight 竞态 → 已完成条目残留（Task 持有结果 = 内存泄漏）」。
+///
+/// 等待者语义（不变）：多等待方共享同一 Task；cancel 后等待方收到 CancellationError；
+/// 条目移除后同键新请求起新任务（成功后由磁盘缓存承接，不重发网络请求）。
+final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
+
+    /// 字典条目：身份用于移除比对（Task 不可 == 比较）；字段在任务启动前完成装配，
+    /// bodyDidExit 恰在任务体退出时调用一次。
+    private final class Entry: @unchecked Sendable {
+        var task: Task<Value, Error>!
+        var onExit: (@Sendable () -> Void)?
+        /// 任务体退出时（defer；先于等待者恢复）调用，恰好一次
+        func bodyDidExit() { onExit?() }
+    }
+
+    private let lock = NSLock()
+    private var inflight: [Key: Entry] = [:]
+
+    /// 取条目：同键在飞 → 复用其 Task；否则用 body 新建。
+    /// body 退出时自动移除本条目（确定性路径），调用方无需手工 finish。
+    func entry(_ key: Key, body: @escaping @Sendable () async throws -> Value) -> Task<Value, Error> {
+        lock.lock()
+        if let e = inflight[key] {
+            let t = e.task!   // 装配不变量：入字典前 task 已赋值
+            lock.unlock()
+            return t
+        }
+        lock.unlock()
+        let e = makeEntry(key: key, body: body)
+        lock.lock()
+        // 双检：并发插入窗口保留先到者，取消后到者（理论窗口，防御性）
+        if let cur = inflight[key] {
+            let t = cur.task!
+            lock.unlock()
+            e.task!.cancel()
+            return t
+        }
+        inflight[key] = e
+        lock.unlock()
+        return e.task!
+    }
+
+    private func makeEntry(key: Key, body: @escaping @Sendable () async throws -> Value) -> Entry {
+        let e = Entry()
+        let task = Task<Value, Error> { [weak self, weak e] in
+            defer { e?.bodyDidExit() }
+            guard let self else {
+                throw NSError(domain: "InflightGate", code: -1,
+                              userInfo: [NSLocalizedDescriptionKey: "gate deallocated"])
+            }
+            return try await body()
+        }
+        e.task = task
+        e.onExit = { [weak self] in self?.removeEntry(key, entry: e) }
+        return e
+    }
+
+    /// 取消同键在飞任务：立即移除条目（新请求不再复用被取消的任务）并取消。
+    /// 任务体退出路径的 removeEntry 因身份比对失败而为 no-op。
+    func cancel(_ key: Key) {
+        lock.lock()
+        let e = inflight.removeValue(forKey: key)
+        lock.unlock()
+        e?.task!.cancel()
+    }
+
+    /// 测试/诊断：键当前是否在飞（含已退出但未移除的残留条目 —— 恒应为 false）
+    func has(_ key: Key) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return inflight[key] != nil
+    }
+
+    private func removeEntry(_ key: Key, entry: Entry) {
+        lock.lock()
+        if let cur = inflight[key], cur === entry {
+            inflight.removeValue(forKey: key)
+        }
+        lock.unlock()
     }
 }

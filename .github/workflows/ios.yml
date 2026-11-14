@@ -9,6 +9,11 @@ on:
       - '**.md'
   pull_request:
   workflow_dispatch:
+    inputs:
+      ui_filter:
+        description: 'UI 测试过滤（only-testing 目标，逗号分隔，如 JDLVUITests/SettingsUITests,JDLVUITests/ProductionSmokeUITests；空 = 全量。R5 P3 引入，常驻）'
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,19 +33,25 @@ jobs:
           set -euo pipefail
           PAT="(PASSWORD|PASS|password|store[P]assword|key[P]assword)[[:space:]]*[:=][[:space:]]*[\"']"
           DOC_RE='(^|/)(README|CHANGELOG|LICENSE)|\.(md|txt|kt|gradle.*)$|(^|/)docs/'
-          doc_hits=$(git ls-files | grep -Ei "$DOC_RE" || true)
+          doc_hits=$(git ls-files | grep -Ei "$DOC_RE" | grep -vE '^scripts/secret_allowlist\.txt$' || true)
           [ -z "$doc_hits" ] || { echo 'guard FAIL: tracked doc files'; echo "$doc_hits"; exit 1; }
           [ "$(git ls-files docs | wc -l)" -eq 0 ] || { echo 'guard FAIL: docs tracked'; exit 1; }
           android_hits=$(git ls-files | grep -E 'JDLV-Mobile/app/sr[c]' || true)
           [ -z "$android_hits" ] || { echo 'guard FAIL: Android sources'; echo "$android_hits"; exit 1; }
-          cred_hits=$(git grep -IlE "$PAT" -- . || true)
+          BENIGN="MYSQL_ALLOW_EMPTY_PASSWORD|PASS[A-Z_]*[[:space:]]*[:=][[:space:]]*\"\"|PASS[A-Z_]*[[:space:]]*=[[:space:]]*[\"']\\$\(openssl rand"
+          cred_hits=$(git grep -InE "$PAT" -- . | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
           [ -z "$cred_hits" ] || { echo 'guard FAIL: credential literals in tracked tree'; echo "$cred_hits"; exit 1; }
+          # R4 强模式 2：值形态凭据（排除 $VAR 引用 / 空串 / ALLOW_EMPTY 开关；
+          #  mysql URL 限定常见用户名字符，规避扫描器源码自匹配）
+          RPAT="(IDENTIFIED[[:space:]]+.*BY[[:space:]]*[\"'][^\"'\$]|[A-Z_]*PASSWORD[[:space:]]*[:=][[:space:]]*[\"'][^\"'\$]|TEST_RUNNER_[A-Z_]*PASS[A-Z_]*[[:space:]]*[:=][[:space:]]*[\"'][^\"'\$]|mysql://[A-Za-z0-9._%~+-]+:[^[:space:]@]+@)"
+          rcred_hits=$(git grep -InE "$RPAT" -- . | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
+          [ -z "$rcred_hits" ] || { echo 'guard FAIL: credential value literals in tracked tree'; echo "$rcred_hits"; exit 1; }
           if [ -d docs ]; then
-            doccred=$(grep -rIlE "$PAT" docs --exclude-dir=07_证据 || true)
+            doccred=$(grep -rInE "$PAT" docs --exclude-dir=07_证据 2>/dev/null | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
             [ -z "$doccred" ] || { echo 'guard FAIL: credential literals in local docs/'; echo "$doccred"; exit 1; }
             git check-ignore -q docs/ || { echo 'guard FAIL: docs/ not gitignored'; exit 1; }
           fi
-          grep -q 'MARKETING_VERSION: 1.6.0' project.yml || { echo 'guard FAIL: version'; exit 1; }
+          grep -q 'MARKETING_VERSION: 1.6.1' project.yml || { echo 'guard FAIL: version'; exit 1; }
           # R3 门禁：键盘 API 审计（问题 1 —— asciiCapable/inputView/UIKeyInput 禁用）
           kb_hits=$(grep -R -E "asciiCapable|inputView|UIKeyInput" JDLV --include='*.swift' || true)
           [ -z "$kb_hits" ] || { echo 'guard FAIL: banned keyboard API (issue 1 audit)'; echo "$kb_hits"; exit 1; }
@@ -67,9 +78,11 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: root
+          # R4：空口令账号在 MySQLNIO/caching_sha2 下无法连接（服务端按 used-password 校验）→
+          # 改用每次 run 唯一的临时口令（github.run_id；非固定凭据、随 run 丢弃、不进任何密文）
+          MYSQL_ROOT_PASSWORD: ${{ github.run_id }}
         options: >-
-          --health-cmd="mysqladmin ping -proot"
+          --health-cmd="mysqladmin ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -80,7 +93,7 @@ jobs:
           JDLV_TEST_MYSQL_HOST: mysql
           JDLV_TEST_MYSQL_PORT: "3306"
           JDLV_TEST_MYSQL_USER: root
-          JDLV_TEST_MYSQL_PASS: root
+          JDLV_TEST_MYSQL_PASS: ${{ github.run_id }}
         run: |
           ln -sf /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 /usr/lib/x86_64-linux-gnu/libsqlite3.so
           swift test --package-path JDLVCore --filter IntegrationTests
@@ -90,8 +103,10 @@ jobs:
     needs: [guard, core-linux, core-mysql]
     # macos-26 在 2026-11-04 起持续 "not acquired by Runner"（容量）→ 按规划 §2 兜底退 macos-15。
     # destination 由 simctl 动态解析（任意可用 iPhone），不写死机型。
+    # R4：UI 套件扩到 24 用例 + ProductionSmoke 240s conn 等待 → 90min 上限不足（被 GitHub
+    # 静默取消），加到 150min。
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -113,6 +128,9 @@ jobs:
       - name: Install xcodegen
         run: brew install xcodegen
 
+      - name: Resource tree gate (R4 V5)
+        run: bash scripts/check_resource_tree.sh
+
       - name: Generate project
         run: xcodegen generate
 
@@ -130,12 +148,14 @@ jobs:
           brew services start mysql@8.0
           for i in $(seq 1 60); do
             if mysql -uroot -e 'select 1' >/dev/null 2>&1; then break; fi
-            sleep 2
           done
           mysql -uroot -e 'select 1'
+          FIXTURE_PASS="$(openssl rand -hex 16)"
+          echo "::add-mask::$FIXTURE_PASS"
+          echo "JDLV_FIXTURE_PASS=$FIXTURE_PASS" >> "$GITHUB_ENV"
           mysql -uroot -e "CREATE DATABASE IF NOT EXISTS jdlv_app_it CHARACTER SET utf8mb4"
-          # 专用 fixture 账号 + mysql_native_password（明文信道可认证；生产为内网只读账号）
-          mysql -uroot -e "CREATE USER IF NOT EXISTS 'jdlv_it'@'%' IDENTIFIED WITH mysql_native_password BY 'jdlv_it'"
+          # 专用 fixture 账号 + mysql_native_password（口令每次运行随机生成 + add-mask，不入 YAML）
+          mysql -uroot -e "CREATE USER IF NOT EXISTS 'jdlv_it'@'%' IDENTIFIED WITH mysql_native_password BY '$FIXTURE_PASS'"
           mysql -uroot -e "GRANT ALL ON jdlv_app_it.* TO 'jdlv_it'@'%'"
           mysql -uroot -e "FLUSH PRIVILEGES"
 
@@ -150,16 +170,62 @@ jobs:
           TEST_RUNNER_JDLV_TEST_MYSQL_HOST: "127.0.0.1"
           TEST_RUNNER_JDLV_TEST_MYSQL_PORT: "3306"
           TEST_RUNNER_JDLV_TEST_MYSQL_USER: jdlv_it
-          TEST_RUNNER_JDLV_TEST_MYSQL_PASS: jdlv_it
+          TEST_RUNNER_JDLV_TEST_MYSQL_PASS: ${{ env.JDLV_FIXTURE_PASS }}
         run: |
           set -eo pipefail
-          xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test 2>&1 | tee build/test.log
+          # R4 P8：拆 build-for-testing / test-without-building —— 测试 target 编译错误
+          # 直接落盘可上传（此前 test target 编译挂时 test.log 未产出，诊断盲区）
+          xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData build-for-testing 2>&1 | tee build/build-for-testing.log
+          # R5 P3：workflow_dispatch 输入 ui_filter → only-testing 目标列表（空 = 全量）
+          ONLY=()
+          if [ -n "${{ github.event.inputs.ui_filter || '' }}" ]; then
+            IFS=',' read -ra TARGETS <<< "${{ github.event.inputs.ui_filter }}"
+            for t in "${TARGETS[@]}"; do ONLY+=("-only-testing:${t// /}"); done
+          fi
+          # R5 P3 2A: boot the DEST simulator first, then stream its unified log in the
+          # background for the whole test run (xcodebuild shuts the sim down on exit,
+          # so post-hoc `log show` finds nothing).
+          # R5 P4：预启动+log stream 机制已回退 —— 全量 run 43609188308 实证
+          # xcodebuild test-without-building 与预启动 sim + log stream 并存时静默挂起
+          # 2.4h（零测试输出）；应用内文件埋点保留，导出通道取消。
+          # R5 P4/5：NavigationToolsUITests 在 CI AX 环境不可测（BLOCKED(ENV)）：
+          # 隐藏 tab 根泄漏 + 可见根标识符被 AX 容器合并吞噬（J1-J5 六轮实证）；
+          # fail-closed 测试保留在仓库（本地 macOS 可跑、本地缺失必 XCTFail）；
+          # release 门禁显式排除并在验收报告标注原因（MASTER 规则 16 第二款）。
+          SKIP=()
+          if [ -z "${{ github.event.inputs.ui_filter || '' }}" ]; then
+            SKIP+=("-skip-testing:JDLVUITests/NavigationToolsUITests")
+          fi
+          set +e
+          xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test-without-building "${ONLY[@]}" "${SKIP[@]}" 2>&1 | tee build/test.log
+          TEST_RC=$?
+          set -e
+          exit $TEST_RC
 
       - name: Export UI test attachments
         if: always()
         run: |
           mkdir -p build/attachments
           xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/attachments || echo 'no attachments (non-blocking evidence export)'
+          # R5 P3 §2A：导出应用埋点日志（settings-perf subsystem），对齐 idle 卡点实测
+          # R5 P3 2A: copy the app-internal perf log out of the data container
+          for UDID in $(xcrun simctl list devices | grep -E "iPhone 17 Pro" | grep -oE "[0-9A-F-]{36}"); do
+            APPCONT=$(xcrun simctl get_app_container "$UDID" com.jdlv.ios data 2>/dev/null || true)
+            echo "probe UDID=$UDID APPCONT=$APPCONT" >> build/attachments/app-perf-log.txt || true
+            if [ -n "$APPCONT" ] && [ -f "$APPCONT/tmp/jdlv-perf.log" ]; then
+              cp "$APPCONT/tmp/jdlv-perf.log" build/attachments/app-perf-log.txt || true
+              break
+            fi
+          done
+          if [ ! -f build/attachments/app-perf-log.txt ]; then echo "no app perf log (tried all iPhone 17 Pro devices)" > build/attachments/app-perf-log.txt; fi
+          # R5 P4 3: layout-report fallback - copy from the xctrunner data container (flushReport channel 3)
+          for RD in $(xcrun simctl list devices | grep -E "iPhone 17 Pro" | grep -oE "[0-9A-F-]{36}"); do
+            RC=$(xcrun simctl get_app_container "$RD" com.jdlv.ios.UITests data 2>/dev/null || true)
+            if [ -n "$RC" ] && [ -f "$RC/tmp/layout-report.json" ]; then
+              cp "$RC/tmp/layout-report.json" build/attachments/layout-report-fallback.json || true
+              break
+            fi
+          done
           # 附件重命名：xcresulttool 以 UUID 落盘 → 按 manifest.json 还原真实附件名
           # （NN-页面名.png / layout-report.json / screenshots-manifest.json）
           python3 - <<'PYRENAME'
@@ -210,6 +276,9 @@ jobs:
         if: always()
         run: |
           set -eo pipefail
+          # R5 P3：ui_filter 过滤运行（目标验证）不含 ScreenshotsUITests → 本门禁 N/A 跳过；
+          # 全量运行（push/PR/tag，无 ui_filter）门禁照常生效
+          if [ -n "${{ github.event.inputs.ui_filter || '' }}" ]; then echo 'ui_filter run: screenshots gate N/A'; exit 0; fi
           cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
           # screenshots-manifest（字符串附件）导出为 UUID.txt → 按内容定位
           MANIFEST=$(grep -l 'pageName' ./*.txt ./*.json 2>/dev/null | head -1 || true)
@@ -222,6 +291,8 @@ jobs:
         if: always()
         run: |
           set -eo pipefail
+          # R5 P3：ui_filter 过滤运行不含 LayoutAuditUITests → 本门禁 N/A 跳过；全量照常生效
+          if [ -n "${{ github.event.inputs.ui_filter || '' }}" ]; then echo 'ui_filter run: layout gate N/A'; exit 0; fi
           cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
           # layout-report（字符串附件）导出为 UUID.txt → 按内容定位
           REPORT=$(grep -l 'violations' ./*.txt ./*.json 2>/dev/null | head -1 || true)
@@ -243,6 +314,9 @@ jobs:
           zip -qry JDLV-unsigned.ipa Payload
           # R10：grep 不带 -q —— minos 16.0 行必须进 CI 日志（set -e 下不命中仍失败），供证据抓行
           otool -l Payload/JDLV.app/JDLV | grep 'minos 16.0'
+
+      - name: Verify IPA (security gate)
+        run: bash scripts/verify_ipa.sh JDLV-unsigned.ipa
 
       - name: Upload simulator zip
         uses: actions/upload-artifact@v4
@@ -282,10 +356,48 @@ jobs:
             ~/Library/Logs/DiagnosticReports/Retired/*.ips
           if-no-files-found: ignore
 
+  security:
+    # R4 Phase 2：历史凭据扫描门（PR + tag + dispatch；release needs 闭环）。
+    # 分类结论（docs/20_证据_R4 security/history-classification.md）：历史命中全部是
+    # .github/workflows/ios.yml 的历史版本（CI 合成值 root/jdlv_it，非生产、不可达，HEAD 已清零）。
+    # 门禁规则：HIT 路径只能是 ios.yml 历史版本；出现其它路径 → FAIL。
+    # R5 Phase 1：workflow_dispatch 纳入触发（发布前演练）；新增 head 模式扫描门
+    # （当前 HEAD 必须 0 命中；run_id 表达式等合成形态由扫描器记 ALLOWED，不计 HIT）。
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: head secret scan (working tree, must be 0)
+        run: python3 scripts/scan_repo_secrets.py --root . --mode head --out /tmp/head.txt
+      - name: gate head scan
+        run: |
+          set -euo pipefail
+          HITS=$(grep -c '^HIT' /tmp/head.txt || true)
+          echo "head hits: $HITS"
+          [ "$HITS" = "0" ] || { echo 'security FAIL: working-tree secret hits'; cat /tmp/head.txt; exit 1; }
+          echo 'security OK (head clean)'
+      - name: scanner self-tests (positive/negative fixtures)
+        run: python3 -I scripts/test_scan_repo_secrets.py
+      - name: history secret scan (strong value patterns)
+        run: python3 scripts/scan_repo_secrets.py --root . --mode history --out /tmp/history.txt
+      - name: classify and gate
+        run: |
+          set -euo pipefail
+          HITS=$(grep -c '^HIT' /tmp/history.txt || true)
+          echo "history hits: $HITS"
+          OTHER=$(grep '^HIT' /tmp/history.txt | grep -v 'path=\.github/workflows/ios\.yml' || true)
+          [ -z "$OTHER" ] || { echo 'security FAIL: unclassified history hits'; echo "$OTHER"; exit 1; }
+          echo 'security OK (all history hits are classified ios.yml historical blobs)'
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    # R10/C2：等全部 4 个 job 成功才发布（不再只 needs ios）
-    needs: [guard, core-linux, core-mysql, ios]
+    # R10/C2：等全部 job 成功才发布（R4 起 security 纳入 needs）
+    needs: [guard, core-linux, core-mysql, ios, security]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -300,6 +412,8 @@ jobs:
         with:
           name: JDLV-Simulator-app-zip
           path: dist
+      - name: Re-verify IPA (security gate)
+        run: bash scripts/verify_ipa.sh dist/JDLV-unsigned.ipa
       - name: Checksums + GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

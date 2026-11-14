@@ -9,7 +9,9 @@ public enum DateRange {
         if y.count != 4 || !y.allSatisfy({ $0.isNumber }) { return nil }
         let m = Int(month.trimmingCharacters(in: .whitespaces))
         guard let m, 1...12 ~= m else { return nil }
-        let yInt = Int(y)!
+        // R4 P7：Int(String) 只认 ASCII 数字 —— 全角「２０２６」/阿拉伯「٢٠٢٦」在此返回 nil；
+        // 年份有效域 1...9999（"0000" 非法）。原 `Int(y)!` 对 Unicode 数字形态直接崩溃。
+        guard let yInt = Int(y), (1...9999).contains(yInt) else { return nil }
         let first = String(format: "%04d-%02d-01", yInt, m)
         let second: String
         if m == 12 {

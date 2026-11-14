@@ -39,10 +39,19 @@ struct PosterImage: View {
     @State private var phase: Phase = .loading
     @State private var image: UIImage? = nil
     @State private var retryKey = 0
+    // R4 P4：实际 frame（GeometryReader 只作背景测量，不参与布局）→ 解码像素上限
+    @State private var frameSize: CGSize = .zero
 
     /// half 且设置非整张时才挂 CoverHalf（B12：halfMode==2 整张不裁）
     private var halfMode: Int { half ? ImgBreaker.halfMode() : 2 }
     private var reqKey: String { "\(url)|\(half ? halfMode : -1)|\(retryKey)" }
+
+    /// 解码上限 = 实际 frame 最长边 × 屏幕倍率（§6.3）；未测量到（0）= 不限
+    private var maxPixel: Int {
+        let s = max(frameSize.width, frameSize.height)
+        guard s > 0 else { return 0 }
+        return Int(s * UIScreen.main.scale)
+    }
 
     var body: some View {
         Group {
@@ -52,7 +61,16 @@ struct PosterImage: View {
                 core
             }
         }
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { frameSize = geo.size }
+                    .onChange(of: geo.size) { frameSize = $0 }
+            }
+        )
         .task(id: reqKey) { await load() }
+        // R4 P4：滑出屏幕即取消在飞加载（Coil onDetached 语义；变体缓存键不受影响）
+        .onDisappear { ImagePipeline.shared.cancel(for: url) }
     }
 
     private var core: some View {
@@ -125,7 +143,8 @@ struct PosterImage: View {
         #endif
         phase = .loading
         let kind = CdnRewrite.kindOf(url)
-        let img = await ImagePipeline.shared.image(url: url, kind: kind, half: halfMode)
+        let img = await ImagePipeline.shared.image(url: url, kind: kind, half: halfMode,
+                                                   maxPixel: maxPixel)
         if Task.isCancelled { return }
         if let img {
             image = img

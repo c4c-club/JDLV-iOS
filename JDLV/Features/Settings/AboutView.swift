@@ -14,7 +14,12 @@ struct AboutView: View {
     @State private var showShareLog = false
     @State private var cacheToast: String? = nil
 
+    // R4 P5：回顶（Form 无可靠 offset 源 → FAB 常显；push 详情页无 TabBar → inset 0；
+    // Form 行 scrollTo iOS16 可用性不保证 → 兜底语义见任务书 §8.3「保底」口径）
+    private var showScrollTop: Bool { true }
+
     var body: some View {
+        ScrollViewReader { proxy in
         Form {
             Section("版本信息") {
                 LabeledRow(label: "版本", value: versionText)
@@ -23,6 +28,7 @@ struct AboutView: View {
                 LabeledRow(label: "系统", value: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
                 LabeledRow(label: "数据源", value: dataSourceSummary)
             }
+            .id("about_top")
             #if DEBUG
             Section("调试") {
                 testImgToggle
@@ -68,6 +74,11 @@ struct AboutView: View {
             AppServices.shared.showToast(t)
             cacheToast = nil
         }
+        // R4 P5：Form 无可靠 offset 源 → FAB 常显（push 详情页无 TabBar → inset 0）
+        .scrollTopOverlay(visible: showScrollTop, bottomInset: 0) {
+            proxy.scrollTo("about_top", anchor: .top)
+        }
+        }
     }
 
     // MARK: 行值
@@ -110,26 +121,27 @@ struct AboutView: View {
 
     private func exportDiagnostics() {
         let s = store.settings
-        var lines: [String] = []
-        lines.append("JDLV iOS 诊断日志")
-        lines.append("生成时间: \(Date())")
-        lines.append("版本: \(versionText) (\(buildText))")
-        lines.append("设备: \(UIDevice.current.model) · \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
-        lines.append("数据源: \(dataSourceSummary)")
-        lines.append("dbSrc: \(s.dbSrc) · queryTimeout: \(s.queryTimeout)s · connectTimeout: \(s.connectTimeout)s")
-        lines.append("代理: \(s.proxyHost.isEmpty ? "未配置" : "\(s.proxyHost):\(s.proxyPort)")")
-        lines.append("输入法: \(KeyboardDiagnostics.activeModesDescription)")
-        #if DEBUG
-        lines.append("testImgMode: \(s.testImgMode)")
-        #endif
+        let lines = SettingsDiagnostics.diagnosticLines(s: s, metaLines: [
+            "JDLV iOS 诊断日志",
+            "生成时间: \(Date())",
+            "版本: \(versionText) (\(buildText))",
+            "设备: \(UIDevice.current.model) · \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+        ])
+        // R4 P14：清理上一次导出的残留（同一 tmp 路径；不在 defer 里删当前文件，
+        // 分享面板生命周期内保留，系统 tmp 清理兜底回收）
+        try? FileManager.default.removeItem(at: Self.tmpLogURL)
         let url = Self.writeTempLog(lines.joined(separator: "\n"))
         diagLogURL = url
         if url != nil { showShareLog = true }
     }
 
+    /// 诊断临时文件固定路径（R4 P14：可寻址清理，不留历史残留）
+    private static var tmpLogURL: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("jdlv-diagnostics.txt")
+    }
+
     private static func writeTempLog(_ text: String) -> URL? {
-        let dir = FileManager.default.temporaryDirectory
-        let f = dir.appendingPathComponent("jdlv-diagnostics.txt")
+        let f = tmpLogURL
         do {
             try text.data(using: .utf8)?.write(to: f)
             return f

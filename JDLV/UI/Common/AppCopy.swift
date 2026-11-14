@@ -64,6 +64,8 @@ enum AppCopy {
     static let pageJumpTitle = "跳转页码"
     static let pageJumpPlaceholder = "输入页码"
     static let pageJumpGo = "跳转"
+    /// R4 P5：跳页越界/非法输入提示（保持 sheet）
+    static let pageJumpOutOfRange = "页码超出范围"
     static let pageJumpCancel = "取消"
     /// total 已知：全角「·」+ 半角括号；pages = ceil(total/per)
     static func pageJumpBodyKnown(loaded: Int, total: Int64, per: Int) -> String {

@@ -22,12 +22,17 @@ final class SaveStateTests: XCTestCase {
         SettingsStore(defaults: freshDefaults(tag))
     }
 
-    func testUpdateSettingsSavesAndReports() {
+    func testUpdateSettingsSavesAndReports() async {
         let store = makeStore("update")
         store.noteSaving()
+        // R4 P4：updateSettings 同步返回（内存立即生效），落盘+三态在后台 Task 完成 → 轮询终态
         store.updateSettings { $0.viewMode = 1 }
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, store.saveState.isSaving {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
         if case .saved = store.saveState {} else {
-            XCTFail("updateSettings 值变 → .saved，实际 \(store.saveState)")
+            XCTFail("updateSettings 值变 → .saved（终态），实际 \(store.saveState)")
         }
     }
 

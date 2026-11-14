@@ -42,11 +42,16 @@ enum SettingsCopy {
         }
     }
 
-    static func hhmmss(_ d: Date) -> String {
+    /// R4 P10：formatter 复用（DateFormatter iOS7+ 线程安全）
+    private static let hhmmssFmt: DateFormatter = {
         let df = DateFormatter()
         df.dateFormat = "HH:mm:ss"
         df.locale = Locale(identifier: "en_US_POSIX")
-        return df.string(from: d)
+        return df
+    }()
+
+    static func hhmmss(_ d: Date) -> String {
+        hhmmssFmt.string(from: d)
     }
 
     // MARK: 0.3 折叠卡标题（逐字 11 条）
@@ -123,13 +128,18 @@ enum SettingsCopy {
     static let dsLabelShtDb = "98t 库名"
     static let dsPhHost = "IP / 主机名"
     static let dsPhPortLocal = "3306"
-    static let dsPhPortRemote = "3307"
+    static let dsPhPortRemote = "3306"
     static let dsPhUser = "用户名"
     static let dsPhPass = "密码"
     static let dsPhJdb = "javdb"
     static let dsPhSht = "sehuatang"
     static let dsPlain = "明文"
     static let dsHide = "隐藏"
+
+    // R4 S1：明文 HTTP 镜像开关（默认关）
+    static let allowInsecureHTTPLabel = "允许不安全 HTTP 镜像"
+    static let allowInsecureHTTPHint = "仅当镜像站不支持 HTTPS 时开启；明文传输可被窃听/篡改"
+    static let allowInsecureHTTPWarning = "⚠ 已允许明文 HTTP：图片流量未加密，可能被中间人窃听或篡改，风险自担。"
     static let dsTlsLabel = "数据库 TLS (useSSL)"
     static let dsTlsDesc = "服务器需开启 TLS。注意: 自签名证书会跳过证书校验 —— 可防被动嗅探, 防不住主动中间人; 局域网可信环境可关闭"
     static let dsEditingOtherHint = "正在编辑另一数据源 (不影响当前连接)"
@@ -466,19 +476,21 @@ struct SettingsGroupCard<Content: View>: View {
     var defaultExpanded: Bool = false
     /// 收起时标题下一行 12sp 摘要（maxLines 1 截断）
     var summary: String = ""
-    @ViewBuilder let content: Content
+    /// R4 P5：存闭包不存视图 —— content() 只在 expanded 分支调用，
+    /// 折叠卡不再在 SettingsView.body 求值时构建全部子视图（11 张卡全量构建的根因）
+    let content: () -> Content
 
     @State private var expanded: Bool
     @Environment(\.appTheme) private var theme
 
     init(title: String, rememberKey: String, defaultExpanded: Bool = false,
          summary: String = "",
-         @ViewBuilder content: () -> Content) {
+         @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self.rememberKey = rememberKey
         self.defaultExpanded = defaultExpanded
         self.summary = summary
-        self.content = content()
+        self.content = content
         _expanded = State(initialValue: CollapsiblePref.isExpanded(rememberKey, default: defaultExpanded))
     }
 
@@ -487,7 +499,7 @@ struct SettingsGroupCard<Content: View>: View {
             header
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    content
+                    content()
                 }
                 .padding(.top, 8)
             }
@@ -545,11 +557,15 @@ struct SettingsLabeledRow<Content: View>: View {
 }
 
 /// CompactField：单行 13sp、min 高 38、圆角 8、1pt 描边、surfaceVariant 35% 底
+/// R4 口令硬化：secure 分支永远 SecureField（绝不切 TextField）；「明文」由调用方
+/// 通过 showPlain 控制——只在上层盖一个只读、不可选中、privacySensitive 的 Text 覆盖层，
+/// 系统层面不产生可复制明文输入框。明文的鉴权与 10 秒自动收回在 DataSourceCard。
 struct CompactField: View {
     @Binding var text: String
     var placeholder: String
     var secure: Bool = false
-    var showPlain: Bool = true
+    /// R4 P11：默认 false —— 未来任何 secure 字段不显式传 showPlain 即保持掩码（安全默认）
+    var showPlain: Bool = false
     var keyboard: UIKeyboardType = .default
     var trailingTitle: String? = nil
     var onTrailing: (() -> Void)? = nil
@@ -560,8 +576,11 @@ struct CompactField: View {
     var body: some View {
         HStack(spacing: 6) {
             Group {
-                if secure && !showPlain {
+                if secure {
                     SecureField(placeholder, text: $text)
+                        .textContentType(.password)
+                        .privacySensitive()
+                        .textSelection(.disabled)
                 } else {
                     TextField(placeholder, text: $text)
                 }
@@ -584,6 +603,18 @@ struct CompactField: View {
         .frame(minHeight: 38)
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3.opacity(0.35)))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(theme.line, lineWidth: 1))
+        .overlay(alignment: .leading) {
+            if secure && showPlain {
+                AppText(text.isEmpty ? placeholder : text,
+                        lvl: .bodyS, color: theme.text, maxLines: 1)
+                    .privacySensitive()
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(theme.bg3))
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("compact_field_plain_overlay")
+            }
+        }
     }
 }
 
@@ -789,11 +820,19 @@ struct SettingsView: View {
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.tabBarInset) private var envTabBarInset
+
+    // R4 P5：回顶（tab 根页有自绘 TabBar → inset = 环境值 56）
+    @State private var showScrollTop = false
 
     var body: some View {
         let s = store.settings
+        ScrollViewReader { proxy in
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            // R4 P5：offset 源（FAB 显隐；R4 修复：此前漏挂导致 settings FAB 永不出现）
+            ScrollOffsetReader(space: "settings_space")
+            // R4 P4：LazyVStack —— 卡片进入视口才布局（11 张卡一次性布局的启动成本消除）
+            LazyVStack(alignment: .leading, spacing: 10) {
                 // 全局唯一保存状态行（R3 问题 4：单一 SaveStatusView；各卡不再挂）
                 SaveStatusView(state: store.saveState,
                                onRetry: { Task { await store.flushPendingEdits() } })
@@ -811,6 +850,17 @@ struct SettingsView: View {
                 Spacer().frame(height: 30)
             }
             .padding(16)
+            .id("settings_top")
+        }
+        .coordinateSpace(name: "settings_space")
+        .onPreferenceChange(PageScrollOffsetKey.self) { y in
+            let should = y < ListScaffoldConst.scrollTopOffset
+            if should != showScrollTop {
+                withAnimation(.easeInOut(duration: 0.18)) { showScrollTop = should }
+            }
+        }
+        .scrollTopOverlay(visible: showScrollTop, bottomInset: envTabBarInset) {
+            withAnimation { proxy.scrollTo("settings_top", anchor: .top) }
         }
         .background(theme.bg0.ignoresSafeArea())
         .accessibilityIdentifier("settings_page")
@@ -828,6 +878,7 @@ struct SettingsView: View {
             if phase == .background {
                 Task { await store.flushPendingEdits() }
             }
+        }
         }
     }
 

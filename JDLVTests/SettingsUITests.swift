@@ -403,7 +403,9 @@ final class SettingsUITests: XCTestCase {
 
     func testSummaryRules() {
         var s = AppSettings()
-        XCTAssertEqual(SettingsCopy.summaryDb(s), "数据源 · remote · 192.168.123.203:3307")
+        s.remoteHost = "10.0.0.5"                    // R4：测试注入，不依赖任何预置 IP
+        s.remotePort = "3306"
+        XCTAssertEqual(SettingsCopy.summaryDb(s), "数据源 · remote · 10.0.0.5:3306")
         XCTAssertEqual(SettingsCopy.summaryProxy(s), "代理 · 数据库关 / jdb 图床关 / 98t 图床关")
         s.proxyDb = true
         XCTAssertEqual(SettingsCopy.summaryProxy(s), "代理 · 数据库开 / jdb 图床关 / 98t 图床关")
@@ -474,7 +476,7 @@ final class SettingsUITests: XCTestCase {
         store.edit { $0.remoteHost = "10.1.1.1" }
         store.edit { $0.remotePort = "3308" }
         store.edit { $0.remoteUser = "abc" }
-        // 防抖窗口内未落盘（内存仍是默认值 192.168.123.203）
+        // 防抖窗口内未落盘（内存仍是默认空主机，与 AppSettings() 默认一致）
         XCTAssertEqual(store.settings.remoteHost, AppSettings().remoteHost)
         try await Task.sleep(nanoseconds: 1_300_000_000)
         XCTAssertEqual(store.settings.remoteHost, "10.1.1.1", "主机")

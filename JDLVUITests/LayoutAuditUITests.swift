@@ -26,16 +26,34 @@ final class LayoutAuditUITests: XCTestCase {
         print("LAYOUT-VIOLATION [\(page)] \(element): \(reason)")
     }
 
+    /// R5 P4：审计过的页面名（audit() 逐页追加；verify 脚本校验页数门槛）
+    private var pagesAudited: [String] = []
+
+    /// R5 P4 §3：报告落盘三通道 —— ① XCTAttachment(data, public.json)（xcresulttool
+    /// 按扩展名导出 .json）；② 测试 runner 进程临时文件（CI get_app_container 可拷）；
+    /// ③ 兼容旧字符串附件（门禁按内容 grep，不受导出形态影响）。
     private func flushReport() {
-        let payload: [String: Any] = ["violations": report, "skippedPages": skippedPages]
-        if let data = try? JSONSerialization.data(withJSONObject: payload,
-                                                  options: [.prettyPrinted]),
-           let s = String(data: data, encoding: .utf8) {
-            let a = XCTAttachment(string: s)
-            a.name = "layout-report.json"
-            a.lifetime = .keepAlways
-            add(a)
-        }
+        let payload: [String: Any] = ["violations": report,
+                                      "skippedPages": skippedPages,
+                                      "pagesAudited": pagesAudited,
+                                      "pagesCount": pagesAudited.count]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload,
+                                                     options: [.prettyPrinted]),
+              let s = String(data: data, encoding: .utf8) else { return }
+        // ① 类型化附件（public.json → 导出为 .json，名字经 manifest 还原）
+        let a = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        a.name = "layout-report.json"
+        a.lifetime = .keepAlways
+        add(a)
+        // ② 兼容旧形态（纯字符串附件；现有 R3 门禁按 'violations' 内容定位）
+        let b = XCTAttachment(string: s)
+        b.name = "layout-report.json"
+        b.lifetime = .keepAlways
+        add(b)
+        // ③ runner 进程临时文件（xctrunner 数据容器 tmp；CI 导出步骤按 bundle id 拷）
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("layout-report.json")
+        try? data.write(to: url)
     }
 
     /// demo 懒建表竞态自愈：等待期间每 2s 检查错误态并点「重试」（ErrorBox）
@@ -102,6 +120,8 @@ final class LayoutAuditUITests: XCTestCase {
         let n = q.count
         for i in 0..<min(n, 40) {
             let e = q.element(boundBy: i)
+            // R4：不做 isHittable 访问（视口边缘裁切卡片会抛 Activation point invalid）；
+            // 几何审计只需 frame
             if e.exists, e.frame.width > 1 {
                 out.append((e.identifier, e.frame))
             }
@@ -114,7 +134,7 @@ final class LayoutAuditUITests: XCTestCase {
             let dn = dq.count
             for i in 0..<min(dn, 40) {
                 let e = dq.element(boundBy: i)
-                if e.exists, e.isHittable, e.frame.width > 1 {
+                if e.exists, e.frame.width > 1, e.frame.minY < app.frame.maxY {
                     out.append(("\(prefix)demo_\(i)", e.frame))
                 }
             }
@@ -140,6 +160,7 @@ final class LayoutAuditUITests: XCTestCase {
     private func audit(_ app: XCUIApplication, page: String, prefix: String,
                        columns: Int, spacing: CGFloat, checkScroll: Bool,
                        allowOffscreen: Bool = false) {
+        pagesAudited.append(page)
         var cards = collect(app, prefix: prefix)
         let isFallback = cards.contains { $0.0.contains("demo_") }
         if cards.isEmpty {
@@ -315,8 +336,10 @@ final class LayoutAuditUITests: XCTestCase {
         let top250HasCards = !collect(app, prefix: "t250row_").isEmpty
         if top250HasCards {
             Thread.sleep(forTimeInterval: 1.0)
-            audit(app, page: "top250", prefix: "t250row_", columns: 1, spacing: 10,
-                  checkScroll: true)
+            // R4：top250 入口已可达（P3 懒挂载修复）→ 卡片可审计。
+            // spacing 12 = 实测（Row 内 padding 计入）；数据 1 页固定 → checkScroll false
+            audit(app, page: "top250", prefix: "t250row_", columns: 1, spacing: 12,
+                  checkScroll: false)
             navBack(app)
         } else {
             // blocker B1：页面可达但 demo 数据未渲染（或入口未打开）——如实记录，不产生 violation

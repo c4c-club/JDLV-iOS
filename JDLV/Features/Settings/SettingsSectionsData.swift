@@ -40,6 +40,8 @@ struct DataSourceCard: View {
     @State private var remoteSht = ""
 
     @State private var showPlain = false
+    // R4：明文 10 秒自动收回；onDisappear 强制收回
+    @State private var revealTask: Task<Void, Never>? = nil
     @State private var testing = false
     @State private var testResult = ""
 
@@ -121,6 +123,10 @@ struct DataSourceCard: View {
             loaded = true
             loadDraft(s)
         }
+        .onDisappear {
+            showPlain = false
+            revealTask?.cancel()
+        }
     }
 
     private var connectTimeoutCurrent: String {
@@ -165,7 +171,18 @@ struct DataSourceCard: View {
                          secure: true,
                          showPlain: showPlain,
                          trailingTitle: showPlain ? SettingsCopy.dsHide : SettingsCopy.dsPlain,
-                         onTrailing: { showPlain.toggle() }) { v in
+                         onTrailing: {
+                             // R4：明文需生物识别/设备密码；通过后 10 秒自动收回
+                             Task {
+                                 guard await BiometricGate.authenticate(reason: "查看数据库口令") else { return }
+                                 showPlain = true
+                                 revealTask?.cancel()
+                                 revealTask = Task {
+                                     try? await Task.sleep(nanoseconds: 10_000_000_000)
+                                     if !Task.isCancelled { showPlain = false }
+                                 }
+                             }
+                         }) { v in
                 editDebounced { if isLocal { $0.localPass = v } else { $0.remotePass = v } }
             }
         }

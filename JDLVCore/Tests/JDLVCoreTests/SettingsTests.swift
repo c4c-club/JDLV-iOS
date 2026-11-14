@@ -15,16 +15,16 @@ import XCTest
 
 final class SettingsTests: XCTestCase {
 
-    // MARK: - 键表结构（72 = String 30 + Int 24 + Boolean 18）
+    // MARK: - 键表结构（R4 S1：73 = String 30 + Int 24 + Boolean 19）
 
-    /// KS 30 / KI 24 / KB 18，合计 72，互不重叠且并集即 72
+    /// KS 30 / KI 24 / KB 19，合计 73，互不重叠且并集即 73
     func test_keyTableCounts() {
         XCTAssertEqual(AppSettings.KS.count, 30)
         XCTAssertEqual(AppSettings.KI.count, 24)
-        XCTAssertEqual(AppSettings.KB.count, 18)
-        XCTAssertEqual(AppSettings.KS.count + AppSettings.KI.count + AppSettings.KB.count, 72)
+        XCTAssertEqual(AppSettings.KB.count, 19)
+        XCTAssertEqual(AppSettings.KS.count + AppSettings.KI.count + AppSettings.KB.count, 73)
         let all = Set(AppSettings.KS).union(AppSettings.KI).union(AppSettings.KB)
-        XCTAssertEqual(all.count, 72)
+        XCTAssertEqual(all.count, 73)
     }
 
     /// 键名逐字抽查（含易错的下划线/拼写）
@@ -44,6 +44,14 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(AppSettings.KB.contains("shadow_actor_links"))
         XCTAssertTrue(AppSettings.KB.contains("test_img_mode"))
         XCTAssertTrue(AppSettings.KB.contains("jdb_sort_asc"))
+        XCTAssertTrue(AppSettings.KB.contains("allow_insecure_http"), "R4 S1 新键")
+    }
+
+    /// R4 S1：明文 HTTP 镜像开关默认必须 false（绝不偷偷默认 true）
+    func test_allowInsecureHTTPDefaultsFalse() {
+        XCTAssertEqual(AppSettings().allowInsecureHTTP, false, "S1：默认禁止明文 HTTP 镜像")
+        let d = AppSettings().toStorage()
+        XCTAssertEqual(d["allow_insecure_http"] as? Bool, false, "落盘视图默认 false")
     }
 
     // MARK: - 默认值逐字抽查（B 表，≥10 项）
@@ -56,8 +64,8 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(s.localHost, "127.0.0.1")
         XCTAssertEqual(s.localPort, "3306")
         XCTAssertEqual(s.localUser, "")
-        XCTAssertEqual(s.remoteHost, "192.168.123.203")
-        XCTAssertEqual(s.remotePort, "3307")
+        XCTAssertEqual(s.remoteHost, "")             // R4：不预置内网地址
+        XCTAssertEqual(s.remotePort, "3306")
         XCTAssertEqual(s.remoteJdb, "javdb")
         XCTAssertEqual(s.remoteSht, "sehuatang")
         XCTAssertEqual(s.themeName, "dark")
@@ -255,7 +263,7 @@ final class SettingsTests: XCTestCase {
         s.lockSecret = "pbkdf2-sha256$120000$abc$def"
 
         let storage = s.toStorage()
-        XCTAssertEqual(storage.count, 72)
+        XCTAssertEqual(storage.count, 73)   // R4 S1：+allow_insecure_http
         let back = AppSettings.fromStorage(storage)
         XCTAssertEqual(back, s)
     }
@@ -267,7 +275,7 @@ final class SettingsTests: XCTestCase {
         s.localPass = "pw-local"
         s.lockSecret = "hash"
         let stripped = s.storageWithoutSecrets
-        XCTAssertEqual(stripped.count, 69)
+        XCTAssertEqual(stripped.count, 70)   // R4 S1：73 − 3 口令键
         XCTAssertNil(stripped["remote_pass"])
         XCTAssertNil(stripped["local_pass"])
         XCTAssertNil(stripped["lock_secret"])
@@ -352,10 +360,13 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(s.jdbDb, "rj"); XCTAssertEqual(s.shtDb, "rs")
     }
 
-    /// setupRequired：remote → user 或 pass 空；local → localUser 空（pass 不参与）
+    /// setupRequired：remote → host/user/pass 任一空；local → localUser 空（pass 不参与）
+    /// R4 V10：默认 remoteHost=""（不预置内网地址）→ host 也是 setup 判定项，测试注入
     func test_setupRequired() {
         var s = AppSettings()
-        XCTAssertTrue(s.setupRequired)                 // 默认 remote + 账号空
+        XCTAssertTrue(s.setupRequired)                 // 默认 remote + host/账号空
+        s.remoteHost = "10.0.0.5"
+        XCTAssertTrue(s.setupRequired)                 // 账号仍空
         s.remoteUser = "reader"
         XCTAssertTrue(s.setupRequired)                 // pass 仍空
         s.remotePass = "pw"

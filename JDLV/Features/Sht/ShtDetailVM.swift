@@ -284,10 +284,10 @@ final class ShtDetailVM: ObservableObject {
             guard let raw else { return }   // d == nil → 空态
             let data = ShtThreadData.parse(raw, tid: tid)
             d = data
-            read = marks.historyIs(tid)
-            fav = marks.favIs(tid)
+            read = await marks.historyIs(tid)
+            fav = await marks.favIs(tid)
             // 加载成功后写历史（D2：historyMark("sht", tid, title)）
-            marks.historyMark(tid, data.title)
+            await marks.historyMark(tid, data.title)
             read = true
         } catch {
             guard rid == reqId else { return }
@@ -297,9 +297,10 @@ final class ShtDetailVM: ObservableObject {
     }
 
     /// 收藏切换（D2：favToggle → Toast「已收藏」/「已取消收藏」）
-    func toggleFav(_ tid: String) {
+    /// R4 P6：标记写入经 LocalStoreActor 后台执行（async）
+    func toggleFav(_ tid: String) async {
         let title = d?.title ?? ""
-        let now = marks.favToggle(tid, title)
+        let now = await marks.favToggle(tid, title)
         fav = now
         onToast(now ? "已收藏" : "已取消收藏")
     }

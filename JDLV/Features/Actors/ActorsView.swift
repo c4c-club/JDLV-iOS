@@ -18,6 +18,8 @@ struct ActorsView: View {
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.containerWidth) private var envWidth
+    // R4 P3：实测容器宽度（PageScaffold 发 preference；320/402pt 不再走 393 兜底）
+    @State private var measuredWidth: CGFloat = 0
 
     @StateObject private var vm: ActorsVM
     @State private var searchText = ""
@@ -28,7 +30,9 @@ struct ActorsView: View {
     }
 
     private var items: [Row] { vm.items ?? [] }
-    private var pageWidth: CGFloat { resolvedContainerWidth(envWidth, hSize: hSize) }
+    private var pageWidth: CGFloat {
+        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
+    }
 
     var body: some View {
         PageScaffold(
@@ -72,6 +76,7 @@ struct ActorsView: View {
             Task { await vm.onDataEpoch(v) }
         }
         .accessibilityIdentifier("tab_root_actors")
+        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
     }
 
     // MARK: toolbar（性别/排序 iOS 原生 Menu）

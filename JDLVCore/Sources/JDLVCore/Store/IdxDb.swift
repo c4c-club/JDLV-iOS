@@ -613,6 +613,29 @@ public final class IdxDb {
             params)
     }
 
+    /// R4 P8：首页三段本地兜底（Android IdxDb.moviesBy 对位；任务 06 §17.7.2）。
+    /// sort ∈ {release_date, want_watch_count, rank}（远程 Q.home 三段排序键同形；
+    /// 本地无排名表 → rank 按 idx_movies.score 近似）；limit 钳 1...500；offset ≥ 0。
+    public func moviesBy(sort: String, asc: Bool, limit: Int, offset: Int) throws -> [Row] {
+        let perC = min(max(limit, 1), 500)
+        let off = max(offset, 0)
+        let dir = asc ? "ASC" : "DESC"
+        let orderBy: String
+        switch sort {
+        case "release_date":
+            orderBy = "ORDER BY release_date \(dir), id \(dir)"
+        case "want_watch_count", "want":
+            orderBy = "ORDER BY want \(dir), id \(dir)"
+        case "rank", "score":
+            orderBy = "ORDER BY score \(dir), id \(dir)"
+        default:
+            return []
+        }
+        return try db.query(
+            "SELECT \(Self.MOVIE_COLS) FROM idx_movies \(orderBy) LIMIT ? OFFSET ?",
+            [.int(Int64(perC)), .int(Int64(off))])
+    }
+
     /// 检索计数（与 searchMovies 同口径）。
     public func countMovies(q: String, scope: String) throws -> Int64 {
         let ws = Self.words(q)

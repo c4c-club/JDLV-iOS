@@ -28,6 +28,8 @@ struct PageScaffold<Content: View>: View {
 
     /// 右下角 PageChip + 回顶（false = 不挂）
     var showNavTools: Bool = false
+    /// R4 P5：底部避让（-1 = 读环境 tabBarInset；TabBar 页 56；显式 0 = 详情页）
+    var bottomInset: CGFloat = -1
     var pageLoaded: Int = 0
     var pageTotal: Int64 = -1
     var pagePer: Int = 40
@@ -36,7 +38,12 @@ struct PageScaffold<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     @Environment(\.appTheme) private var theme
-    @State private var scrollY: CGFloat = 0
+    @Environment(\.tabBarInset) private var envTabBarInset
+    /// 实际生效的底部避让（-1 哨兵 → 环境值）
+    private var effBottomInset: CGFloat { bottomInset >= 0 ? bottomInset : envTabBarInset }
+    // R4 P4：滚动状态降频 —— 不再每帧写 CGFloat @State（整页 body 重求值的根因）；
+    // 只在越过回顶阈值时翻转布尔，showScrollTop 只影响 FAB 显隐，不驱动内容。
+    @State private var showScrollTop = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -45,7 +52,8 @@ struct PageScaffold<Content: View>: View {
                     if showNavTools {
                         ListNavTools(loaded: pageLoaded, total: pageTotal, per: pagePer,
                                      goPage: goPage,
-                                     showScrollTop: scrollY < ListScaffoldConst.scrollTopOffset) {
+                                     showScrollTop: showScrollTop,
+                                     bottomInset: effBottomInset) {
                             withAnimation { proxy.scrollTo(ListScaffoldConst.topAnchor, anchor: .top) }
                         }
                     }
@@ -72,8 +80,16 @@ struct PageScaffold<Content: View>: View {
                 stateBody
             }
             .coordinateSpace(name: ListScaffoldConst.space)
-            .onPreferenceChange(PageScrollOffsetKey.self) { scrollY = $0 }
+            .onPreferenceChange(PageScrollOffsetKey.self) { y in
+                let should = y < ListScaffoldConst.scrollTopOffset
+                if should != showScrollTop {
+                    withAnimation(.easeInOut(duration: 0.18)) { showScrollTop = should }
+                }
+            }
             .environment(\.containerWidth, geo.size.width)
+            // R4 P3：真实容器宽度向上发 preference —— 页面在 PageScaffold 实例上
+            // .onPreferenceChange 接住后写入 @State（body 内读到的不再是 393 兜底）
+            .preference(key: PageContainerWidthKey.self, value: geo.size.width)
         }
     }
 
@@ -92,6 +108,8 @@ struct PageScaffold<Content: View>: View {
                 if let cfg = loadMore {
                     LoadMoreFooter(config: cfg)
                 }
+                // R4 P5：底部余量 —— PageChip/FAB 不压最后一行
+                Color.clear.frame(height: effBottomInset + 88)
             }
             .id(ListScaffoldConst.topAnchor)
         }
@@ -119,6 +137,13 @@ enum ListScaffoldConst {
 
 /// 滚动 offset（过顶为正）
 struct PageScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// 真实容器宽度（R4 P3：PageScaffold 内 GeometryReader 发出，页面上收；
+/// 替代 393 硬编码兜底 —— 320/375/402/430pt 的 cell 宽一律以实测为准）
+struct PageContainerWidthKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

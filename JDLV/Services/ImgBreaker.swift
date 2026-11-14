@@ -82,12 +82,22 @@ final class ImgBreaker {
 
     // MARK: - 入口守卫（Android Img.guarded / Img.url）
 
-    /// 无效输入不发请求 —— 非空且 (http 形态 或 库内 /covers|small_covers|samples|
-    /// avatars|articles/ 路径) 才放行
+    /// 无效输入不发请求（R4 S1 收紧）：
+    ///  - 绝对 URL：仅 https 放行；http 必须显式开启 `allowInsecureHTTP`（设置页红色警告）；
+    ///    scheme/host 缺失一律拒绝；
+    ///  - 相对路径（库内 /covers|small_covers|samples|avatars|articles/ 形态）：无 scheme，
+    ///    最终协议由重写/镜像 host 层决定（缺省补 https），保持原放行分支不变。
     static func guarded(_ raw: String?) -> String? {
         let s = (raw ?? "").trimmingCharacters(in: .whitespaces)
-        if s.isEmpty { return nil }
-        return (s.hasPrefix("http") || CdnRewrite.imgPathOf(s) != nil) ? s : nil
+        guard !s.isEmpty else { return nil }
+        if !s.lowercased().hasPrefix("http") {
+            return CdnRewrite.imgPathOf(s) != nil ? s : nil
+        }
+        guard let u = URL(string: s), let scheme = u.scheme?.lowercased(),
+              u.host?.isEmpty == false else { return nil }
+        if scheme == "https" { return s }
+        if scheme == "http", CdnRewrite.settings().allowInsecureHTTP { return s }
+        return nil
     }
 
     /// 图片 URL（★ S12-P2: 冷却判定按桶, 且用**重写后的最终 URL**; 冷却中的桶返回 ""

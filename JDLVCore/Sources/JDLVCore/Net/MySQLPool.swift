@@ -211,11 +211,14 @@ public enum ConnFactory {
             throw DbError(kind: .connection, message: "地址解析失败: \(s.host):\(s.port)")
         }
         let box = OneShot<MySQLConnection>(on: el)
+        // R4：空口令必须发 nil（不发口令），发 "" 会被服务端按「used password: YES」
+        // 校验失败（MySQL 8 caching_sha2 空口令账号语义）—— 修复 CI 空口令 root 连接
+        let pass: String? = s.pass.isEmpty ? nil : s.pass
         let fut = MySQLConnection.connect(
             to: addr,
             username: s.user,
             database: db,
-            password: s.pass,
+            password: pass,
             tlsConfiguration: tlsConfig,
             serverHostname: s.tls ? (s.serverHostname ?? s.host) : nil,
             on: el

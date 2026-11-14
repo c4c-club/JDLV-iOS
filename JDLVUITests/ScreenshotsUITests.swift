@@ -254,7 +254,9 @@ final class ScreenshotsUITests: XCTestCase {
             for i in 0..<min(st.count, 30) {
                 print("B2-diag [\(i)] \(st.element(boundBy: i).label.prefix(60))")
             }
-            throw XCTSkip("B2: injected search did not reach results state")
+            // R4 P12（V45）：注入搜索未达结果态 = 功能失败，不得 skip 掩盖
+            XCTFail("B2: injected search did not reach results state（附件见上方诊断截图/dump）")
+            return
         }
         // 清注入参数，恢复正常走查（03 起无搜索态）
         app.terminate()

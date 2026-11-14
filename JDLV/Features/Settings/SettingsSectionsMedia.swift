@@ -21,14 +21,13 @@ struct JdbImageCard: View {
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var customMirror = ""
     @State private var loaded = false
     @State private var selfBusy = false
     @State private var selfLines: [SettingsDiagnostics.SelfTestLine] = []
     @State private var diagText = ""
-
-    private let diagTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     /// 当前 chip 值：app / web / custom（自定义 URL 同字段）
     private var chipValue: String {
@@ -62,6 +61,17 @@ struct JdbImageCard: View {
 
             SettingsNote(text: SettingsCopy.jdbFixedNote, topPad: 2)
 
+            // R4 S1：明文 HTTP 镜像显式开关（默认关；开启即 MITM 风险自担）
+            AppSwitchRow(label: SettingsCopy.allowInsecureHTTPLabel,
+                         checked: s.allowInsecureHTTP,
+                         hint: SettingsCopy.allowInsecureHTTPHint) { v in
+                editNow { $0.allowInsecureHTTP = v }
+            }
+            if s.allowInsecureHTTP {
+                SettingsNote(text: SettingsCopy.allowInsecureHTTPWarning,
+                             topPad: 2, color: theme.red)
+            }
+
             SettingsActionButton(title: SettingsCopy.selfTestButton,
                                  busyTitle: SettingsCopy.selfTestBusy,
                                  busy: selfBusy) {
@@ -79,7 +89,10 @@ struct JdbImageCard: View {
                 AppServices.shared.showToast(SettingsCopy.resetCoolingToast)
             }
 
-            // 失败率诊断行（1s 轮询；Img.kt 逐字模板）
+            // 失败率诊断行（Img.kt 逐字模板）
+            // R5 P3：改为事件驱动刷新（展开时 + 自检完成 + 回前台）—— 设置页上失败率
+            // 静态，1s 轮询的每秒状态写入使主 runloop 永不空闲，XCUITest 等待静默
+            // 60s 超时（run 43453232958 "App event loop idle notification not received"）。
             AppText(diagText.isEmpty ? ImgBreaker.shared.diagnostic() : diagText,
                     lvl: .meta, color: theme.text2)
                 .padding(.top, 4)
@@ -88,9 +101,11 @@ struct JdbImageCard: View {
             guard !loaded else { return }
             loaded = true
             customMirror = (chipValue == "custom") ? s.jdbImgHost : ""
+            diagText = ImgBreaker.shared.diagnostic()   // 展开即可见 → 首刷
         }
-        .onReceive(diagTimer) { _ in
-            diagText = ImgBreaker.shared.diagnostic()
+        .onChange(of: scenePhase) { phase in
+            // 回前台刷新一次（后台不写状态；仅相位变化这一次写入，非周期）
+            if phase == .active { diagText = ImgBreaker.shared.diagnostic() }
         }
     }
 
@@ -108,6 +123,7 @@ struct JdbImageCard: View {
             let lines = await SettingsDiagnostics.runSelfTest()
             selfBusy = false
             selfLines = lines
+            diagText = ImgBreaker.shared.diagnostic()   // 自检完成 → 刷新失败率行
         }
     }
 }

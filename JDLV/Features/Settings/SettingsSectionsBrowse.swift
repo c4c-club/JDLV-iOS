@@ -346,9 +346,11 @@ struct SemanticModelCard: View {
 
     private func refreshEmbInfo() {
         guard installed else { return }
-        let st = SettingsIndexHub.shared.embStats()
-        if let st {
-            embInfo = SettingsCopy.embInfoLine(st.count, bytes: st.bytes)
+        // R5 P3：EmbStore 懒开 + 统计离主线程（embStatsAsync 内部 detached；@MainActor 只登记）
+        Task { @MainActor in
+            if let st = await SettingsIndexHub.shared.embStatsAsync() {
+                embInfo = SettingsCopy.embInfoLine(st.count, bytes: st.bytes)
+            }
         }
     }
 }
