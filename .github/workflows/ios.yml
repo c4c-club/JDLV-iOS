@@ -148,7 +148,6 @@ jobs:
           brew services start mysql@8.0
           for i in $(seq 1 60); do
             if mysql -uroot -e 'select 1' >/dev/null 2>&1; then break; fi
-            sleep 2
           done
           mysql -uroot -e 'select 1'
           FIXTURE_PASS="$(openssl rand -hex 16)"
@@ -186,15 +185,9 @@ jobs:
           # R5 P3 2A: boot the DEST simulator first, then stream its unified log in the
           # background for the whole test run (xcodebuild shuts the sim down on exit,
           # so post-hoc `log show` finds nothing).
-          UDID=$(xcrun simctl list devices available | grep "iPhone 17 Pro (" | grep -oE "[0-9A-F-]{36}" | head -1 || true)
-          if [ -n "$UDID" ]; then
-            xcrun simctl boot "$UDID" 2>/dev/null || true
-            xcrun simctl bootstatus "$UDID" -b >/dev/null 2>&1 || true
-            (xcrun simctl spawn "$UDID" log stream --style compact --predicate 'process == "JDLV"' > build/app-perf-log.txt 2>&1 &) || true
-            echo "perf log stream started on $UDID"
-          else
-            echo 'no iPhone 17 Pro device found for perf log stream' > build/app-perf-log.txt
-          fi
+          # R5 P4：预启动+log stream 机制已回退 —— 全量 run 43609188308 实证
+          # xcodebuild test-without-building 与预启动 sim + log stream 并存时静默挂起
+          # 2.4h（零测试输出）；应用内文件埋点保留，导出通道取消。
           # R5 P4/5：NavigationToolsUITests 在 CI AX 环境不可测（BLOCKED(ENV)）：
           # 隐藏 tab 根泄漏 + 可见根标识符被 AX 容器合并吞噬（J1-J5 六轮实证）；
           # fail-closed 测试保留在仓库（本地 macOS 可跑、本地缺失必 XCTFail）；
@@ -207,9 +200,6 @@ jobs:
           xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData -resultBundlePath build/TestResults.xcresult test-without-building "${ONLY[@]}" "${SKIP[@]}" 2>&1 | tee build/test.log
           TEST_RC=$?
           set -e
-          pkill -f "log stream" 2>/dev/null || true
-          sleep 2
-          wc -c build/app-perf-log.txt || true
           exit $TEST_RC
 
       - name: Export UI test attachments
