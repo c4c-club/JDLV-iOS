@@ -161,20 +161,12 @@ final class NavigationToolsUITests: XCTestCase {
         // browse 第一张卡 → 详情（垂直网格卡片 frame 稳定；首页横滑卡有手势竞争）
         let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
         selectTab(app, "browse", proof: browsePage)
-        // R5 P4：与 LayoutAudit.collect 同款 BEGINSWITH 查询（精确 id 在部分 AX 会话
-        // 中被容器合并吞掉 —— J3/J4 dump：卡片可见但 card_browse_N 标识符不在树）
-        let cardQ = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier BEGINSWITH %@", "card_browse_"))
-        waitHealed(app, cardQ.firstMatch, timeout: 60)
-        if cardQ.count == 0 {
-            XCTFail("required UI missing: card_browse_*（BEGINSWITH 查询 0 命中；树转储已附）")
-            let dump = XCTAttachment(string: app.debugDescription)
-            dump.name = "dump-card_browse_0"
-            dump.lifetime = .keepAlways
-            add(dump)
-            return
-        }
-        let card = cardQ.element(boundBy: 0)
+        // R5 P4：精确 id 在部分 AX 会话中被容器合并吞掉（J3/J4 dump）——
+        // 全部查询走有界等待（J5 实证：无界 count 查询可挂死整个 job → 150min 超时）
+        let cardEl = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "card_browse_")).firstMatch
+        waitHealed(app, cardEl, timeout: 45)
+        let card = try requireExists(cardEl, "card_browse_0", app, timeout: 5)
         card.tap()
         swipeUp(app, times: 12)
         let fab = try requireExists(app.buttons["scroll_top"].firstMatch,
