@@ -71,10 +71,18 @@ final class SettingsPersistSerialTests: XCTestCase {
     override func setUp() {
         super.setUp()
         KeychainStore.fault = KeychainStore.Fault()
+        // R5 P4：隔离 Keychain service —— init 的后台读会采纳真实 Keychain 里的
+        // settings:local_pass（全量 run 2 实证被其它用例留下的值污染，本地Pass 变成
+        // 键盘垃圾串 → 写失败断言假阴）。独立 service 下后台读恒为空。
+        KeychainStore.service = "test_persist_serial_ks"
+        KeychainStore.delete("settings:local_pass")
+        KeychainStore.delete("settings:remote_pass")
+        KeychainStore.delete("lock_secret")
     }
 
     override func tearDown() {
         KeychainStore.fault = KeychainStore.Fault()
+        KeychainStore.service = "com.jdlv.ios"
         super.tearDown()
     }
 
