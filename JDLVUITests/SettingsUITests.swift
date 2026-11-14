@@ -28,23 +28,25 @@ final class SettingsUITests: XCTestCase {
     /// 进入设置页（首启门禁「去设置」或主界面「设置」tab）。
     /// 返回【打开耗时】—— 从点击入口元素到 settings_page 出现（launch/门禁等待不计入，
     /// R5 P3：CI 上 "Setting up automation session" 曾占用 78s，计入会假阴超预算）。
+    /// 扣除测试侧 1.0s AX 落定 sleep（测试基建开销，不属于应用打开延迟）。
     @discardableResult
     private func openSettings(_ app: XCUIApplication) -> TimeInterval {
+        let settle: TimeInterval = 1.0
         let goSettings = app.buttons["first_run_go_settings"]
         if goSettings.waitForExistence(timeout: 8) {
             let openStart = Date()
             goSettings.tap()   // FirstRunSetup「去设置」→ P12 完整设置页
             // 首帧/构建落定（繁忙主线程上 AX 快照易超时：run 43338529818 walk :86）
-            Thread.sleep(forTimeInterval: 1.0)
+            Thread.sleep(forTimeInterval: settle)
             assertSettingsPage(app)
-            return Date().timeIntervalSince(openStart)
+            return max(0, Date().timeIntervalSince(openStart) - settle)
         } else {
             XCTAssertTrue(tabExists(app, "设置", "settings"), "设置 tab not found")
             let openStart = Date()
             tabLabeled(app, "设置", "settings").tap()
-            Thread.sleep(forTimeInterval: 1.0)
+            Thread.sleep(forTimeInterval: settle)
             assertSettingsPage(app)
-            return Date().timeIntervalSince(openStart)
+            return max(0, Date().timeIntervalSince(openStart) - settle)
         }
     }
 
