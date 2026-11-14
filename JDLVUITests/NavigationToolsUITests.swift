@@ -65,6 +65,22 @@ final class NavigationToolsUITests: XCTestCase {
         XCTFail("tab_\(route) 点击后落地元素始终未可命中（\(maxAttempts) 次重试）")
     }
 
+    /// R5 P4：demo 懒建表竞态自愈（与 LayoutAudit.waitHealing 同款）——
+    /// browse/sht 首查失败出 ErrorBox，每 2s 点「重试」直至元素出现。
+    /// （J1/J2 实证：browse_page 可命中但 grid 空 —— 首查失败态，非 tab 未切换。）
+    private func waitHealed(_ app: XCUIApplication, _ el: XCUIElement,
+                            timeout: TimeInterval, healable: Bool = true) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if el.exists { return }
+            if healable {
+                let retry = app.buttons["重试"].firstMatch
+                if retry.exists && retry.isHittable { retry.tap() }
+            }
+            Thread.sleep(forTimeInterval: 2)
+        }
+    }
+
     private func swipeUp(_ app: XCUIApplication, times: Int) {
         // R4：iOS 16 兼容——XCUIElement.swipeUp(velocity:) 是 iOS 17+ API，禁用
         for _ in 0..<times { app.swipeUp() }
@@ -89,6 +105,9 @@ final class NavigationToolsUITests: XCTestCase {
         let app = launchDemo()
         let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
         selectTab(app, "browse", proof: browsePage)
+        let fabEl = app.buttons["scroll_top"].firstMatch
+        // 数据就绪前 FAB 不会出现 → 自愈窗口（ErrorBox 重试）
+        waitHealed(app, fabEl, timeout: 40)
 
         swipeUp(app, times: 12)
         let fab = try requireExists(app.buttons["scroll_top"].firstMatch,
@@ -111,9 +130,10 @@ final class NavigationToolsUITests: XCTestCase {
         let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
         selectTab(app, "browse", proof: browsePage)
 
-        // 分页加载（chip 渲染条件 loaded>0 || total>0）
-        let chip = try requireExists(app.buttons["page_chip"].firstMatch,
-                                     "page_chip-browse", app, timeout: 40)
+        // 分页加载（chip 渲染条件 loaded>0 || total>0）—— demo 懒建表竞态自愈
+        let chipEl = app.buttons["page_chip"].firstMatch
+        waitHealed(app, chipEl, timeout: 60)
+        let chip = try requireExists(chipEl, "page_chip-browse", app, timeout: 5)
 
         chip.tap()
         let field = app.textFields["page_jump_field"].firstMatch
@@ -141,9 +161,9 @@ final class NavigationToolsUITests: XCTestCase {
         // browse 第一张卡 → 详情（垂直网格卡片 frame 稳定；首页横滑卡有手势竞争）
         let browsePage = app.descendants(matching: .any)["browse_page"].firstMatch
         selectTab(app, "browse", proof: browsePage)
-        let card = try requireExists(
-            app.descendants(matching: .any)["card_browse_0"].firstMatch,
-            "card_browse_0", app, timeout: 40)
+        let cardEl = app.descendants(matching: .any)["card_browse_0"].firstMatch
+        waitHealed(app, cardEl, timeout: 60)
+        let card = try requireExists(cardEl, "card_browse_0", app, timeout: 5)
         card.tap()
         swipeUp(app, times: 12)
         let fab = try requireExists(app.buttons["scroll_top"].firstMatch,
@@ -155,6 +175,7 @@ final class NavigationToolsUITests: XCTestCase {
         let app = launchDemo()
         let shtRow = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "演示帖子")).firstMatch
         selectTab(app, "sht", proof: shtRow)
+        waitHealed(app, shtRow, timeout: 40)
 
         // 进帖详情（与 ScreenshotsUITests 同锚点：demo「演示帖子」行）
         XCTAssertTrue(shtRow.waitForExistence(timeout: 10), "demo 演示帖子行必须存在")
