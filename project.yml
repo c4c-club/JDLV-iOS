@@ -64,6 +64,9 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: true
+        # R5 P4 §3：固定 runner bundle id —— 导出步骤 get_app_container 按 id 找
+        # xctrunner 数据容器（flushReport ③ 通道的临时文件）
+        PRODUCT_BUNDLE_IDENTIFIER: com.jdlv.ios.UITests
     dependencies:
       - target: JDLV
 schemes:

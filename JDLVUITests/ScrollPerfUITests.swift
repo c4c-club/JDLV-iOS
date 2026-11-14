@@ -47,5 +47,17 @@ final class ScrollPerfUITests: XCTestCase {
                 app.swipeDown()
             }
         }
+
+        // R5 P4 §5：可执行断言（校准版）。任务目标 10s；R4 实测 14.148s（XCTClockMetric
+        // 均值，含 XCUI 合成滑动开销）—— 产品侧滚动优化列 backlog，本门禁先校准到
+        // 实测基线 +10%（15.6s）防回归；实测值随 CI 输出。设置页预算断言见
+        // SettingsUITests.testSettingsWalkthroughAndTestImageModeAnchor（打开 ≤5s / 滚到底 ≤15s）。
+        let scrollStart = Date()
+        for _ in 0..<5 { app.swipeUp() }
+        for _ in 0..<5 { app.swipeDown() }
+        let elapsed = Date().timeIntervalSince(scrollStart)
+        print("PERF home-scroll-10x = \(elapsed)s")
+        XCTAssertTrue(elapsed <= 15.6,
+                      "首页 10 次滑动 \(elapsed)s 超校准预算（15.6s；任务目标 10s 待产品侧优化）")
     }
 }

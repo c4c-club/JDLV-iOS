@@ -26,8 +26,9 @@ final class NavigationToolsUITests: XCTestCase {
         return app
     }
 
-    /// R4 P8：元素未命中（CI 慢环境 XCUI 快照超时/overlay 可达性未知）→
-    /// 树转储附件 + XCTSkip（KNOWN-ISSUE；功能有截图证据 03-browse.png 等，待真机复核）。
+    /// R5 P4：fail-closed —— 必需元素缺失 = XCTFail（不再 KNOWN-ISSUE skip 掩盖回归；
+    /// R4 的 4/4 skip 已定位为 CI 慢环境下 demo 数据/AX 未就绪，Phase 3 修复后应真实命中）。
+    /// 仅显式环境不可用（launch argument 指定 -JDLV_OFFLINE 且无后端）才允许 skip。
     @discardableResult
     private func requireExists(_ el: XCUIElement, _ name: String, _ app: XCUIApplication,
                                timeout: TimeInterval = 20) throws -> XCUIElement {
@@ -36,7 +37,14 @@ final class NavigationToolsUITests: XCTestCase {
         dump.name = "dump-\(name)"
         dump.lifetime = .keepAlways
         add(dump)
-        throw XCTSkip("KNOWN-ISSUE: \(name) 未命中（树转储已附）；功能有截图证据，待真机复核")
+        // 失败信息带缺失 identifier 与当前页面线索（导航栏标题）
+        let nav = app.navigationBars.firstMatch
+        let whereStr = nav.exists ? "nav=\(nav.identifier)" : "nav=<none>"
+        if app.launchArguments.contains("-JDLV_OFFLINE") {
+            throw XCTSkip("environment offline: \(name) 不可用（显式离线模式）")
+        }
+        XCTFail("required UI missing: \(name) (\(whereStr)；树转储已附)")
+        return el
     }
 
     private func swipeUp(_ app: XCUIApplication, times: Int) {
