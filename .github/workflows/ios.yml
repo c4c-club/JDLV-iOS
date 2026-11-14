@@ -270,6 +270,9 @@ jobs:
         if: always()
         run: |
           set -eo pipefail
+          # R5 P3：ui_filter 过滤运行（目标验证）不含 ScreenshotsUITests → 本门禁 N/A 跳过；
+          # 全量运行（push/PR/tag，无 ui_filter）门禁照常生效
+          if [ -n "${{ github.event.inputs.ui_filter || '' }}" ]; then echo 'ui_filter run: screenshots gate N/A'; exit 0; fi
           cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
           # screenshots-manifest（字符串附件）导出为 UUID.txt → 按内容定位
           MANIFEST=$(grep -l 'pageName' ./*.txt ./*.json 2>/dev/null | head -1 || true)
@@ -282,6 +285,8 @@ jobs:
         if: always()
         run: |
           set -eo pipefail
+          # R5 P3：ui_filter 过滤运行不含 LayoutAuditUITests → 本门禁 N/A 跳过；全量照常生效
+          if [ -n "${{ github.event.inputs.ui_filter || '' }}" ]; then echo 'ui_filter run: layout gate N/A'; exit 0; fi
           cd build/attachments 2>/dev/null || { echo 'no attachments dir'; exit 1; }
           # layout-report（字符串附件）导出为 UUID.txt → 按内容定位
           REPORT=$(grep -l 'violations' ./*.txt ./*.json 2>/dev/null | head -1 || true)
