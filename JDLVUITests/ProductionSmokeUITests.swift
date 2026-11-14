@@ -134,10 +134,33 @@ final class ProductionSmokeUITests: XCTestCase {
             }
         }
         XCTAssertTrue(stable, "ds_test_button 滚动 \(swipes) 次后未稳定且可命中（最大滚动次数断言）")
-        testButton.tap()   // 精确 tap（任务硬要求：不用坐标点击）
+        // R5 P3：tap 后必须确认按钮进入 busy（或结果已出）—— 滚动回弹可能让 tap
+        // 坐标落在相邻提示文字上而丢失（run 43508420064 F1 证据：挂起时按钮弹到
+        // y=796 被 TabBar 遮住，tap 坐标命中提示行）。未触发则重稳定+重试（≤3 次）。
+        let resultQ = app.descendants(matching: .any)["settings_test_result"].firstMatch
+        var triggered = false
+        for _ in 0..<3 {
+            testButton.tap()
+            let deadline = Date().addingTimeInterval(5)
+            while Date() < deadline {
+                if resultQ.exists || testButton.label.contains("测试中") { triggered = true; break }
+                usleep(250_000)
+            }
+            if triggered { break }
+            // tap 丢失 → 回到稳定态再点一次
+            for _ in 0..<6 {
+                usleep(500_000)
+                if testButton.exists, testButton.isHittable, testButton.frame.intersects(app.frame) {
+                    break
+                }
+                app.swipeUp()
+                usleep(200_000)
+            }
+        }
+        XCTAssertTrue(triggered, "ds_test_button tap 后未进入 busy 且无结果（3 次重试；滚动回弹吃 tap）")
         // 结果等待：最多 90s（§4 单 tap 语义：点击后等待结果区域出现；不重试 ——
         // busy disabled 按钮再 tap 报 not-hittable，run 43467328563 :138 证据）
-        let result = app.descendants(matching: .any)["settings_test_result"].firstMatch
+        let result = resultQ
         if !result.waitForExistence(timeout: 90) {
             let diag = XCTAttachment(screenshot: app.screenshot())
             diag.name = "diag-smoke-conn-hang"

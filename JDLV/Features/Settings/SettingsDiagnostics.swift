@@ -125,7 +125,20 @@ enum SettingsDiagnostics {
             // demo：不触碰 Db（不发任何网络/数据库调用），明示未发起连接
             return "演示模式：未发起数据库连接"
         }
-        return await connGate.run(s)
+        // R5 P3：外层看门狗 30s —— 单步超时（connect 5s / query 2s）理论 ≤15s，超过即视为
+        // 链路挂起并显式失败（真实连接挂起曾致 UI 90s+ 无任何结果呈现）。
+        return await withTaskGroup(of: String.self) { group in
+            group.addTask { await SettingsDiagnostics.connGate.run(s) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                perfNote("conn: watchdog-fired")
+                return "✗ 测试连接超时（30s 无响应 —— 连接链路挂起）"
+            }
+            let first = await group.next() ?? "连接失败"
+            group.cancelAll()
+            perfNote("conn: resolved")
+            return first
+        }
     }
 
     /// 两卡（① 数据源 / ② 代理）共用的成功/失败后续（A4：处理口径一致）：
