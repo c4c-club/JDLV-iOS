@@ -202,6 +202,8 @@ final class SettingsUITests: XCTestCase {
             let card = group(app, k)
             guard scrollToElement(app, card) else { continue }   // 失败已附 dump
             card.tap()
+            // R5 P3：展开内容构建落定（密集 tap+查询在负载 runner 上触发 AX 快照超时）
+            usleep(400_000)
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
         // 锚点已在本用例前段硬断言（testImageModeOn），store 持久化由单测覆盖

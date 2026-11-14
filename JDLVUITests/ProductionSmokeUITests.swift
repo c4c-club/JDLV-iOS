@@ -204,7 +204,8 @@ final class ProductionSmokeUITests: XCTestCase {
         }
         if typed {
             let hit = app.staticTexts["冒烟影片 S001"]
-            XCTAssertTrue(hit.waitForExistence(timeout: 20), "搜索必须命中 fixture 真实数据")
+            // R5 P3：20→35s —— 生产 Q 真实查询在负载 runner 上可超过 20s（run 43548263152）
+            XCTAssertTrue(hit.waitForExistence(timeout: 35), "搜索必须命中 fixture 真实数据")
         } else {
             let note = XCTAttachment(string: "search typing skipped (no keyboard focus); " +
                 "home-title + real connection already prove the production DB path")

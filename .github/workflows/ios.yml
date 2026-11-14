@@ -213,6 +213,7 @@ jobs:
           # R5 P3 2A: copy the app-internal perf log out of the data container
           for UDID in $(xcrun simctl list devices | grep -E "iPhone 17 Pro" | grep -oE "[0-9A-F-]{36}"); do
             APPCONT=$(xcrun simctl get_app_container "$UDID" com.jdlv.ios data 2>/dev/null || true)
+            echo "probe UDID=$UDID APPCONT=$APPCONT" >> build/attachments/app-perf-log.txt || true
             if [ -n "$APPCONT" ] && [ -f "$APPCONT/tmp/jdlv-perf.log" ]; then
               cp "$APPCONT/tmp/jdlv-perf.log" build/attachments/app-perf-log.txt || true
               break
