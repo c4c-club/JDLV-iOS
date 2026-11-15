@@ -303,7 +303,8 @@ jobs:
           # R6 fail-closed：已知泄露值从 git 历史运行时派生（值不落 repo、不打印）；
           # 无已知清单时 verify_ipa.py 判 PASS-INCOMPLETE，本步失败，绝不 skipped=PASS。
           python3 scripts/derive_known_hashes.py --root . --values-out /tmp/known.values --hashes-out /tmp/known.sha256 "${EXTRA[@]}"
-          bash scripts/verify_ipa.sh JDLV-unsigned.ipa --known-values /tmp/known.values --known-hashes /tmp/known.sha256
+          bash scripts/verify_ipa.sh JDLV-unsigned.ipa --known-values /tmp/known.values --known-hashes /tmp/known.sha256 \
+            --out build/attachments/ipa-verify-report.txt
 
       - name: Upload simulator zip
         uses: actions/upload-artifact@v4
@@ -400,7 +401,8 @@ jobs:
             EXTRA=(--extra-values /tmp/user-known.values)
           fi
           python3 scripts/derive_known_hashes.py --root . --values-out /tmp/known.values --hashes-out /tmp/known.sha256 "${EXTRA[@]}"
-          bash scripts/verify_ipa.sh dist/JDLV-unsigned.ipa --known-values /tmp/known.values --known-hashes /tmp/known.sha256
+          bash scripts/verify_ipa.sh dist/JDLV-unsigned.ipa --known-values /tmp/known.values --known-hashes /tmp/known.sha256 \
+            --out dist/ipa-verify-report.txt
       - name: Checksums + GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

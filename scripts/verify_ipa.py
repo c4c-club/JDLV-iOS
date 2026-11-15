@@ -240,7 +240,12 @@ def main():
         if args.out:
             with open(args.out, "w", encoding="utf-8") as f:
                 f.write(report)
-        print(report.splitlines()[-1])
+        # R6：FAIL 时全量明细进 stdout（仅路径/偏移/长度/哈希，值永不打印）——
+        # 修复 CI 只见 verdict 不见明细的诊断盲区（run 43755497265 实证）。
+        if fail:
+            print(report)
+        else:
+            print(report.splitlines()[-1])
         return {"FAIL": 1, "PASS": 0, "PASS-INCOMPLETE": 2}[verdict]
     finally:
         shutil.rmtree(work, ignore_errors=True)
