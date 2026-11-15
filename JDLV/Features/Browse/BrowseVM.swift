@@ -28,7 +28,7 @@ import JDLVCore
 //  - taxonomy 加载链（A.7）：缓存 jdb_taxonomy(24h) → Q.taxonomy()（makers≤500/codes≤3000/
 //    tags≤500/years≤40）→ 失败 stale（source=stale）→ Q.filters()（source=assets，
 //    tags 由 categories 拍平 id/name/c=0 按 id 去重）；远程索引表空 → fallback=true。
-//  - onDataEpoch：60s 冷却（RefreshPolicy）；首次只记录不刷；auto=true 静默（不写 refreshResult）。
+//  - R6 PHASE2：dataEpoch 自动刷新已移除；onDataEpoch 保留 no-op 防回归接缝（见 bind）。
 //  - 离线本地索引路径（LocalFilterSql/IdxDb 读源）为 P13 接线点：本阶段 Q.browse 内
 //    browseLocal 恒 nil，行为与 Android "本地库为空" 分支一致；VM 侧接口已留（source 协议）。
 //  - demo 模式（仅 DEBUG）：与生产同一 BrowseDataSource 协议注入 DemoStore.browse。
@@ -341,7 +341,7 @@ final class BrowseVM: ObservableObject {
     let refreshChannel = RefreshResultChannel()
     /// 设置桥（BrowseView 注入 SettingsStore；测试 nil —— syncFromSettings/落盘全部静默跳过）
     weak var store: SettingsStore?
-    /// 可注入时钟（onDataEpoch 60s 冷却 / lastUpdatedAt 测试用）
+    /// 可注入时钟（TTL 缓存过期 / lastUpdatedAt 测试用）
     var nowMs: () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }
 
     // MARK: 状态（C.1 BrowseUi 逐字段）
@@ -381,8 +381,6 @@ final class BrowseVM: ObservableObject {
     /// keyset 锚点：anchors[page] = 本页末行键值（响应 anchor 字段；缓存命中/新鲜统一写入）
     private(set) var anchors: [Int: [String]] = [:]
     private var reqId = 0
-    private var seenEpoch: Int = -1
-    private var lastAutoAt: Int64 = 0
 
     /// TTL 用设置 filterTtl（默认 60 分钟）
     private var filterTtl: Int { store?.settings.filterTtl ?? 60 }
@@ -483,10 +481,10 @@ final class BrowseVM: ObservableObject {
 
     // MARK: 生命周期（C.2）
 
-    /// bind：seenEpoch<0 记当前 epoch（进入页面不刷）；years/makers 均空 → loadFilters+reload；
-    /// 否则仅 syncFromSettings（回读 viewMode/per/sort/asc）
+    /// bind：years/makers 均空 → loadFilters+reload；
+    /// 否则仅 syncFromSettings（回读 viewMode/per/sort/asc）。
+    /// dataEpoch 参数保留（R6 PHASE2：epoch 不再驱动任何自动刷新）。
     func bind(dataEpoch: Int) async {
-        if seenEpoch < 0 { seenEpoch = dataEpoch }
         if years.isEmpty && makers.isEmpty {
             await loadFilters()
             await reload()
@@ -495,17 +493,9 @@ final class BrowseVM: ObservableObject {
         }
     }
 
-    /// dataEpoch 变更（数据源/代理/图床/库名/超时）：v<=0 || v==seenEpoch 忽略；
-    /// 首次（seenEpoch<0）只记录；60s 冷却（RefreshPolicy）内打点 skip；
-    /// 允许 → reload(force=true, auto=true) 静默（不写 refreshResult）
+    /// R6 PHASE2：dataEpoch 自动刷新已移除（唯一刷新入口 = 手动下拉/显式操作）。
+    /// 此入口保留为 no-op 防回归接缝：BrowseVMTests 断言 epoch 变更绝不产生请求。
     func onDataEpoch(_ v: Int) async {
-        if v <= 0 || v == seenEpoch { return }
-        if seenEpoch < 0 { seenEpoch = v; return }
-        let now = nowMs()
-        guard RefreshPolicy.shouldAuto(lastAutoAt, now: now) else { return }
-        seenEpoch = v
-        lastAutoAt = now
-        await reload(force: true, auto: true)
     }
 
     /// 设置回读（viewMode/per/sort/asc；store 未注入 → 静默跳过）

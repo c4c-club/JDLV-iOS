@@ -76,9 +76,7 @@ struct HotReviewsView: View {
             services.showToast(r.toastText)
             vm.refreshChannel.consume()
         }
-        .onReceive(store.$dataEpoch) { v in
-            Task { await vm.onDataEpoch(v) }
-        }
+        // R6 PHASE2：不再订阅 store.$dataEpoch 自动刷新。
         // 详情弹层（ModalBottomSheet 对位）
         .sheet(item: $sheetItem) { item in
             HotReviewSheet(row: item.row) { mid in

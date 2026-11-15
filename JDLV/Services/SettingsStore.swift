@@ -49,7 +49,8 @@ final class SettingsStore: ObservableObject {
     @Published private(set) var loaded = false
     /// 应用锁解锁态 —— 只在内存，绝不写磁盘/saved-state（A-15）
     @Published var unlocked = false
-    /// 数据源/代理/图床/库名/超时变更 +1 → 各列表页强制刷新（走冷却、静默）（P8 接线）
+    /// 数据源/代理/图床/库名/超时变更 +1：变更记录（R6 起列表页不再订阅自动刷新，
+    /// 唯一刷新入口 = 手动下拉/显式操作；bump 仅供诊断与未来显式场景）。
     @Published private(set) var dataEpoch = 0
     /// 离线→在线恢复 +1 → 只更新横幅，不自动重拉（P1.1/P8 接线）
     @Published private(set) var netEpoch = 0

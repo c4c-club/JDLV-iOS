@@ -148,9 +148,7 @@ private struct BrowseContent: View {
                 Task { await vm.bind(dataEpoch: store.dataEpoch) }
             }
         }
-        .onChange(of: store.dataEpoch) { v in
-            Task { await vm.onDataEpoch(v) }
-        }
+        // R6 PHASE2：不再订阅 store.dataEpoch 自动刷新（唯一刷新入口 = 手动下拉/显式操作）。
         // 刷新结果 Toast（仅手动下拉路径写入；消费后清位）
         .onReceive(vm.refreshChannel.$value) { r in
             guard let r else { return }

@@ -107,10 +107,14 @@ final class ImagePipeline: ImageLoading {
     /// R4 P4：maxPixel = 降采样上限（最长边像素；0 = 不限）。磁盘读与解码全部在后台线程，
     /// 单次降采样解码（CGImageSourceCreateThumbnailAtIndex），不再全尺寸 UIImage(data:)。
     /// 冷却判定用**重写后的最终 URL**（Android Img.url 语义）。
-    func image(url: String, kind: CdnKind, half: Int, maxPixel: Int) async -> UIImage? {
+    /// R6 PHASE2：maxPixel 按 256px 档位量化（微几何变化不换缓存键）；ticket = 视图
+    /// 身份票（同 URL 多视图各持一票，onDisappear 撤销自己的票，绝不波及他视图）。
+    func image(url: String, kind: CdnKind, half: Int, maxPixel: Int,
+               ticket: UUID? = nil) async -> UIImage? {
         #if DEBUG
         if TestImages.enabled() { return TestImages.testImage(for: url) }
         #endif
+        let maxPixel = Self.quantizeMaxPixel(maxPixel)
         // guarded: 无效 URL 不发请求（绝不把裸 id 当 URL）
         guard let g = ImgBreaker.guarded(url) else { return nil }
         let u = CdnRewrite.rewrite(g)
@@ -126,7 +130,7 @@ final class ImagePipeline: ImageLoading {
         if let img = await loadFromDisk(u, maxPixel: maxPixel) {
             return cacheVariant(mkey, img, half: half)
         }
-        let entry = inflightGate.entry(u) { [weak self] in
+        let entry = inflightGate.entry(u, interest: ticket) { [weak self] in
             guard let self else { throw FetchFailure("pipeline deallocated") }
             // R4 P4：网络抓取并发上限 4（等待者不占许可；被取消的任务恢复后立即释放）
             await Self.fetchGate.acquire()
@@ -134,6 +138,8 @@ final class ImagePipeline: ImageLoading {
             if Task.isCancelled { throw CancellationError() }
             return try await self.loadNetwork(u, kind)
         }
+        // R6 PHASE2：本视图 await 结束（成功/失败/取消，函数退出路径全覆盖）即撤销自己的兴趣票
+        defer { if let t = ticket { inflightGate.leave(u, interest: t) } }
         do {
             let data = try await entry.value
             guard let img = await decodeDetached(data, maxPixel: maxPixel) else {
@@ -157,6 +163,13 @@ final class ImagePipeline: ImageLoading {
     /// 内存缓存键：URL|最大像素|半图模式（§6.3 缓存键 u|maxPixel|half）
     private static func memKey(_ u: String, _ maxPixel: Int, _ half: Int) -> String {
         "\(u)|\(maxPixel)|\(half)"
+    }
+
+    /// R6 PHASE2：解码上限按 256px 档位向上量化（0 = 不限，保持不变）。
+    /// 亚像素/布局微抖不再生成新缓存键；同档位共享内存缓存与一次降采样解码。
+    static func quantizeMaxPixel(_ v: Int) -> Int {
+        guard v > 0 else { return 0 }
+        return ((v + 255) / 256) * 256
     }
 
     /// 半图裁切（对降采样后的缩略图裁，绝不对原图）+ 写入变体缓存
@@ -184,12 +197,13 @@ final class ImagePipeline: ImageLoading {
         }.value
     }
 
-    /// 滚动取消: 取消该 URL 的在飞加载（同 URL 多等待方共享同一 Task, 取消波及
-    /// 全部等待方 —— 简化点, 已记录移植报告）
-    func cancel(for url: String) {
+    /// 滚动取消（R6 PHASE2 重写）：撤销该视图 ticket 的一票兴趣；同 URL 其他等待方
+    /// 各持独立票不受影响；全部兴趣离开才取消共享任务（修 R4 版「取消波及全部
+    /// 等待方」的互杀缺陷 —— 滚动时同图不再互相打失败态）。
+    func cancel(for url: String, ticket: UUID) {
         guard let g = ImgBreaker.guarded(url) else { return }
         let key = CdnRewrite.rewrite(g)
-        inflightGate.cancel(key)
+        inflightGate.leave(key, interest: ticket)
     }
 
     // MARK: - 网络层（含解码/验证/备用图床）
@@ -510,8 +524,9 @@ final class ImagePipeline: ImageLoading {
 /// 确定性移除条目（defer 先于任何等待者恢复）—— 杜绝 R4 版「观察者 Task 与
 /// finishInflight 竞态 → 已完成条目残留（Task 持有结果 = 内存泄漏）」。
 ///
-/// 等待者语义（不变）：多等待方共享同一 Task；cancel 后等待方收到 CancellationError；
-/// 条目移除后同键新请求起新任务（成功后由磁盘缓存承接，不重发网络请求）。
+/// 等待者语义（R6 PHASE2 重写）：多等待方共享同一 Task，各持一张兴趣票
+/// （interest UUID，视图身份）；撤销自己的一票绝不波及他方，全部兴趣离开才
+/// 取消共享任务。条目移除后同键新请求起新任务（成功后由磁盘缓存承接，不重发网络请求）。
 final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
 
     /// 字典条目：身份用于移除比对（Task 不可 == 比较）；字段在任务启动前完成装配，
@@ -519,6 +534,8 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
     private final class Entry: @unchecked Sendable {
         var task: Task<Value, Error>!
         var onExit: (@Sendable () -> Void)?
+        /// R6 PHASE2：等待方兴趣集合（每视图一张票；Set 语义幂等，重复登记/撤销无害）
+        var interests: Set<UUID> = []
         /// 任务体退出时（defer；先于等待者恢复）调用，恰好一次
         func bodyDidExit() { onExit?() }
     }
@@ -526,20 +543,24 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var inflight: [Key: Entry] = [:]
 
-    /// 取条目：同键在飞 → 复用其 Task；否则用 body 新建。
-    /// body 退出时自动移除本条目（确定性路径），调用方无需手工 finish。
-    func entry(_ key: Key, body: @escaping @Sendable () async throws -> Value) -> Task<Value, Error> {
+    /// 取条目：同键在飞 → 复用其 Task 并登记兴趣；否则用 body 新建（interest 非空时
+    /// 作为初始兴趣）。body 退出时自动移除本条目（确定性路径），调用方无需手工 finish。
+    /// interest = 视图身份票（R6 PHASE2）；nil = 旧语义（无兴趣记账，仅共享任务）。
+    func entry(_ key: Key, interest: UUID? = nil,
+               body: @escaping @Sendable () async throws -> Value) -> Task<Value, Error> {
         lock.lock()
         if let e = inflight[key] {
+            if let i = interest { e.interests.insert(i) }
             let t = e.task!   // 装配不变量：入字典前 task 已赋值
             lock.unlock()
             return t
         }
         lock.unlock()
-        let e = makeEntry(key: key, body: body)
+        let e = makeEntry(key: key, body: body, interest: interest)
         lock.lock()
         // 双检：并发插入窗口保留先到者，取消后到者（理论窗口，防御性）
         if let cur = inflight[key] {
+            if let i = interest { cur.interests.insert(i) }
             let t = cur.task!
             lock.unlock()
             e.task!.cancel()
@@ -550,8 +571,10 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
         return e.task!
     }
 
-    private func makeEntry(key: Key, body: @escaping @Sendable () async throws -> Value) -> Entry {
+    private func makeEntry(key: Key, body: @escaping @Sendable () async throws -> Value,
+                           interest: UUID?) -> Entry {
         let e = Entry()
+        if let i = interest { e.interests.insert(i) }
         let task = Task<Value, Error> { [weak self, weak e] in
             defer { e?.bodyDidExit() }
             guard let self else {
@@ -563,6 +586,20 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
         e.task = task
         e.onExit = { [weak self] in self?.removeEntry(key, entry: e) }
         return e
+    }
+
+    /// R6 PHASE2：撤销一张兴趣票（幂等；onDisappear 与 await 结束路径都会调用）。
+    /// 仅当兴趣集合清空（无人再关心结果）才取消共享任务并移除条目。
+    func leave(_ key: Key, interest: UUID) {
+        lock.lock()
+        guard let e = inflight[key], e.interests.remove(interest) != nil else {
+            lock.unlock()
+            return
+        }
+        let abandoned = e.interests.isEmpty
+        if abandoned { inflight.removeValue(forKey: key) }
+        lock.unlock()
+        if abandoned { e.task!.cancel() }
     }
 
     /// 取消同键在飞任务：立即移除条目（新请求不再复用被取消的任务）并取消。

@@ -109,4 +109,87 @@ final class InflightGateTests: XCTestCase {
         XCTAssertEqual(third, 123)
         XCTAssertFalse(gate.has("k"))
     }
+
+    // MARK: R6 PHASE2：兴趣票语义 —— 一方离开绝不取消他方
+
+    func testLeaveOneInterestKeepsTaskForRemainingWaiter() async throws {
+        let gate = InflightGate<String, Int>()
+        let started = XCTestExpectation(description: "body started")
+        let a = UUID(), b = UUID()
+        let ta = gate.entry("k", interest: a) {
+            started.fulfill()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+            throw CancellationError()
+        }
+        await fulfillment(of: [started], timeout: 2)
+        let tb = gate.entry("k", interest: b) {
+            throw CancellationError()
+        }
+        XCTAssertTrue(gate.has("k"))
+        gate.leave("k", interest: a)   // A 离开：B 仍在 → 条目保留、任务不取消
+        XCTAssertTrue(gate.has("k"), "仍有等待方时条目不得移除（R6：同 URL 多视图互不波及）")
+        gate.leave("k", interest: b)   // 最后一人离开 → 取消并移除
+        XCTAssertFalse(gate.has("k"), "兴趣清空后条目立即移除")
+        do {
+            _ = try await tb.value
+            XCTFail("全部兴趣离开后共享任务必须被取消")
+        } catch is CancellationError {
+            // 预期：取消传播（ta/tb 同任务句柄）
+        }
+        _ = ta
+    }
+
+    func testLeaveUnknownInterestIsNoOp() async throws {
+        let gate = InflightGate<String, Int>()
+        let started = XCTestExpectation(description: "body started")
+        let a = UUID()
+        let t = gate.entry("k", interest: a) {
+            started.fulfill()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+            throw CancellationError()
+        }
+        await fulfillment(of: [started], timeout: 2)
+        gate.leave("k", interest: UUID())   // 未登记的票 → no-op
+        XCTAssertTrue(gate.has("k"), "未知票不得影响在飞条目")
+        gate.leave("k", interest: a)
+        XCTAssertFalse(gate.has("k"))
+        _ = try? await t.value
+    }
+
+    func testSameInterestReentryIsIdempotent() async throws {
+        let gate = InflightGate<String, Int>()
+        let counter = CallCounter()
+        let started = XCTestExpectation(description: "body started")
+        final class Hold: @unchecked Sendable {
+            private let lk = NSLock()
+            private var open = false
+            func isOpen() -> Bool { lk.lock(); defer { lk.unlock() }; return open }
+            func openIt() { lk.lock(); open = true; lk.unlock() }
+        }
+        let hold = Hold()
+        let a = UUID()
+        let t1 = gate.entry("k", interest: a) {
+            await counter.bump()
+            started.fulfill()
+            while !hold.isOpen() && !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+            return 1
+        }
+        await fulfillment(of: [started], timeout: 2)
+        let t2 = gate.entry("k", interest: a) { 2 }   // 同票同键在飞 → 复用
+        hold.openIt()
+        let v1 = try await t1.value
+        let v2 = try await t2.value
+        XCTAssertEqual(v1, 1)
+        XCTAssertEqual(v2, 1, "同票重入复用同一任务结果")
+        let exec = await counter.value
+        XCTAssertEqual(exec, 1, "body 只执行一次")
+        XCTAssertFalse(gate.has("k"))
+    }
 }
+

@@ -72,9 +72,7 @@ struct ActorsView: View {
             services.showToast(r.toastText)
             vm.refreshChannel.consume()
         }
-        .onReceive(store.$dataEpoch) { v in
-            Task { await vm.onDataEpoch(v) }
-        }
+        // R6 PHASE2：不再订阅 store.$dataEpoch 自动刷新。
         .accessibilityIdentifier("tab_root_actors")
         .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
     }

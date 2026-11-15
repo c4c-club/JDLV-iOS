@@ -14,7 +14,7 @@ import JDLVCore
 //  - 分页同 Articles：hasMore 满页推断 + total 早停 + goPage 本地 ceil 钳制。
 //  - TTL 缓存 "hot:{period}:{key}:{page}"：成功 put；不读缓存；失败 stale → ErrText/Fail。
 //  - setPeriod：period=p、page=1、key/keys 清空、reload；setKey：key=k、page=1、reload。
-//  - dataEpoch 自动刷新：60s 冷却（RefreshPolicy）静默。
+//  - R6 PHASE2：dataEpoch 自动刷新已移除（唯一刷新入口 = 手动下拉/显式操作）。
 //  - demo 模式（仅 DEBUG）：DemoStore.hotReviews 注入（keys/total 由分页扫描补齐）。
 //
 
@@ -195,8 +195,6 @@ final class HotReviewsVM: ObservableObject {
     let refreshChannel = RefreshResultChannel()
 
     private var reqId = 0
-    private var seenEpoch: Int = -1
-    private var lastAutoAt: Int64 = 0
 
     // MARK: 纯函数（测试共用）
 
@@ -224,16 +222,7 @@ final class HotReviewsVM: ObservableObject {
         }
     }
 
-    /// dataEpoch 变更：60s 冷却静默刷新
-    func onDataEpoch(_ v: Int) async {
-        if v <= 0 || v == seenEpoch { return }
-        if seenEpoch < 0 { seenEpoch = v; return }
-        let now = nowMs()
-        guard RefreshPolicy.shouldAuto(lastAutoAt, now: now) else { return }
-        seenEpoch = v
-        lastAutoAt = now
-        await reload(force: true, auto: true)
-    }
+    // R6 PHASE2：dataEpoch 自动刷新已移除（唯一刷新入口 = 手动下拉/显式操作）。
 
     // MARK: 查询与刷新
 

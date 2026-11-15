@@ -108,7 +108,7 @@ struct HomeView: View {
         .onChange(of: vm.toast) { consumeToast($0) }
         // 刷新结果通道（publisher 直订，与 BrowseView 同模式；nil 初值被 guard 吞掉）
         .onReceive(vm.refreshResult.$value) { consumeRefresh($0) }
-        .onReceive(store.$dataEpoch) { vm.onDataEpoch($0) }
+        // R6 PHASE2：不再订阅 store.$dataEpoch 自动刷新。
     }
 
     // MARK: 列表壳（PageScaffold：单 ScrollView + 单 LazyVStack + .refreshable + overlay 工具）

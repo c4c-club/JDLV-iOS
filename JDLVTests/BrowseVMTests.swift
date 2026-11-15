@@ -495,30 +495,23 @@ final class BrowseVMTests: XCTestCase {
         XCTAssertEqual(BrowseVM.lookupSummary(Filters(maker: "m1", cnsub: true)), "反查：片商 · 中字")
     }
 
-    // MARK: onDataEpoch 60s 冷却（C.2 / RefreshPolicy）
+    // MARK: R6 PHASE2：dataEpoch 自动刷新已移除（唯一刷新入口 = 手动下拉/显式操作）
 
     @MainActor
-    func testOnDataEpochCooldown() async {
+    func testDataEpochChangeNeverTriggersRequest() async {
         let src = MockSource()
         let cache = MockCache()
         let vm = makeVM(src, cache)
-        var now: Int64 = 1_000_000
-        vm.nowMs = { now }
-        await vm.bind(dataEpoch: 1)   // 首次进入：seenEpoch 记 1 + loadFilters + reload
+        await vm.bind(dataEpoch: 1)   // 首次进入：loadFilters + reload（必要首载）
         XCTAssertEqual(src.calls, 1)
-        await vm.onDataEpoch(1)       // v == seenEpoch → no-op（进入页面不刷）
+        // epoch 变更（任意次）绝不产生请求：onDataEpoch 为 no-op 防回归接缝，
+        // 视图层也已移除 store.$dataEpoch 订阅（R6 PHASE2）。
+        cache.store.removeAll()
+        await vm.onDataEpoch(2)
+        await vm.onDataEpoch(3)
+        await vm.onDataEpoch(4)
         XCTAssertEqual(src.calls, 1)
-        cache.store.removeAll()
-        await vm.onDataEpoch(2)       // 允许（从未自动刷过）→ 静默刷新
-        XCTAssertEqual(src.calls, 2)
-        cache.store.removeAll()
-        await vm.onDataEpoch(3)       // 冷却内（<60s）→ 打点 skip
-        XCTAssertEqual(src.calls, 2)
-        now += 61_000
-        cache.store.removeAll()
-        await vm.onDataEpoch(4)       // 冷却已过（≥60s）→ 刷新
-        XCTAssertEqual(src.calls, 3)
-        XCTAssertNil(vm.refreshChannel.value)   // auto=true 静默：不写 refreshResult
+        XCTAssertNil(vm.refreshChannel.value)   // 无静默刷新：不写 refreshResult
     }
 
     // MARK: setter 归一（normalizePer / setSort）

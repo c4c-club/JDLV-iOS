@@ -16,7 +16,7 @@ import JDLVCore
 //  - TTL 缓存 "articles:{categoryId}:{q}:{page}"：成功 put；不读缓存；失败 stale 兜底
 //    → ErrText / fromRefresh 时 RefreshResult.Fail。
 //  - bind：列表空 → 拉分类（runCatching 静默，Q.articleCategories 失败回 []）+ reload。
-//  - dataEpoch 自动刷新：60s 冷却（RefreshPolicy）静默（auto 不写 refreshResult）。
+//  - R6 PHASE2：dataEpoch 自动刷新已移除（唯一刷新入口 = 手动下拉/显式操作）。
 //  - demo 模式（仅 DEBUG）：DemoStore.articles 注入（补 total/分类聚合/正文 HTML 合成）。
 //
 
@@ -276,8 +276,6 @@ final class ArticlesVM: ObservableObject {
     let refreshChannel = RefreshResultChannel()
 
     private var reqId = 0
-    private var seenEpoch: Int = -1
-    private var lastAutoAt: Int64 = 0
 
     // MARK: 纯函数（测试共用）
 
@@ -325,16 +323,7 @@ final class ArticlesVM: ObservableObject {
         categories = await source.articleCategories()
     }
 
-    /// dataEpoch 变更：60s 冷却静默刷新（auto 不写 refreshResult）
-    func onDataEpoch(_ v: Int) async {
-        if v <= 0 || v == seenEpoch { return }
-        if seenEpoch < 0 { seenEpoch = v; return }
-        let now = nowMs()
-        guard RefreshPolicy.shouldAuto(lastAutoAt, now: now) else { return }
-        seenEpoch = v
-        lastAutoAt = now
-        await reload(force: true, auto: true)
-    }
+    // R6 PHASE2：dataEpoch 自动刷新已移除（唯一刷新入口 = 手动下拉/显式操作）。
 
     // MARK: 查询与刷新
 

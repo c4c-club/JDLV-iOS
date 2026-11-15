@@ -21,6 +21,8 @@ struct ZoomableImage: View {
     @State private var image: UIImage? = nil
     @State private var failed = false
     @State private var retryKey = 0
+    // R6 PHASE2：视图身份票（灯箱持票；await 结束 defer 清票，不留孤儿兴趣）
+    @State private var ticket = UUID()
 
     var body: some View {
         ZStack {
@@ -59,7 +61,7 @@ struct ZoomableImage: View {
         #endif
         failed = false
         let kind = CdnRewrite.kindOf(url)
-        let img = await ImagePipeline.shared.image(url: url, kind: kind, half: 2)
+        let img = await ImagePipeline.shared.image(url: url, kind: kind, half: 2, ticket: ticket)
         if Task.isCancelled { return }
         image = img
         failed = (img == nil)

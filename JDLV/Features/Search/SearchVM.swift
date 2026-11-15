@@ -259,8 +259,6 @@ final class SearchVM: ObservableObject {
     private var forceRemote = false
     /// D-3 退避：上次自动重搜失败记 now、成功清 0（S1 D-3；保留字段与写入语义）
     private(set) var lastAutoFailAt: Int64 = 0
-    private var seenEpoch = -1
-    private var lastAutoAt: Int64 = 0
     private var homeKicked = false
     /// 防抖任务（输入 300ms 可取消；scope/mode 变化立即重搜不走此路）
     private var debounceTask: Task<Void, Never>?
@@ -636,23 +634,7 @@ final class SearchVM: ObservableObject {
         }
     }
 
-    // MARK: dataEpoch 自动刷新（A.0：冷却 60s 静默；首次只记录）
-
-    func onDataEpoch(_ v: Int) {
-        if v <= 0 || v == seenEpoch { return }
-        let first = seenEpoch < 0
-        seenEpoch = v
-        if first { return }
-        let now = clock()
-        guard RefreshPolicy.shouldAuto(lastAutoAt, now: now) else { return }
-        lastAutoAt = now
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        if q.isEmpty {
-            Task { await loadHome(force: true, auto: true) }
-        } else {
-            Task { await search(resetPage: true, requestedPage: 1, force: true, auto: true) }
-        }
-    }
+    // R6 PHASE2：dataEpoch 自动刷新已移除（唯一刷新入口 = 手动下拉/显式操作）。
 
     // MARK: 本地索引覆盖（footer「本地索引已含 …」后台 IO 计算，C5）
 

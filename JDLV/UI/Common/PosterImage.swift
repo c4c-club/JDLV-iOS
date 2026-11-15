@@ -41,6 +41,8 @@ struct PosterImage: View {
     @State private var retryKey = 0
     // R4 P4：实际 frame（GeometryReader 只作背景测量，不参与布局）→ 解码像素上限
     @State private var frameSize: CGSize = .zero
+    // R6 PHASE2：视图身份票 —— in-flight 兴趣记账（同 URL 多视图互不波及）
+    @State private var loadTicket = UUID()
 
     /// half 且设置非整张时才挂 CoverHalf（B12：halfMode==2 整张不裁）
     private var halfMode: Int { half ? ImgBreaker.halfMode() : 2 }
@@ -69,8 +71,9 @@ struct PosterImage: View {
             }
         )
         .task(id: reqKey) { await load() }
-        // R4 P4：滑出屏幕即取消在飞加载（Coil onDetached 语义；变体缓存键不受影响）
-        .onDisappear { ImagePipeline.shared.cancel(for: url) }
+        // R4 P4/R6 PHASE2：滑出屏幕撤销本视图的兴趣票（全部兴趣离开才取消共享
+        // 在飞任务；同 URL 其他视图不受影响）
+        .onDisappear { ImagePipeline.shared.cancel(for: url, ticket: loadTicket) }
     }
 
     private var core: some View {
@@ -144,7 +147,7 @@ struct PosterImage: View {
         phase = .loading
         let kind = CdnRewrite.kindOf(url)
         let img = await ImagePipeline.shared.image(url: url, kind: kind, half: halfMode,
-                                                   maxPixel: maxPixel)
+                                                   maxPixel: maxPixel, ticket: loadTicket)
         if Task.isCancelled { return }
         if let img {
             image = img
