@@ -61,7 +61,8 @@ struct ZoomableImage: View {
         #endif
         failed = false
         let kind = CdnRewrite.kindOf(url)
-        let img = await ImagePipeline.shared.image(url: url, kind: kind, half: 2, ticket: ticket)
+        let img = await ImagePipeline.shared.image(url: url, kind: kind, half: 2,
+                                                   maxPixel: 0, ticket: ticket)
         if Task.isCancelled { return }
         image = img
         failed = (img == nil)

@@ -109,8 +109,13 @@ final class ImagePipeline: ImageLoading {
     /// 冷却判定用**重写后的最终 URL**（Android Img.url 语义）。
     /// R6 PHASE2：maxPixel 按 256px 档位量化（微几何变化不换缓存键）；ticket = 视图
     /// 身份票（同 URL 多视图各持一票，onDisappear 撤销自己的票，绝不波及他视图）。
+    /// 协议 witness（4 参）：Swift 协议符合不允许默认参数参位 —— ticket 版另载。
+    func image(url: String, kind: CdnKind, half: Int, maxPixel: Int) async -> UIImage? {
+        await image(url: url, kind: kind, half: half, maxPixel: maxPixel, ticket: nil)
+    }
+
     func image(url: String, kind: CdnKind, half: Int, maxPixel: Int,
-               ticket: UUID? = nil) async -> UIImage? {
+               ticket: UUID?) async -> UIImage? {
         #if DEBUG
         if TestImages.enabled() { return TestImages.testImage(for: url) }
         #endif
