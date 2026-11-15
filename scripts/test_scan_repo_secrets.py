@@ -1,152 +1,249 @@
 #!/usr/bin/env python3
-"""Self-tests for scan_repo_secrets.py (R5 Phase 1).
+# -*- coding: utf-8 -*-
+"""Self-tests for scan_repo_secrets.py (R6 Phase 1 rewrite).
 
-Builds a throwaway git repo in a temp dir, writes one fixture file per case,
-runs the scanner in --mode head via subprocess, and asserts HIT/ALLOWED per
-case. Pure stdlib; no third-party deps.
-
-Exit 0 = all cases pass; exit 1 = at least one failure (details on stdout).
-
-Positive cases (real-looking values) MUST produce HIT.
-Negative cases (synthetic forms) MUST NOT produce HIT.
+Positive fixtures MUST produce HIT; negative (structural) fixtures MUST NOT
+produce HIT. Fixture shapes are assembled at runtime so this tracked source
+never contains a scannable credential-literal shape itself, and raw values
+are never printed (reports carry path/line/len/hash only).
 
 Run:  python -I scripts/test_scan_repo_secrets.py
+Exit 0 = all cases pass; exit 1 = at least one failure (details on stdout).
 """
 
+import importlib.util
+import io
 import os
-import shutil
+import plistlib
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCANNER = os.path.join(HERE, "scan_repo_secrets.py")
+SCANNER_PATH = os.path.join(HERE, "scan_repo_secrets.py")
 
-SECRET = "real-secret-123"
+spec = importlib.util.spec_from_file_location("scan_repo_secrets", SCANNER_PATH)
+SC = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(SC)
 
-# Fixture lines are assembled from fragments so that THIS source file never
-# contains a contiguous quoted credential-literal form (guard_repo.sh greps
-# the tracked tree for such shapes; the fixture values only exist at
-# runtime inside the throwaway temp repo).
 EQ = "="
 COLON = ":"
-SQ = "'"
-DQ = '"'
 SP = " "
+DQ = '"'
+SQ = "'"
 
-# filename -> (line to write, expect "HIT" or "ALLOWED", expected pattern or None)
+VAL_A = "Sup3rS3cretV4l"
+VAL_B = "tok3nS3cret99"
+PW_URL = "P4ssw0rdX9"
+PLIST_PW = "plistS3cret1"
+ZIP_PW = "zippedS3cret"
+BIN_PW = "hunter2bin"
+YAML_PW = "root"
+SQL_PW = "sqlpass99"
+JDBC_PW = "jdbcpass7"
+FIX_PW = "fx-123456"
+
+GH = SC.GH_EXPR_PREFIX
+PK = "-----" + "BEGIN" + " RSA" + " PRIVATE" + " KEY" + "-----"
+URL = "mysql://" + "user1" + COLON + PW_URL + "@" + "db.example"
+
+XML_PLIST = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<plist version="1.0"><dict>'
+    "<key>Root" + "Password</key>"
+    "<string>" + PLIST_PW + "</string>"
+    "</dict></plist>"
+)
+
+_BIN_PLIST = plistlib.dumps({"Api" + "Token": VAL_B}, fmt=plistlib.FMT_BINARY)
+
+_BUF = io.BytesIO()
+with zipfile.ZipFile(_BUF, "w") as _z:
+    _z.writestr("config/settings.txt",
+                "dbpass" + SP + EQ + SP + DQ + ZIP_PW + DQ + "\n")
+ZIP_BYTES = _BUF.getvalue()
+
+# (case name, rel path, bytes, expectation)
+# expectation: "HIT:<pattern>" / "NONE"
 CASES = [
-    # --- positives: must HIT -------------------------------------------------
-    ("pos1_password_assign.txt", f"password{EQ}{SQ}{SECRET}{SQ}",
-     "HIT", "password_assign"),
-    ("pos2_mysql_env.txt", f"MYSQL_ROOT_PASSWORD{EQ}{SECRET}",
-     "HIT", "mysql_env_password"),
-    ("pos3_runner_env.txt", f"JDLV_TEST_MYSQL_PASS{EQ}{SECRET}",
-     "HIT", "runner_env_pass"),
-    # username carries '*' so guard-style URL char classes don't self-match
-    # while the scanner (non-space, non-colon username) still must hit
-    ("pos4_mysql_url.txt", "mysql://u*er:real-secret@db.example",
-     "HIT", "mysql_url_creds"),
-    ("pos5_jdbc.txt", "jdbc:mysql://db.example",
-     "HIT", "jdbc_mysql"),
-    ("pos6_private_key.txt", "-----BEGIN RSA PRIVATE KEY-----",
-     "HIT", "private_key_block"),
-    # --- negatives: must NOT HIT ---------------------------------------------
-    ("neg1_root_runid.yml", f"MYSQL_ROOT_PASSWORD{COLON}{SP}${{{{ github.run_id }}}}",
-     "ALLOWED", "synthetic"),
-    ("neg2_test_runid.yml", f"JDLV_TEST_MYSQL_PASS{COLON}{SP}${{{{ github.run_id }}}}",
-     "ALLOWED", "synthetic"),
-    ("neg3_empty_pw.txt", f"password{SP}={SP}{DQ}{DQ}",
-     "NONE", None),
-    ("neg4_bare_key.txt", f"password{COLON}",
-     "NONE", None),
-    ("neg5_placeholder.txt", f"password{SP}={SP}{DQ}__SET_IN_CI__{DQ}",
-     "ALLOWED", "synthetic"),
-    # other-key + run_id expression: narrow exemption must NOT cover it
-    ("neg6_other_key_runid.txt", f"JDLV_OTHER_PASS{COLON}{SP}${{{{ github.run_id }}}}",
-     "HIT", "runner_env_pass"),
-    # allowed key but different expression: must still HIT
-    ("neg7_root_other_expr.txt", f"MYSQL_ROOT_PASSWORD{COLON}{SP}${{{{ github.sha }}}}",
-     "HIT", "mysql_env_password"),
-    # quoted run_id form on an allowed key: strict exemption is unquoted only
-    ("neg8_quoted_runid.txt", f"MYSQL_ROOT_PASSWORD{COLON}{SP}{DQ}${{{{ github.run_id }}}}{DQ}",
-     "HIT", "mysql_env_password"),
+    # ---- positives: must HIT ----
+    ("pos_swift_default", "Fixture1.swift",
+     ("s.remotePass" + SP + EQ + SP + DQ + VAL_A + DQ).encode("utf-8"),
+     "HIT:assign_quoted"),
+    ("pos_url_creds", "dbconf.txt",
+     ("db" + EQ + URL).encode("utf-8"),
+     "HIT:url_credentials"),
+    ("pos_utf16le", "enc16.txt",
+     ("token" + SP + EQ + SP + DQ + VAL_B + DQ).encode("utf-16-le"),
+     "HIT:assign_quoted"),
+    ("pos_utf16be", "enc16be.txt",
+     ("passwd" + SP + EQ + SP + DQ + VAL_B + DQ).encode("utf-16-be"),
+     "HIT:assign_quoted"),
+    ("pos_xml_plist", "Info.plist", XML_PLIST.encode("utf-8"),
+     "HIT:plist_cred"),
+    ("pos_bplist", "Root.plist", _BIN_PLIST, "HIT:plist_cred"),
+    ("pos_macho_str", "PayloadBin",
+     b"\xcf\xfa\xed\xfe\x00\x01\x02\x03junk\x00"
+     + ("password" + EQ + DQ + BIN_PW + DQ).encode("utf-8") + b"\x00\x00",
+     "HIT:assign_quoted"),
+    ("pos_zip_member", "archive.ipa", ZIP_BYTES, "HIT:assign_quoted"),
+    ("pos_yaml_bare", "ci.yml",
+     ("MYSQL_ROOT_PASSWORD" + COLON + SP + YAML_PW + "\n").encode("utf-8"),
+     "HIT:assign_bare"),
+    ("pos_sql_identified", "seed.sql",
+     ("CREATE USER 'u'@'%' IDENTIFIED" + " BY " + SQ + SQL_PW + SQ).encode("utf-8"),
+     "HIT:sql_identified_by"),
+    ("pos_jdbc_param", "conf.properties",
+     ("jdbc:mysql://h/db?user=u&password" + EQ + JDBC_PW).encode("utf-8"),
+     "HIT:jdbc_url_password"),
+    ("pos_private_key", "leaked.txt",
+     (PK + "\nMIIEowIBAAKCAQ\n").encode("utf-8"),
+     "HIT:private_key_block"),
+    # ---- negatives: must NOT HIT ----
+    ("neg_empty_swift", "Fixture2.swift",
+     ("s.remotePass" + SP + EQ + SP + DQ + DQ).encode("utf-8"), "NONE"),
+    ("neg_runtime_env", "Fixture3.swift",
+     ("s.remotePass" + SP + EQ + SP +
+      "ProcessInfo.processInfo.environment[" + DQ + "X" + DQ + "]").encode("utf-8"),
+     "NONE"),
+    ("neg_github_expr", "ci2.yml",
+     ("MYSQL_ROOT_PASSWORD" + COLON + SP + GH + " github.run_id " + "}}").encode("utf-8"),
+     "NONE"),
+    ("neg_openssl", "ci3.yml",
+     ("JDLV_FIXTURE_PASS" + COLON + SP + "$(" + "openssl rand -hex 16)").encode("utf-8"),
+     "NONE"),
+    ("neg_annotation", "Fixture4.swift",
+     ("fixturePass" + SP + EQ + SP + DQ + FIX_PW + DQ + SP + "// "
+      + SC.ANNOTATION_MARKER + " structural test fixture").encode("utf-8"),
+     "NONE"),
+    ("neg_bypass_ident", "cfg.txt",
+     ("bypass" + SP + EQ + SP + DQ + "cfg-value" + DQ).encode("utf-8"), "NONE"),
+    ("neg_swift_type", "Fixture5.swift",
+     ("public var pass" + COLON + SP + "String").encode("utf-8"), "NONE"),
+    ("neg_swift_rhs_ident", "Fixture6.swift",
+     ("$0.localPass" + SP + EQ + SP + "v").encode("utf-8"), "NONE"),
+    ("neg_key_only", "keys.txt", b"remote_pass\n", "NONE"),
+    ("neg_utf16be_empty", "enc16be2.txt",
+     ("password" + SP + EQ + SP + DQ + DQ).encode("utf-16-be"), "NONE"),
+    ("neg_yaml_keyword", "ci4.yml",
+     ("PASSWORD" + COLON + SP + "String").encode("utf-8"), "NONE"),
+    ("neg_placeholder", "ci5.yml",
+     ("MYSQL_ROOT_PASSWORD" + COLON + SP + "__SET_IN_CI__").encode("utf-8"),
+     "NONE"),
 ]
 
 
-def run(cmd, **kw):
-    return subprocess.run(cmd, capture_output=True, **kw)
+def run_case(name, rel, data, expect):
+    recs = SC.scan_container(data, rel, 0, [], frozenset())
+    hits = [r for r in recs if r["label"] in ("HIT", "KNOWN-LEAK")]
+    pats = sorted(set(r["pattern"] for r in hits))
+    if expect == "NONE":
+        if hits:
+            return "FAIL: expected no HIT, got %s" % pats
+        return None
+    want_pat = expect.split(":", 1)[1]
+    if not hits:
+        return "FAIL: expected HIT %s, got none (recs=%d)" % (want_pat, len(recs))
+    if want_pat not in pats:
+        return "FAIL: expected pattern %s, got %s" % (want_pat, pats)
+    for r in hits:
+        if len(r["hash"]) != 16:
+            return "FAIL: bad hash field"
+        if r["len"] <= 0 and r["pattern"] != "plist_cred":
+            return "FAIL: bad len field"
+    return None
 
 
-def build_fixture(base):
-    os.makedirs(base, exist_ok=True)
-    for fn, line, _exp, _pat in CASES:
-        with open(os.path.join(base, fn), "w", encoding="utf-8", newline="\n") as f:
-            f.write(line + "\n")
-    # one tracked file so `git grep` has an index entry set
-    r = run(["git", "init", "-q", base])
-    if r.returncode != 0:
-        raise RuntimeError("git init failed: %s" % r.stderr.decode("utf-8", "ignore"))
-    r = run(["git", "-C", base, "add", "-A"])
-    if r.returncode != 0:
-        raise RuntimeError("git add failed: %s" % r.stderr.decode("utf-8", "ignore"))
+def check_redaction(report_text):
+    leaked = [v for v in (VAL_A, VAL_B, PW_URL, PLIST_PW, ZIP_PW, BIN_PW,
+                          SQL_PW, JDBC_PW, FIX_PW) if v in report_text]
+    return leaked
 
 
 def main():
-    tmp = tempfile.mkdtemp(prefix="scan_selftest_")
-    out_path = os.path.join(tmp, "head.txt")
     failures = []
+
+    # Part A: unit cases through scan_container
+    for name, rel, data, expect in CASES:
+        err = run_case(name, rel, data, expect)
+        if err:
+            failures.append("%s: %s" % (name, err))
+        else:
+            print("PASS %s (%s)" % (name, expect))
+
+    # Part B: end-to-end head mode in a throwaway git repo
+    tmp = tempfile.mkdtemp(prefix="scan_selftest_r6_")
+    out_path = os.path.join(tmp, "head.txt")
     try:
-        build_fixture(tmp)
-        r = run([sys.executable, "-I", SCANNER,
-                 "--root", tmp, "--mode", "head", "--out", out_path])
+        os.makedirs(os.path.join(tmp, "sub"), exist_ok=True)
+        fixtures = [
+            ("app_swift.swift",
+             "s.remotePass" + SP + EQ + SP + DQ + VAL_A + DQ + "\n"),
+            ("pipeline.yml",
+             "MYSQL_ROOT_PASSWORD" + COLON + SP + YAML_PW + "\n"),
+            ("clean_swift.swift",
+             "s.remotePass" + SP + EQ + SP + DQ + DQ + "\n"),
+        ]
+        for fn, line in fixtures:
+            with open(os.path.join(tmp, fn), "w", encoding="utf-8",
+                      newline="\n") as f:
+                f.write(line)
+        for args in (["init", "-q"], ["add", "-A"]):
+            r = subprocess.run(["git", "-C", tmp] + args, capture_output=True)
+            if r.returncode != 0:
+                failures.append("git %s failed: %s" % (args[0], r.stderr.decode("utf-8", "ignore")))
+        r = subprocess.run([sys.executable, "-I", SCANNER_PATH,
+                            "--root", tmp, "--mode", "head",
+                            "--out", out_path], capture_output=True)
         if r.returncode != 0:
-            print("FAIL: scanner exited %d\n%s" % (r.returncode,
-                                                   r.stderr.decode("utf-8", "ignore")))
-            return 1
-        with open(out_path, encoding="utf-8") as f:
-            report = f.read()
-
-        for fn, _line, expect, pat in CASES:
-            hit_lines = [ln for ln in report.splitlines()
-                         if ln.startswith("HIT ") and "path=%s " % fn in ln]
-            allow_lines = [ln for ln in report.splitlines()
-                           if ln.startswith("ALLOWED ") and "path=%s " % fn in ln
-                           and "(allowlist)" not in ln]
-            if expect == "HIT":
-                got_pats = [ln.split("pattern=")[1].split(" ")[0]
-                            for ln in hit_lines if "pattern=" in ln]
-                if pat not in got_pats:
-                    failures.append("%s: expected HIT pattern=%s, got %r"
-                                    % (fn, pat, hit_lines + allow_lines))
-                else:
-                    print("PASS  HIT   %-26s %s" % (fn, pat))
-            elif expect == "ALLOWED":
-                if hit_lines or not allow_lines:
-                    failures.append("%s: expected ALLOWED(synthetic), got hits=%r allowed=%r"
-                                    % (fn, hit_lines, allow_lines))
-                else:
-                    print("PASS  ALLOW %-26s %s" % (fn, allow_lines[0].split("pattern=")[1]))
-            else:  # NONE
-                if hit_lines or allow_lines:
-                    failures.append("%s: expected no record, got %r"
-                                    % (fn, hit_lines + allow_lines))
-                else:
-                    print("PASS  NONE  %-26s" % fn)
-
-        # allowlist must stay inert here: no file-specific exemptions in fixture
-        if "(allowlist)" in report:
-            print("note: allowlist records present in fixture report (unexpected paths)")
+            failures.append("scanner exited %d: %s" % (
+                r.returncode, r.stderr.decode("utf-8", "ignore")[:400]))
+        else:
+            with open(out_path, encoding="utf-8") as f:
+                report = f.read()
+            hit_paths = set()
+            for ln in report.splitlines():
+                if ln.startswith("HIT ") or ln.startswith("KNOWN-LEAK "):
+                    for tok in ln.split(" "):
+                        if tok.startswith("path="):
+                            hit_paths.add(tok[5:])
+            if "app_swift.swift" not in hit_paths:
+                failures.append("head-mode: missing HIT for app_swift.swift")
+            if "pipeline.yml" not in hit_paths:
+                failures.append("head-mode: missing HIT for pipeline.yml")
+            if "clean_swift.swift" in hit_paths:
+                failures.append("head-mode: unexpected HIT for clean_swift.swift")
+            if not any(ln.startswith("SUMMARY mode=head ") for ln in report.splitlines()):
+                failures.append("head-mode: SUMMARY line missing")
+            leaked = check_redaction(report)
+            if leaked:
+                failures.append("head-mode: report leaked %d raw value(s)" % len(leaked))
+        if not failures:
+            print("PASS head-mode end-to-end (hits redacted, summary present)")
     finally:
+        import shutil
         shutil.rmtree(tmp, ignore_errors=True)
 
-    print("-" * 60)
+    # Part C: allowlist mechanism (structural rule on line content)
+    alw_path = os.path.join(tempfile.mkdtemp(prefix="scan_alw_r6_"), "alw.txt")
+    with open(alw_path, "w", encoding="utf-8") as f:
+        f.write("FIXTURE_R6_VAL_B  # reason: synthetic variable name, not a value\n")
+    rules = SC.load_allowlist(alw_path)
+    rec = SC.make_rec("x.txt", "utf-8", 1, 0, "assign_quoted", "whatever",
+                      rules, frozenset(),
+                      line_text="FIXTURE_R6_VAL_B" + SP + EQ + SP + DQ + "whatever" + DQ)
+    if rec["label"] != "ALLOWED":
+        failures.append("allowlist: expected ALLOWED, got %s" % rec["label"])
+    else:
+        print("PASS allowlist structural rule")
+
     if failures:
+        print("FAILURES: %d" % len(failures))
         for f in failures:
-            print("FAIL  %s" % f)
-        print("RESULT: FAIL (%d/%d cases failed)" % (len(failures), len(CASES)))
+            print("  " + f)
         return 1
-    print("RESULT: PASS (%d/%d cases)" % (len(CASES), len(CASES)))
+    print("ALL SELF-TESTS PASS (%d cases)" % len(CASES))
     return 0
 
 

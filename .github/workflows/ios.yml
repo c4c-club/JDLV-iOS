@@ -26,37 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: repo hygiene guard
-        # R10/C5/C9：与 scripts/guard_repo.sh 共用同一段逻辑（原样复制，禁止两处各写一套）。
-        # 统一强模式：只认「引号包裹的口令字面量」；显式判空（不用 `! grep … | grep -q .` 假绿）。
-        # CI checkout 无 docs/，`if [ -d docs ]` 自动跳过本地分支；`git ls-files docs` 恒为 0。
-        run: |
-          set -euo pipefail
-          PAT="(PASSWORD|PASS|password|store[P]assword|key[P]assword)[[:space:]]*[:=][[:space:]]*[\"']"
-          DOC_RE='(^|/)(README|CHANGELOG|LICENSE)|\.(md|txt|kt|gradle.*)$|(^|/)docs/'
-          doc_hits=$(git ls-files | grep -Ei "$DOC_RE" | grep -vE '^scripts/secret_allowlist\.txt$' || true)
-          [ -z "$doc_hits" ] || { echo 'guard FAIL: tracked doc files'; echo "$doc_hits"; exit 1; }
-          [ "$(git ls-files docs | wc -l)" -eq 0 ] || { echo 'guard FAIL: docs tracked'; exit 1; }
-          android_hits=$(git ls-files | grep -E 'JDLV-Mobile/app/sr[c]' || true)
-          [ -z "$android_hits" ] || { echo 'guard FAIL: Android sources'; echo "$android_hits"; exit 1; }
-          BENIGN="MYSQL_ALLOW_EMPTY_PASSWORD|PASS[A-Z_]*[[:space:]]*[:=][[:space:]]*\"\"|PASS[A-Z_]*[[:space:]]*=[[:space:]]*[\"']\\$\(openssl rand"
-          cred_hits=$(git grep -InE "$PAT" -- . | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
-          [ -z "$cred_hits" ] || { echo 'guard FAIL: credential literals in tracked tree'; echo "$cred_hits"; exit 1; }
-          # R4 强模式 2：值形态凭据（排除 $VAR 引用 / 空串 / ALLOW_EMPTY 开关；
-          #  mysql URL 限定常见用户名字符，规避扫描器源码自匹配）
-          RPAT="(IDENTIFIED[[:space:]]+.*BY[[:space:]]*[\"'][^\"'\$]|[A-Z_]*PASSWORD[[:space:]]*[:=][[:space:]]*[\"'][^\"'\$]|TEST_RUNNER_[A-Z_]*PASS[A-Z_]*[[:space:]]*[:=][[:space:]]*[\"'][^\"'\$]|mysql://[A-Za-z0-9._%~+-]+:[^[:space:]@]+@)"
-          rcred_hits=$(git grep -InE "$RPAT" -- . | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
-          [ -z "$rcred_hits" ] || { echo 'guard FAIL: credential value literals in tracked tree'; echo "$rcred_hits"; exit 1; }
-          if [ -d docs ]; then
-            doccred=$(grep -rInE "$PAT" docs --exclude-dir=07_证据 2>/dev/null | grep -vE "$BENIGN" | cut -d: -f1 | sort -u || true)
-            [ -z "$doccred" ] || { echo 'guard FAIL: credential literals in local docs/'; echo "$doccred"; exit 1; }
-            git check-ignore -q docs/ || { echo 'guard FAIL: docs/ not gitignored'; exit 1; }
-          fi
-          grep -q 'MARKETING_VERSION: 1.6.1' project.yml || { echo 'guard FAIL: version'; exit 1; }
-          # R3 门禁：键盘 API 审计（问题 1 —— asciiCapable/inputView/UIKeyInput 禁用）
-          kb_hits=$(grep -R -E "asciiCapable|inputView|UIKeyInput" JDLV --include='*.swift' || true)
-          [ -z "$kb_hits" ] || { echo 'guard FAIL: banned keyboard API (issue 1 audit)'; echo "$kb_hits"; exit 1; }
-          echo 'keyboard audit: 0 hits'
-          echo 'guard OK'
+        # R6：唯一实现是 scripts/guard_repo.sh（凭据扫描走 scan_repo_secrets.py +
+        # secret_classification.txt 哈希分类门禁；本处不再内联复制逻辑，防两处漂移）。
+        run: bash scripts/guard_repo.sh
 
   core-linux:
     runs-on: ubuntu-latest
@@ -109,6 +81,9 @@ jobs:
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
+        with:
+          # R6：完整历史 → derive_known_hashes.py 运行时从历史对象派生已知泄露值
+          fetch-depth: 0
 
       - name: Resolve simulator destination
         run: |
@@ -316,7 +291,19 @@ jobs:
           otool -l Payload/JDLV.app/JDLV | grep 'minos 16.0'
 
       - name: Verify IPA (security gate)
-        run: bash scripts/verify_ipa.sh JDLV-unsigned.ipa
+        env:
+          JDLV_KNOWN_SECRETS_B64: ${{ secrets.JDLV_KNOWN_SECRETS_B64 || '' }}
+        run: |
+          set -eo pipefail
+          EXTRA=()
+          if [ -n "$JDLV_KNOWN_SECRETS_B64" ]; then
+            printf '%s' "$JDLV_KNOWN_SECRETS_B64" | base64 -d > /tmp/user-known.values
+            EXTRA=(--extra-values /tmp/user-known.values)
+          fi
+          # R6 fail-closed：已知泄露值从 git 历史运行时派生（值不落 repo、不打印）；
+          # 无已知清单时 verify_ipa.py 判 PASS-INCOMPLETE，本步失败，绝不 skipped=PASS。
+          python3 scripts/derive_known_hashes.py --root . --values-out /tmp/known.values --hashes-out /tmp/known.sha256 "${EXTRA[@]}"
+          bash scripts/verify_ipa.sh JDLV-unsigned.ipa --known-values /tmp/known.values --known-hashes /tmp/known.sha256
 
       - name: Upload simulator zip
         uses: actions/upload-artifact@v4
@@ -357,12 +344,11 @@ jobs:
           if-no-files-found: ignore
 
   security:
-    # R4 Phase 2：历史凭据扫描门（PR + tag + dispatch；release needs 闭环）。
-    # 分类结论（docs/20_证据_R4 security/history-classification.md）：历史命中全部是
-    # .github/workflows/ios.yml 的历史版本（CI 合成值 root/jdlv_it，非生产、不可达，HEAD 已清零）。
-    # 门禁规则：HIT 路径只能是 ios.yml 历史版本；出现其它路径 → FAIL。
-    # R5 Phase 1：workflow_dispatch 纳入触发（发布前演练）；新增 head 模式扫描门
-    # （当前 HEAD 必须 0 命中；run_id 表达式等合成形态由扫描器记 ALLOWED，不计 HIT）。
+    # R6：凭据扫描门（PR + tag + dispatch；release needs 闭环）。
+    # 口径：扫描器只做结构性豁免（allowlist 仅结构性引用、无路径豁免）；
+    # 非结构性命中一律按值哈希在 scripts/secret_classification.txt 分类，
+    # 类别集合不含 production —— 真实生产值必须轮换/清除，不得豁免；
+    # 未分类命中 → FAIL（新增硬编码口令必然破 CI，直到人工分类）。
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -372,27 +358,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: head secret scan (working tree, must be 0)
+      - name: head secret scan
         run: python3 scripts/scan_repo_secrets.py --root . --mode head --out /tmp/head.txt
-      - name: gate head scan
-        run: |
-          set -euo pipefail
-          HITS=$(grep -c '^HIT' /tmp/head.txt || true)
-          echo "head hits: $HITS"
-          [ "$HITS" = "0" ] || { echo 'security FAIL: working-tree secret hits'; cat /tmp/head.txt; exit 1; }
-          echo 'security OK (head clean)'
+      - name: head classification gate (hash-based manifest)
+        run: python3 scripts/check_hits_manifest.py --report /tmp/head.txt --manifest scripts/secret_classification.txt
       - name: scanner self-tests (positive/negative fixtures)
         run: python3 -I scripts/test_scan_repo_secrets.py
-      - name: history secret scan (strong value patterns)
+      - name: history secret scan
         run: python3 scripts/scan_repo_secrets.py --root . --mode history --out /tmp/history.txt
-      - name: classify and gate
-        run: |
-          set -euo pipefail
-          HITS=$(grep -c '^HIT' /tmp/history.txt || true)
-          echo "history hits: $HITS"
-          OTHER=$(grep '^HIT' /tmp/history.txt | grep -v 'path=\.github/workflows/ios\.yml' || true)
-          [ -z "$OTHER" ] || { echo 'security FAIL: unclassified history hits'; echo "$OTHER"; exit 1; }
-          echo 'security OK (all history hits are classified ios.yml historical blobs)'
+      - name: history classification gate (hash-based manifest)
+        run: python3 scripts/check_hits_manifest.py --report /tmp/history.txt --manifest scripts/secret_classification.txt
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -404,6 +379,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: JDLV-unsigned-ipa
@@ -413,7 +390,17 @@ jobs:
           name: JDLV-Simulator-app-zip
           path: dist
       - name: Re-verify IPA (security gate)
-        run: bash scripts/verify_ipa.sh dist/JDLV-unsigned.ipa
+        env:
+          JDLV_KNOWN_SECRETS_B64: ${{ secrets.JDLV_KNOWN_SECRETS_B64 || '' }}
+        run: |
+          set -eo pipefail
+          EXTRA=()
+          if [ -n "$JDLV_KNOWN_SECRETS_B64" ]; then
+            printf '%s' "$JDLV_KNOWN_SECRETS_B64" | base64 -d > /tmp/user-known.values
+            EXTRA=(--extra-values /tmp/user-known.values)
+          fi
+          python3 scripts/derive_known_hashes.py --root . --values-out /tmp/known.values --hashes-out /tmp/known.sha256 "${EXTRA[@]}"
+          bash scripts/verify_ipa.sh dist/JDLV-unsigned.ipa --known-values /tmp/known.values --known-hashes /tmp/known.sha256
       - name: Checksums + GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
