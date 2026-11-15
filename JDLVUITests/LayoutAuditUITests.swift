@@ -157,9 +157,13 @@ final class LayoutAuditUITests: XCTestCase {
 
     /// 分组断言：同 minY 行（±1）内等宽/等高/minY；相邻卡间距 spacing ±1；无重叠；
     /// allowOffscreen=true 时跳过出屏检查（横滑首卡被视口裁切属正常）。
+    /// R6 PHASE3：checkFullWidth=true 时断言行内容满宽（左缘 ≈ 边距、右缘 ≈ 屏宽-边距）——
+    /// 防「容器宽实测失效恒走 320 兜底」回归（该缺陷在 R5 CI 全绿下漏网）。
     private func audit(_ app: XCUIApplication, page: String, prefix: String,
                        columns: Int, spacing: CGFloat, checkScroll: Bool,
-                       allowOffscreen: Bool = false) {
+                       allowOffscreen: Bool = false,
+                       checkFullWidth: Bool = false,
+                       fullWidthMargin: CGFloat = 16) {
         pagesAudited.append(page)
         var cards = collect(app, prefix: prefix)
         let isFallback = cards.contains { $0.0.contains("demo_") }
@@ -214,6 +218,20 @@ final class LayoutAuditUITests: XCTestCase {
                 if c.1.minX < -1.5 || c.1.maxX > screen.width + 1.5 {
                     addViolation(page, c.0, "out of screen (h): \(c.1)")
                 }
+            }
+        }
+        if checkFullWidth && !isFallback {
+            // R6 PHASE3：满宽断言（容差 3pt：3x 取整 + XCUI frame 损耗）。
+            // 320 兜底回归时右缘会停在 ~304（402pt 屏）→ 本断言必挂。
+            let minX = cards.map { $0.1.minX }.min() ?? 0
+            let maxX = cards.map { $0.1.maxX }.max() ?? 0
+            if abs(minX - fullWidthMargin) > 3 {
+                addViolation(page, prefix,
+                             "grid left edge \(minX) != margin \(fullWidthMargin)±3")
+            }
+            if abs(maxX - (screen.width - fullWidthMargin)) > 3 {
+                addViolation(page, prefix,
+                             "grid right edge \(maxX) != \(screen.width - fullWidthMargin)±3 —— 右侧空白（容器宽未生效）")
             }
         }
         if checkScroll, cards.count >= 2 {
@@ -280,13 +298,15 @@ final class LayoutAuditUITests: XCTestCase {
         openTab(app, "browse")
         waitFirstCard(app, page: "browse", prefix: "card_browse_")
         Thread.sleep(forTimeInterval: 1.0)
-        audit(app, page: "browse", prefix: "card_browse_", columns: 2, spacing: 12, checkScroll: true)
+        audit(app, page: "browse", prefix: "card_browse_", columns: 2, spacing: 12,
+              checkScroll: true, checkFullWidth: true)
 
         // 3) 女优（3 列）
         openTab(app, "actors")
         waitFirstCard(app, page: "actors", prefix: "card_actors_")
         Thread.sleep(forTimeInterval: 1.0)
-        audit(app, page: "actors", prefix: "card_actors_", columns: 3, spacing: 12, checkScroll: true)
+        audit(app, page: "actors", prefix: "card_actors_", columns: 3, spacing: 12,
+              checkScroll: true, checkFullWidth: true)
 
         // 4) 98t（2 列；6 tab 常驻 → 启动时一次 bind 可能竞态失败：重启 app 重试）
         openTab(app, "sht")
@@ -300,14 +320,16 @@ final class LayoutAuditUITests: XCTestCase {
                         timeout: 25)
         }
         Thread.sleep(forTimeInterval: 1.0)
-        audit(app, page: "sht", prefix: "shtcard_", columns: 2, spacing: 12, checkScroll: true)
+        audit(app, page: "sht", prefix: "shtcard_", columns: 2, spacing: 12,
+              checkScroll: true, checkFullWidth: true)
 
         // 5) 资讯（1 列行卡 96）
         openTab(app, "search")
         _ = tapIfExist(app.buttons["entry_articles"])
         waitFirstCard(app, page: "articles", prefix: "article_card")
         Thread.sleep(forTimeInterval: 1.0)
-        audit(app, page: "articles", prefix: "article_card", columns: 1, spacing: 10, checkScroll: true)
+        audit(app, page: "articles", prefix: "article_card", columns: 1, spacing: 10,
+              checkScroll: true, checkFullWidth: true)
         navBack(app)
 
         // 6) 热评（1 列行卡）
@@ -315,7 +337,8 @@ final class LayoutAuditUITests: XCTestCase {
         _ = tapIfExist(app.buttons["entry_hotreviews"])
         waitFirstCard(app, page: "hot-reviews", prefix: "hot_review_row")
         Thread.sleep(forTimeInterval: 1.0)
-        audit(app, page: "hot-reviews", prefix: "hot_review_row", columns: 1, spacing: 8, checkScroll: true)
+        audit(app, page: "hot-reviews", prefix: "hot_review_row", columns: 1, spacing: 8,
+              checkScroll: true, checkFullWidth: true, fullWidthMargin: 10)
         navBack(app)
 
         // 7) TOP250（push 页；CI demo 环境入口偶发不可达 —— blocker B1：

@@ -22,14 +22,6 @@ struct HomeView: View {
     @EnvironmentObject private var services: AppServices
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
-    @Environment(\.containerWidth) private var envWidth
-    // R4 P3：实测容器宽度（PageScaffold 发 preference，首帧后即真实值；320/402pt 不再走 393 兜底）
-    @State private var measuredWidth: CGFloat = 0
-
-    /// 容器宽（PageScaffold 注入；首帧回退 size class 估算）
-    private var pageWidth: CGFloat {
-        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
-    }
 
     @StateObject private var vm: SearchVM
     // R4 P13：历史随 store.defaults suite 隔离（onAppear 首载，不用 .standard）
@@ -139,13 +131,16 @@ struct HomeView: View {
                     .padding(.vertical, 4)
             }
             if resultVisible {
-                resultSection
+                ContainerWidthReader { w in
+                    resultSection(pageWidth: w)
+                }
             } else if vm.home != nil {
-                homeSections
+                ContainerWidthReader { w in
+                    homeSections(pageWidth: w)
+                }
             }
         }
         .accessibilityIdentifier("home_page")
-        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
     }
 
     // MARK: 顶部块（随列表滚动，C2）
@@ -215,18 +210,19 @@ struct HomeView: View {
 
     // MARK: 首页三段（C4：SectionHeader + 横滑卡片流 160×289；大图模式平铺 CardGrid）
 
-    private var homeSections: some View {
+    /// R6 PHASE3：容器宽由 ContainerWidthReader 在 content 子树内实测后传入。
+    private func homeSections(pageWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
             homeSection(key: "recent", title: SearchCopy.sectionRecent,
-                        rows: vm.home?.recent ?? []) {
+                        rows: vm.home?.recent ?? [], pageWidth: pageWidth) {
                 pushLookup(label: "最近更新", sort: "release_date")
             }
             homeSection(key: "hot", title: SearchCopy.sectionHot,
-                        rows: vm.home?.hot ?? []) {
+                        rows: vm.home?.hot ?? [], pageWidth: pageWidth) {
                 pushLookup(label: "最多想看", sort: "want_watch_count")
             }
             homeSection(key: "top", title: SearchCopy.sectionTop,
-                        rows: vm.home?.top ?? []) {
+                        rows: vm.home?.top ?? [], pageWidth: pageWidth) {
                 router.push(.top250)
             }
             Spacer().frame(height: 8)   // home_tail
@@ -235,6 +231,7 @@ struct HomeView: View {
 
     @ViewBuilder
     private func homeSection(key: String, title: String, rows: [Row],
+                             pageWidth: CGFloat,
                              onViewAll: @escaping () -> Void) -> some View {
         VStack(spacing: 0) {
             SectionHeader(title: title, actionTitle: SearchCopy.viewAll,
@@ -248,7 +245,8 @@ struct HomeView: View {
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if vm.viewMode == 1 {
-                sectionGrid(rows: rows, keyPrefix: key, onViewAll: onViewAll)
+                sectionGrid(rows: rows, keyPrefix: key, pageWidth: pageWidth,
+                            onViewAll: onViewAll)
             } else {
                 sectionHScroll(rows: rows, keyPrefix: key, onViewAll: onViewAll)
             }
@@ -279,8 +277,9 @@ struct HomeView: View {
         }
     }
 
-    /// 大图模式（viewMode==1）：每段影片 CardGrid 平铺（C4；1 列大图 16:9+86）
-    private func sectionGrid(rows: [Row], keyPrefix: String,
+    /// 大图模式（viewMode==1）：每段影片 CardGrid 平铺（C4；1 列大图 16:9+86）。
+    /// R6 PHASE3：容器宽由 ContainerWidthReader 在 content 子树内实测后传入。
+    private func sectionGrid(rows: [Row], keyPrefix: String, pageWidth: CGFloat,
                              onViewAll: @escaping () -> Void) -> some View {
         let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: 1)
         // R4 P4：索引对一次性构造，不在 body 闭包里反复下标
@@ -312,8 +311,9 @@ struct HomeView: View {
         (vm.viewMode == 1 || vm.viewMode == 2) ? 1 : (hSize == .regular ? 3 : 2)
     }
 
+    /// R6 PHASE3：容器宽由 ContainerWidthReader 在 content 子树内实测后传入。
     @ViewBuilder
-    private var resultSection: some View {
+    private func resultSection(pageWidth: CGFloat) -> some View {
         let items = vm.items ?? []
         if items.isEmpty {
             // 结果空：Box(height 360) EmptyBox（弯引号原样 + 半角逗号 hint）

@@ -42,6 +42,9 @@ final class ShtVMTests: XCTestCase {
         private(set) var exportCalls = 0
         var exportRows: [Row] = []
         var exportError: Error? = nil
+        // R6 PHASE3：分类兜底测试注入点
+        var catsError: Error? = nil
+        var catsEmpty = false
 
         func shtBrowse(
             main: String, cat: String, type: String, q: String, hasMagnet: Bool,
@@ -75,6 +78,12 @@ final class ShtVMTests: XCTestCase {
             events.append("cats")
             catCalls += 1
             if catForceCalls == 0 && catCalls > 0 { catForceCalls = catCalls }
+            if let e = catsError { throw e }
+            if catsEmpty {
+                return ["categories": [Row](), "mains": [Row](), "subs": [Row](),
+                        "types": [Row](), "total": Int64(0), "approx": true,
+                        "ts": Int64(1_730_000_000_000)]
+            }
             return [
                 "categories": [Row](),
                 "mains": [Row(["name": .string("有码中文字幕"), "c": .int(64)])],
@@ -459,6 +468,55 @@ final class ShtVMTests: XCTestCase {
         XCTAssertEqual(src.catCalls, 1)   // 命中缓存
         await vm.loadCats(force: true)
         XCTAssertEqual(src.catCalls, 2)   // force 直接远程
+    }
+
+    // MARK: R6 PHASE3：主版筛选静态兜底 + 离线也加载分类
+
+    @MainActor
+    func testLoadCatsFallsBackToStaticBoardsWhenRemoteThrows() async {
+        let src = MockShtSource()
+        src.catsError = FetchFailure("db down")
+        let vm = makeVM(src)
+        await vm.loadCats(force: false)
+        XCTAssertEqual(vm.catSource, "fallback")
+        XCTAssertEqual(vm.mains.map { $0.s("name") },
+                       ShtVM.FALLBACK_MAINS.map { $0.s("name") },
+                       "远程失败也必须有主版选项（静态兜底）")
+        XCTAssertTrue(vm.subs.isEmpty && vm.types.isEmpty)
+    }
+
+    @MainActor
+    func testLoadCatsFallsBackWhenRemoteReturnsEmptyMains() async {
+        let src = MockShtSource()
+        src.catsEmpty = true
+        let vm = makeVM(src)
+        await vm.loadCats(force: false)
+        XCTAssertEqual(vm.catSource, "fallback")
+        XCTAssertFalse(vm.mains.isEmpty)
+        // 兜底不写缓存：再次加载仍打远程（远端恢复即覆盖静态）
+        await vm.loadCats(force: false)
+        XCTAssertEqual(src.catCalls, 2)
+    }
+
+    @MainActor
+    func testRemoteCatsOverrideFallbackSource() async {
+        let src = MockShtSource()
+        let vm = makeVM(src)
+        await vm.loadCats(force: false)
+        XCTAssertEqual(vm.catSource, "remote")
+        XCTAssertEqual(vm.mains.first?.i("c"), 64)
+    }
+
+    @MainActor
+    func testBindLoadsCatsEvenWhenListFails() async {
+        let src = MockShtSource()
+        src.errors = [FetchFailure("offline")]
+        let vm = makeVM(src)
+        await vm.bind(dataEpoch: 0)
+        XCTAssertNil(vm.items, "首屏失败（离线场景）")
+        XCTAssertEqual(src.catCalls, 1, "R6：分类加载不再以首屏成功为前提")
+        XCTAssertEqual(vm.catSource, "fallback")
+        XCTAssertFalse(vm.mains.isEmpty, "离线状态下主版筛选也有选项")
     }
 
     // MARK: 首屏异步计数（A.4：Q.shtBrowseCount）

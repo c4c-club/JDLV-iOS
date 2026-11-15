@@ -17,9 +17,6 @@ struct ActorsView: View {
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
-    @Environment(\.containerWidth) private var envWidth
-    // R4 P3：实测容器宽度（PageScaffold 发 preference；320/402pt 不再走 393 兜底）
-    @State private var measuredWidth: CGFloat = 0
 
     @StateObject private var vm: ActorsVM
     @State private var searchText = ""
@@ -30,9 +27,6 @@ struct ActorsView: View {
     }
 
     private var items: [Row] { vm.items ?? [] }
-    private var pageWidth: CGFloat {
-        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
-    }
 
     var body: some View {
         PageScaffold(
@@ -55,7 +49,9 @@ struct ActorsView: View {
         ) {
             actorsHeader
             if !items.isEmpty {
-                grid
+                ContainerWidthReader { w in
+                    grid(pageWidth: w)
+                }
             }
         }
         .navigationTitle("女优")
@@ -74,7 +70,6 @@ struct ActorsView: View {
         }
         // R6 PHASE2：不再订阅 store.$dataEpoch 自动刷新。
         .accessibilityIdentifier("tab_root_actors")
-        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
     }
 
     // MARK: toolbar（性别/排序 iOS 原生 Menu）
@@ -131,7 +126,8 @@ struct ActorsView: View {
 
     // MARK: 3 列网格（CardGrid 等宽等高；ActorCard 点击 → nav("actor/{id}")）
 
-    private var grid: some View {
+    /// R6 PHASE3：容器宽由 ContainerWidthReader 在 content 子树内实测后传入。
+    private func grid(pageWidth: CGFloat) -> some View {
         let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: 3)
         return CardGrid(items: items.indices.map { ($0, items[$0]) },
                         columns: 3, cellWidth: cellW,

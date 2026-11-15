@@ -44,9 +44,6 @@ private struct ShtContent: View {
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
-    @Environment(\.containerWidth) private var envWidth
-    // R4 P3：实测容器宽度（PageScaffold 发 preference；320/402pt 不再走 393 兜底）
-    @State private var measuredWidth: CGFloat = 0
 
     @State private var showFilter = false
     @State private var exportShare: ShtExportResult? = nil
@@ -55,15 +52,13 @@ private struct ShtContent: View {
 
     private var items: [Row] { vm.items ?? [] }
     private var itemsEmpty: Bool { items.isEmpty }
-    private var pageWidth: CGFloat {
-        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
-    }
 
-    /// 列数：viewMode 1(大图) → 1 列；0(小图) → 手机 2 列、最短边 ≥600（或 regular）3 列
-    private var gridColumns: Int {
+    /// 列数：viewMode 1(大图) → 1 列；0(小图) → 手机 2 列、容器宽 ≥600（或 regular）3 列。
+    /// R6 PHASE3：容器宽由 ContainerWidthReader 在 content 子树内实测后传入
+    ///（并删除 UIScreen.main.bounds 口径 —— 与 BrowseView 统一，分屏/横竖屏不失真）。
+    private func gridColumns(_ pageWidth: CGFloat) -> Int {
         if vm.viewMode != 0 { return 1 }
-        let short = min(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
-        return (short >= 600 || hSize == .regular) ? 3 : 2
+        return (pageWidth >= 600 || hSize == .regular) ? 3 : 2
     }
 
     /// footer note（C6）：derived 标注 +（updated 且 derived 未含「2 万」时追加）
@@ -93,7 +88,7 @@ private struct ShtContent: View {
             error: vm.error,
             onRetry: { Task { await vm.reload() } },
             emptyText: "远程 sehuatang 库暂无数据 (需抓取端上传或开启 mirror)",
-            skeletonColumns: gridColumns,
+            skeletonColumns: vm.viewMode == 0 ? 2 : 1,
             loadMore: LoadMoreConfig(
                 loaded: items.count, total: vm.total, loadingMore: vm.loadingMore,
                 approx: true, note: footerNote, hasMore: vm.hasMore,
@@ -107,7 +102,9 @@ private struct ShtContent: View {
         ) {
             searchBar
             if !itemsEmpty {
-                grid
+                ContainerWidthReader { w in
+                    grid(pageWidth: w)
+                }
             }
         }
         .navigationTitle("98t")
@@ -134,7 +131,6 @@ private struct ShtContent: View {
             vm.refreshChannel.consume()
         }
         .accessibilityIdentifier("sht_page")
-        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
     }
 
     // MARK: toolbar（排序/视图 Menu + 筛选 badge + 导出）
@@ -215,8 +211,9 @@ private struct ShtContent: View {
 
     // MARK: 网格（CardGrid 等宽等高；卡片 key = tid；触底加载：倒数 3 项）
 
-    private var grid: some View {
-        let cols = gridColumns
+    /// R6 PHASE3：容器宽由 ContainerWidthReader 在 content 子树内实测后传入。
+    private func grid(pageWidth: CGFloat) -> some View {
+        let cols = gridColumns(pageWidth)
         let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: cols)
         let cardH = vm.viewMode == 1
             ? CardLayout.shtLargeH(cellW: cellW)
@@ -268,24 +265,36 @@ private struct ShtFilterSheet: View {
             Form {
                 Section("分类索引") {
                     HStack(spacing: 8) {
-                        Text(vm.catTs > 0
-                             ? "远程库 · 更新于 \(Fmt.fmtTime(vm.catTs))"   // 全角冒号
-                             : "远程库")
+                        // R6 PHASE3：来源可见（远程/静态兜底）+ 加载中进度
+                        Text(vm.catSource == "fallback"
+                             ? "静态兜底版区 · 远程未返回（可刷新重试）"
+                             : (vm.catTs > 0
+                                ? "远程库 · 更新于 \(Fmt.fmtTime(vm.catTs))"   // 全角冒号
+                                : "远程库"))
                             .font(.system(size: 13))
                             .foregroundColor(.secondary)
                         Spacer(minLength: 0)
-                        Button("刷新分类") {
-                            Task { await vm.loadCats(force: true) }
+                        if vm.catLoading {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .frame(width: 16, height: 16)
+                        } else {
+                            Button("刷新分类") {
+                                Task { await vm.loadCats(force: true) }
+                            }
+                            .font(.system(size: 13))
+                            .accessibilityIdentifier("sht_refresh_cats")
                         }
-                        .font(.system(size: 13))
-                        .accessibilityIdentifier("sht_refresh_cats")
                     }
                 }
                 Section("版区") {
                     Picker("主版", selection: mainBinding) {
                         Text("全部").tag("")
                         ForEach(vm.mains.indices, id: \.self) { i in
-                            Text("\(vm.mains[i].s("name")) (\(vm.mains[i].i("c")))")
+                            // R6 PHASE3：静态兜底行无远程计数（c=0）→ 只显示版区名
+                            Text(vm.mains[i].i("c") > 0
+                                 ? "\(vm.mains[i].s("name")) (\(vm.mains[i].i("c")))"
+                                 : vm.mains[i].s("name"))
                                 .tag(vm.mains[i].s("name"))
                         }
                     }

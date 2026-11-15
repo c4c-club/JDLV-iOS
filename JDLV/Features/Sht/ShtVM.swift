@@ -308,6 +308,10 @@ final class ShtVM: ObservableObject {
     @Published var subs: [Row] = []
     @Published var types: [Row] = []
     @Published var catTs: Int64 = 0
+    /// R6 PHASE3：分类加载中（筛选 sheet 显示进度）
+    @Published private(set) var catLoading = false
+    /// R6 PHASE3：分类来源 "remote" / "fallback"（空串 = 未加载）
+    @Published private(set) var catSource = ""
     @Published var readIds: Set<String> = []
     @Published var favIds: Set<String> = []
     @Published var derived = ""
@@ -428,13 +432,11 @@ final class ShtVM: ObservableObject {
         boundOnce = true
         syncFromSettings()
         await reload()
-        // 分类延后（S11-P6）：首屏落地（items != nil）后 ≥200ms 再 loadCats(false)，
-        // 避免与首屏并发抢连接 —— 简化 Android「轮询 items!=nil 最多 3000ms（150ms 步进）
-        // + delay 200ms」为固定 200ms 延迟（iOS bind 同步 await reload，返回即已落地）。
-        if items != nil {
-            try? await Task.sleep(nanoseconds: catsDelayMs * 1_000_000)
-            await loadCats(force: false)
-        }
+        // 分类延后（S11-P6）：≥200ms 再 loadCats(false)，避免与首屏并发抢连接。
+        // R6 PHASE3：不再以首屏成功为前提 —— 离线/远程空库时同样加载分类
+        //（loadCats 失败走静态兜底），保证主版筛选任何状态下都有选项。
+        try? await Task.sleep(nanoseconds: catsDelayMs * 1_000_000)
+        await loadCats(force: false)
     }
 
     /// 设置回读（viewMode/shtHasMagnet/shtPer；store 未注入 → 静默跳过）
@@ -718,8 +720,12 @@ final class ShtVM: ObservableObject {
 
     // MARK: 分类索引（C8：24h 缓存）
 
-    /// 链路：非 force → get(24h) → stale → Q.shtCategories() + put；force 直接远程
+    /// 链路：非 force → get(24h) → stale → Q.shtCategories() + put；force 直接远程。
+    /// R6 PHASE3：远程失败或返回空 mains → 静态兜底（主版筛选不再出现「无选项」）；
+    /// 兜底结果不写缓存（下次仍重试远程，远端成功恒覆盖静态）。
     func loadCats(force: Bool) async {
+        catLoading = true
+        defer { catLoading = false }
         if !force, let hit = cache.get(Self.CAT_KEY, ttlMinutes: Self.CAT_TTL_MINUTES) {
             applyCats(hit)
             return
@@ -730,18 +736,46 @@ final class ShtVM: ObservableObject {
         }
         do {
             let d = try await source.shtCategories()
+            let remoteMains = d["mains"] as? [Row] ?? []
+            if remoteMains.isEmpty {
+                applyFallbackCats()
+                return
+            }
             cache.put(Self.CAT_KEY, d)
             applyCats(d)
         } catch {
-            // 分类加载失败静默（不阻塞列表；C8）
+            // 分类加载失败静默（不阻塞列表；C8）→ 静态兜底
+            applyFallbackCats()
         }
     }
 
     private func applyCats(_ d: [String: Any]) {
-        mains = d["mains"] as? [Row] ?? []
+        let m = d["mains"] as? [Row] ?? []
+        if m.isEmpty {
+            applyFallbackCats()
+            return
+        }
+        mains = m
         subs = d["subs"] as? [Row] ?? []
         types = d["types"] as? [Row] ?? []
         catTs = Self.numOf(d, "ts") ?? 0
+        catSource = "remote"
+    }
+
+    /// R6 PHASE3：主版静态兜底（口径 = 应用自述版区结构，与 demo 种子/详情徽标判定一致）。
+    /// c=0 表示无远程计数；远端加载成功后整体覆盖（远端/离线合并语义）。
+    static let FALLBACK_MAINS: [Row] = [
+        Row(["name": .string("有码中文字幕"), "c": .int(0)]),
+        Row(["name": .string("无码中文字幕"), "c": .int(0)]),
+        Row(["name": .string("自拍图片区"), "c": .int(0)]),
+        Row(["name": .string("小说文学区"), "c": .int(0)]),
+    ]
+
+    private func applyFallbackCats() {
+        mains = Self.FALLBACK_MAINS
+        subs = []
+        types = []
+        catSource = "fallback"
     }
 
     // MARK: 导出（C4）

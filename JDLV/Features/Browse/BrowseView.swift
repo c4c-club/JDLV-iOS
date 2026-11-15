@@ -65,9 +65,6 @@ private struct BrowseContent: View {
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
     @Environment(\.horizontalSizeClass) private var hSize
-    @Environment(\.containerWidth) private var envWidth
-    // R4 P3：实测容器宽度（PageScaffold 发 preference；320/402pt 不再走 393 兜底）
-    @State private var measuredWidth: CGFloat = 0
 
     @State private var showFilter = false
 
@@ -76,14 +73,10 @@ private struct BrowseContent: View {
     private var items: [Row] { vm.items ?? [] }
     private var itemsEmpty: Bool { items.isEmpty }
 
-    private var pageWidth: CGFloat {
-        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
-    }
-
     /// 列数：viewMode 1(大图)/2(列表) → 1 列；0(小图) → 手机 2 列、容器 ≥600（或 regular）3 列
-    private var gridColumns: Int {
+    /// R6 PHASE3：容器宽由 ContainerWidthReader 在 content 子树内实测后传入。
+    private func gridColumns(_ pageWidth: CGFloat) -> Int {
         if vm.viewMode != 0 { return 1 }
-        // R4 P3：不读 UIScreen.main（横竖屏/分屏失真）—— 用实测容器宽度（PageContainerWidthKey）
         return (pageWidth >= 600 || hSize == .regular) ? 3 : 2
     }
 
@@ -108,7 +101,7 @@ private struct BrowseContent: View {
             onRetry: { Task { await vm.reload() } },
             emptyText: emptyText,
             emptyHint: emptyHint,
-            skeletonColumns: gridColumns,
+            skeletonColumns: vm.viewMode == 0 ? 2 : 1,
             loadMore: LoadMoreConfig(
                 loaded: items.count, total: vm.total, loadingMore: vm.loadingMore,
                 approx: vm.approx, note: vm.derived, hasMore: vm.hasMore,
@@ -129,7 +122,9 @@ private struct BrowseContent: View {
                     .accessibilityIdentifier("browse_marks_error")
             }
             if !itemsEmpty {
-                grid
+                ContainerWidthReader { w in
+                    grid(pageWidth: w)
+                }
             }
         }
         .navigationTitle(title)
@@ -156,7 +151,6 @@ private struct BrowseContent: View {
             vm.refreshChannel.consume()
         }
         .accessibilityIdentifier("browse_page")
-        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
     }
 
     // MARK: toolbar（iOS 原生：排序/顺序 Menu + 视图 Menu + 筛选 badge）
@@ -305,8 +299,8 @@ private struct BrowseContent: View {
 
     // MARK: 网格（CardGrid 等宽等高）
 
-    private var grid: some View {
-        let cols = gridColumns
+    private func grid(pageWidth: CGFloat) -> some View {
+        let cols = gridColumns(pageWidth)
         let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: cols)
         let cardH: CGFloat
         switch vm.viewMode {

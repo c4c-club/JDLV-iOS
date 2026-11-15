@@ -31,11 +31,24 @@ extension EnvironmentValues {
 }
 
 /// 页面侧取容器宽度：注入值 > 0 用之；否则回退水平 size class 估算（首帧兜底）。
-/// R4 P3：删除 393 硬编码 —— compact 首帧兜底改 320（最小机型；宁可窄不可溢出），
-/// 实测宽度一帧后经 PageContainerWidthKey 到位（PageScaffold/二级页自测宽）。
+/// R4 P3：删除 393 硬编码 —— compact 首帧兜底改 320（最小机型；宁可窄不可溢出）。
 func resolvedContainerWidth(_ envWidth: CGFloat, hSize: UserInterfaceSizeClass?) -> CGFloat {
     if envWidth > 0 { return envWidth }
     return hSize == .regular ? 768 : 320
+}
+
+/// R6 PHASE3：容器宽读取（环境向下通道）。
+/// PageScaffold 在 ScrollView 子树注入 environment(\.containerWidth)，本读取器放进
+/// content 即取到实测宽（首帧即真值）。替代 R4 的页面级 PageContainerWidthKey 冒泡
+/// （R5 CI 截图实证失效：402pt 屏恒走 320 兜底 → 浏览/女优/98t 右侧 ~82pt 空白）。
+struct ContainerWidthReader<Content: View>: View {
+    @Environment(\.containerWidth) private var envWidth
+    @Environment(\.horizontalSizeClass) private var hSize
+    @ViewBuilder var content: (CGFloat) -> Content
+
+    var body: some View {
+        content(resolvedContainerWidth(envWidth, hSize: hSize))
+    }
 }
 
 enum GridMath {
