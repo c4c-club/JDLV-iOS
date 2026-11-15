@@ -511,6 +511,7 @@ final class ShtVMTests: XCTestCase {
     func testBindLoadsCatsEvenWhenListFails() async {
         let src = MockShtSource()
         src.errors = [FetchFailure("offline")]
+        src.catsError = FetchFailure("offline")   // 离线 = 列表与分类双失败 → 静态兜底
         let vm = makeVM(src)
         await vm.bind(dataEpoch: 0)
         XCTAssertNil(vm.items, "首屏失败（离线场景）")

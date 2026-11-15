@@ -560,17 +560,11 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
             lock.unlock()
             return t
         }
-        lock.unlock()
+        // 锁内装配新条目并立即入字典：R6 CI 实证「锁外 makeEntry + 双检」的窗口内
+        // 多个未命中者各自起任务，输者虽被 cancel 但任务体不感知取消照样执行
+        // （InflightGateTests 计数 2≠1）。Task 体在独立执行器上运行，装配期间持锁
+        // 不构成死锁（极速退出的 body 会在本线程放锁后完成 removeEntry）。
         let e = makeEntry(key: key, body: body, interest: interest)
-        lock.lock()
-        // 双检：并发插入窗口保留先到者，取消后到者（理论窗口，防御性）
-        if let cur = inflight[key] {
-            if let i = interest { cur.interests.insert(i) }
-            let t = cur.task!
-            lock.unlock()
-            e.task!.cancel()
-            return t
-        }
         inflight[key] = e
         lock.unlock()
         return e.task!
