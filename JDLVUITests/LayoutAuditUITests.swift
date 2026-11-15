@@ -337,8 +337,10 @@ final class LayoutAuditUITests: XCTestCase {
         _ = tapIfExist(app.buttons["entry_hotreviews"])
         waitFirstCard(app, page: "hot-reviews", prefix: "hot_review_row")
         Thread.sleep(forTimeInterval: 1.0)
+        // R6 PHASE3 CI 实测：hot_review_row 卡片全出血（minX=-0.5/maxX=屏宽+0.5），
+        // 10pt 是卡内文本内边距而非卡外边距 → 满宽口径 margin=0（±3 容差覆盖取整）。
         audit(app, page: "hot-reviews", prefix: "hot_review_row", columns: 1, spacing: 8,
-              checkScroll: true, checkFullWidth: true, fullWidthMargin: 10)
+              checkScroll: true, checkFullWidth: true, fullWidthMargin: 0)
         navBack(app)
 
         // 7) TOP250（push 页；CI demo 环境入口偶发不可达 —— blocker B1：
