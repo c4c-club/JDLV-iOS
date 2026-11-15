@@ -1,0 +1,21 @@
+{
+  "skippedPages" : [
+
+  ],
+  "pagesCount" : 10,
+  "pagesAudited" : [
+    "home-recent",
+    "home-hot",
+    "home-top",
+    "browse",
+    "actors",
+    "sht",
+    "articles",
+    "hot-reviews",
+    "top250",
+    "favs"
+  ],
+  "violations" : [
+
+  ]
+}

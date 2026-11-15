@@ -27,6 +27,9 @@ final class ShtVMTests: XCTestCase {
         private(set) var browseCalls = 0
         private(set) var seenQs: [String] = []
         private(set) var seenPages: [Int] = []
+        // R6 PHASE3：筛选点选查询参数断言用
+        private(set) var seenMains: [String] = []
+        private(set) var seenCats: [String] = []
         private(set) var seenAnchors: [(String, String)?] = []
         private(set) var seenModes: [String] = []
         private(set) var seenSorts: [String] = []
@@ -56,6 +59,8 @@ final class ShtVMTests: XCTestCase {
             browseCalls += 1
             seenQs.append(q)
             seenPages.append(page)
+            seenMains.append(main)
+            seenCats.append(cat)
             seenAnchors.append(anchor)
             seenModes.append(mode)
             seenSorts.append(sort)
@@ -518,6 +523,30 @@ final class ShtVMTests: XCTestCase {
         XCTAssertEqual(src.catCalls, 1, "R6：分类加载不再以首屏成功为前提")
         XCTAssertEqual(vm.catSource, "fallback")
         XCTAssertFalse(vm.mains.isEmpty, "离线状态下主版筛选也有选项")
+    }
+
+    @MainActor
+    func testSelectingMainCarriesQueryParamsAndResetsPage() async {
+        let src = MockShtSource()
+        let vm = makeVM(src)
+        await vm.bind(dataEpoch: 0)
+        XCTAssertEqual(vm.mains.count, 1, "远程主版选项 > 0")
+        XCTAssertEqual(vm.mains.first?.s("name"), "有码中文字幕")
+        // 点选主版：查询参数携带 main、级联清空 cat/type、page 归 1
+        await vm.setMain("有码中文字幕")
+        XCTAssertEqual(vm.main, "有码中文字幕")
+        XCTAssertEqual(vm.cat, "")
+        XCTAssertEqual(vm.type, "")
+        XCTAssertEqual(src.seenMains.last, "有码中文字幕", "点选后查询参数携带主版")
+        XCTAssertEqual(src.seenCats.last, "")
+        XCTAssertEqual(src.seenPages.last, 1)
+        // 静态兜底选项同样可点选（force 失败 → fallback，无计数行照常 selectable）
+        src.catsError = FetchFailure("db down")
+        await vm.loadCats(force: true)
+        XCTAssertEqual(vm.catSource, "fallback")
+        XCTAssertEqual(vm.mains.count, ShtVM.FALLBACK_MAINS.count)
+        await vm.setMain("无码中文字幕")
+        XCTAssertEqual(src.seenMains.last, "无码中文字幕")
     }
 
     // MARK: 首屏异步计数（A.4：Q.shtBrowseCount）
