@@ -226,6 +226,13 @@ final class SettingsUITests: XCTestCase {
             // R5 P3：展开内容构建落定（密集 tap+查询在负载 runner 上触发 AX 快照超时）
             usleep(400_000)
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
+            // R6 PHASE4：验证「展开不崩」后立即折叠 —— 10 组全展开时 AX 树极重，
+            // 后续组的 frame 读取在 CI runner 上随机 snapshot 超时（43772468705 /
+            // 43900500096 / 43957570145 三次 line:100/115 证据）；折叠把树压回
+            // 基线规模，走查目的（逐组可展开、app 存活）不受影响。
+            card.tap()
+            usleep(300_000)
+            XCTAssertEqual(app.state, .runningForeground, "crash after collapsing group \(k)")
         }
         // 锚点已在本用例前段硬断言（testImageModeOn），store 持久化由单测覆盖
         XCTAssertEqual(app.state, .runningForeground)
