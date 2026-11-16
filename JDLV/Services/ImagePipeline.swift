@@ -534,15 +534,21 @@ final class ImagePipeline: ImageLoading {
 /// 取消共享任务。条目移除后同键新请求起新任务（成功后由磁盘缓存承接，不重发网络请求）。
 final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
 
-    /// 字典条目：身份用于移除比对（Task 不可 == 比较）；字段在任务启动前完成装配，
-    /// bodyDidExit 恰在任务体退出时调用一次。
+    /// 字典条目：身份用于移除比对（Task 不可 == 比较）；onExit 必须先于 Task 创建
+    /// 装配（R6 CI 实证：极速 body 可在装配完成前退出，迟到装配的钩子永不触发 →
+    /// 条目泄漏），bodyExited 标记让插入方在锁内复查补删。
     private final class Entry: @unchecked Sendable {
         var task: Task<Value, Error>!
         var onExit: (@Sendable () -> Void)?
         /// R6 PHASE2：等待方兴趣集合（每视图一张票；Set 语义幂等，重复登记/撤销无害）
         var interests: Set<UUID> = []
+        /// 任务体已退出（defer 触发过；装配期间即退出时由插入方补删）
+        private(set) var bodyExited = false
         /// 任务体退出时（defer；先于等待者恢复）调用，恰好一次
-        func bodyDidExit() { onExit?() }
+        func bodyDidExit() {
+            bodyExited = true
+            onExit?()
+        }
     }
 
     private let lock = NSLock()
@@ -566,6 +572,11 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
         // 不构成死锁（极速退出的 body 会在本线程放锁后完成 removeEntry）。
         let e = makeEntry(key: key, body: body, interest: interest)
         inflight[key] = e
+        // 极速 body 可能在本调用持锁期间就完成退出（onExit 因身份比对失败为 no-op）
+        // → 入字典后立刻复查退出标记补删，绝不让已完成的条目残留在字典里。
+        if e.bodyExited {
+            inflight.removeValue(forKey: key)
+        }
         lock.unlock()
         return e.task!
     }
@@ -574,6 +585,9 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
                            interest: UUID?) -> Entry {
         let e = Entry()
         if let i = interest { e.interests.insert(i) }
+        // R6：退出钩子先于 Task 创建装配 —— body 完成与装配完成可并发，
+        // 迟到装配的钩子会漏删条目（InflightGateTests:110 has==true 证据）。
+        e.onExit = { [weak self] in self?.removeEntry(key, entry: e) }
         let task = Task<Value, Error> { [weak self, weak e] in
             defer { e?.bodyDidExit() }
             guard let self else {
@@ -583,7 +597,6 @@ final class InflightGate<Key: Hashable, Value: Sendable>: @unchecked Sendable {
             return try await body()
         }
         e.task = task
-        e.onExit = { [weak self] in self?.removeEntry(key, entry: e) }
         return e
     }
 

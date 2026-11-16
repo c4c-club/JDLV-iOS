@@ -24,6 +24,11 @@ final class InflightGateTests: XCTestCase {
         let tasks = (0..<10).map { _ in
             gate.entry("k") {
                 await counter.bump()
+                // R6 PHASE4：dedup 语义的前提是「并发期」—— 真实网络体 ≥ 数十毫秒。
+                // CI 高载下瞬时 body 可在后续 entry() 加入前完成并被移除
+                // （同线程紧邻语句间 µs 级窗口，run 43941947446 计数 2≠1 证据），
+                // 用 30ms 体消除调度运气，只测门本身的共享语义。
+                try? await Task.sleep(nanoseconds: 30_000_000)
                 return 42
             }
         }
