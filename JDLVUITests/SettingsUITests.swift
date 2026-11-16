@@ -96,11 +96,17 @@ final class SettingsUITests: XCTestCase {
             return false
         }
         // R5 P3：按元素在视口上方/下方决定滑动方向（走查从页底回顶部找 db 卡需向上回滚）
+        // R6 PHASE4：重定位循环每步先 waitForExistence(1) 重解一次查询再读 frame ——
+        // 展开全组后 AX 树很重，直接读 frame 在 CI 上随机「snapshot 超时」（run
+        // 43772468705/43900500096 两次 line:100 证据；该处无法捕获框架错误，
+        // 只能降低单次快照成本 + 拉长步间沉降）。
         for _ in 0..<maxSwipes {
+            if !el.waitForExistence(timeout: 1) && !el.exists { break }
+            usleep(300_000)
             let f = el.frame
             if f.intersects(app.frame) { return true }
             if f.maxY < 0 { app.swipeDown() } else { app.swipeUp() }
-            usleep(350_000)
+            usleep(500_000)
         }
         // R5 P3 稳定确认：滚动惯性未停时 frame 会迁移 → tap 报 not-hittable
         // （run 43338529818 证据：ds_test_button 在视口内 tap 仍失败）。300ms 后仍在视口才通过。
