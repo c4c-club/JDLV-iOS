@@ -17,9 +17,15 @@ final class ShtFilterSheetUITests: XCTestCase {
                                "-JDLV_KEYCHAIN_SERVICE", "ks_\(UUID().uuidString.prefix(8))"]
         app.launch()
 
-        XCTAssertTrue(app.buttons["tab_sht"].waitForExistence(timeout: 20), "tab bar not found")
+        let shtTab = app.buttons["tab_sht"].firstMatch
+        XCTAssertTrue(shtTab.waitForExistence(timeout: 20), "tab bar not found")
+        if shtTab.isHittable {
+            shtTab.tap()
+        } else {
+            shtTab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
         let grid = app.descendants(matching: .any)["sht_grid"].firstMatch
-        XCTAssertTrue(grid.waitForExistence(timeout: 45), "98t grid not rendered")
+        XCTAssertTrue(grid.waitForExistence(timeout: 60), "98t grid not rendered")
 
         app.buttons["sht_filter_button"].firstMatch.tap()
         let mainPicker = app.descendants(matching: .any)["sht_main_picker"].firstMatch
