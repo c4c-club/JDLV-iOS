@@ -90,6 +90,16 @@ final class SettingsUITests: XCTestCase {
                 usleep(200_000)
                 if el.exists { break }
             }
+            // R6 PHASE4：设置卡由异步状态渲染（demo DB 探活未落定时整页无卡）——
+            // 滑完仍未命中再给 4s 落定 + 二次短扫，run 43928658617
+            // 「settings_group_db 12 swipes not found」实证（99s 快速失败）。
+            if !el.waitForExistence(timeout: 4) {
+                for _ in 0..<4 {
+                    app.swipeUp()
+                    usleep(400_000)
+                    if el.exists { break }
+                }
+            }
         }
         guard el.exists else {
             failWithDump(app, "\(el) not found after \(maxSwipes) swipes", file: file, line: line)
@@ -101,11 +111,12 @@ final class SettingsUITests: XCTestCase {
         // 43772468705/43900500096 两次 line:100 证据；该处无法捕获框架错误，
         // 只能降低单次快照成本 + 拉长步间沉降）。
         for _ in 0..<maxSwipes {
-            if !el.waitForExistence(timeout: 1) && !el.exists { break }
             usleep(300_000)
-            let f = el.frame
-            if f.intersects(app.frame) { return true }
-            if f.maxY < 0 { app.swipeDown() } else { app.swipeUp() }
+            if el.exists {
+                let f = el.frame
+                if f.intersects(app.frame) { return true }
+                if f.maxY < 0 { app.swipeDown() } else { app.swipeUp() }
+            }
             usleep(500_000)
         }
         // R5 P3 稳定确认：滚动惯性未停时 frame 会迁移 → tap 报 not-hittable
