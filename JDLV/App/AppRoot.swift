@@ -161,6 +161,10 @@ struct AppRoot: View {
             // 根页视图由 tabRoot(router.tab) 切换，VM 均为 AppRoot @StateObject（不重建）。
             NavigationStack(path: pathBinding(router.tab)) {
                 tabRoot(router.tab, label: Self.tabLabel(router.tab))
+                    // R7 P2：恢复 R4 P5 的覆盖页 AX 语义 —— 当前 Tab 栈深>0 时根页摘出
+                    // AX 树（NavigationStack 被覆盖的栈底仍进 AX 快照，首页横滑卡会被
+                    // LayoutAudit 降级源误收为越界元素；run 44191556931 实证）
+                    .accessibilityHidden(!pathBinding(router.tab).wrappedValue.isEmpty)
                     .navigationDestination(for: Route.self) { route in
                         RouteDestination(route: route)
                     }

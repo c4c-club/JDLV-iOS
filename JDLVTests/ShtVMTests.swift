@@ -449,6 +449,11 @@ final class ShtVMTests: XCTestCase {
         let src = MockShtSource()
         let vm = makeVM(src)
         await vm.bind(dataEpoch: 0)
+        // R7 P2：cats 延迟 800ms fire-and-forget —— 轮询等待分类落定（上限 3s）
+        let dCats = Date().addingTimeInterval(3)
+        while vm.catSource.isEmpty && Date() < dCats {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
         XCTAssertEqual(src.events, ["browse", "cats"])   // 列表先、分类后
         XCTAssertEqual(vm.items?.count, 0)
         XCTAssertEqual(vm.mains.first?.s("name"), "有码中文字幕")
@@ -519,6 +524,11 @@ final class ShtVMTests: XCTestCase {
         src.catsError = FetchFailure("offline")   // 离线 = 列表与分类双失败 → 静态兜底
         let vm = makeVM(src)
         await vm.bind(dataEpoch: 0)
+        // R7 P2：cats 延迟 800ms fire-and-forget —— 轮询等待兜底落定（上限 3s）
+        let dFall = Date().addingTimeInterval(3)
+        while vm.catSource.isEmpty && Date() < dFall {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
         XCTAssertNil(vm.items, "首屏失败（离线场景）")
         XCTAssertEqual(src.catCalls, 1, "R6：分类加载不再以首屏成功为前提")
         XCTAssertEqual(vm.catSource, "fallback")
@@ -530,6 +540,11 @@ final class ShtVMTests: XCTestCase {
         let src = MockShtSource()
         let vm = makeVM(src)
         await vm.bind(dataEpoch: 0)
+        // R7 P2：cats 延迟 800ms fire-and-forget —— 轮询等待主版选项落定（上限 3s）
+        let dMain = Date().addingTimeInterval(3)
+        while vm.catSource.isEmpty && Date() < dMain {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
         XCTAssertEqual(vm.mains.count, 1, "远程主版选项 > 0")
         XCTAssertEqual(vm.mains.first?.s("name"), "有码中文字幕")
         // 点选主版：查询参数携带 main、级联清空 cat/type、page 归 1

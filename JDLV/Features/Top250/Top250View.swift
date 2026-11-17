@@ -161,6 +161,7 @@ struct Top250Row: View {
         .buttonStyle(.plain)
         .cardChrome()
         .clipShape(RoundedRectangle(cornerRadius: ComponentMetrics.cardCorner))
-        .accessibilityIdentifier("top250_row")
+        // R7 P2：不在此处设 identifier —— 内层 id 会覆盖外层审计锚点 t250row_N
+        // （LayoutAuditUITests collect 依赖 t250row_ 前缀；被覆盖时走降级源误收越界元素）
     }
 }

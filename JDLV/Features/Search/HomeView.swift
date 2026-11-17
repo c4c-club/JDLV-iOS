@@ -57,6 +57,10 @@ struct HomeView: View {
     }
 
     /// 搜索历史（C7：仅首页态 query 空 && home != nil && history 非空）
+    // R7 P2：firstCard AX 通道值（onChange 回填触发 body 重算，AX value 才会更新；
+    // 直接在 body 求值时读 PerfSignposts 只会拿到 endLaunchOnce 前的 -1）
+    @State private var firstCardAx: Int64 = -1
+
     private var historyVisible: Bool {
         queryTrim.isEmpty && vm.home != nil && !history.isEmpty
     }
@@ -80,7 +84,7 @@ struct HomeView: View {
             Color.clear
                 .frame(width: 1, height: 1)
                 .accessibilityIdentifier("perf_firstcard")
-                .accessibilityValue("\(PerfSignposts.firstCardMs)")
+                .accessibilityValue("\(firstCardAx)")
         }
         .onAppear {
             vm.bind(to: store, persistMode: persistMode)
@@ -97,7 +101,10 @@ struct HomeView: View {
         }
         // R4 P3：首屏数据到达（vm.items 首次非空）→ 启动区间结束（幂等）
         .onChange(of: vm.items != nil) { loaded in
-            if loaded { PerfSignposts.endLaunchOnce() }
+            if loaded {
+                PerfSignposts.endLaunchOnce()
+                firstCardAx = PerfSignposts.firstCardMs
+            }
         }
         .onChange(of: vm.query) { _ in
             if skipNextDebounce {
