@@ -28,8 +28,9 @@ struct HomeView: View {
     @State private var history: [String] = []
     @State private var skipNextDebounce = false
 
-    init() {
-        _vm = StateObject(wrappedValue: SearchVM.makeDefault(
+    /// R7 P2：VM 由 AppRoot 上提持有；不传则自持。
+    init(vm: SearchVM? = nil) {
+        _vm = StateObject(wrappedValue: vm ?? SearchVM.makeDefault(
             isOnline: { !AppServices.shared.offlineJdb }))
     }
 
@@ -73,6 +74,14 @@ struct HomeView: View {
         .background(theme.bg0.ignoresSafeArea())
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
+        // R7 P2：firstCard 毫秒 AX 通道（perf_firstcard；UI 测试跨进程读取；
+        // 1×1 透明不参与布局；loaded 后 body 重算时值为已落 firstCardMs）
+        .overlay(alignment: .topTrailing) {
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityIdentifier("perf_firstcard")
+                .accessibilityValue("\(PerfSignposts.firstCardMs)")
+        }
         .onAppear {
             vm.bind(to: store, persistMode: persistMode)
             // R4 P13：suite 隔离的历史首载
@@ -116,6 +125,8 @@ struct HomeView: View {
             emptyHint: queryTrim.isEmpty ? "" : SearchCopy.emptyResultHint,
             skeletonColumns: 2,
             loadMore: loadMoreConfig,
+            // R7 P2：网格页外层普通 VStack —— CardGrid 内部 LazyVGrid 是唯一懒容器（单层懒）
+            contentLazy: false,
             // R4 P5：三段态也要回顶（首页内容 >1 屏；PageChip 仍按 loaded/total 条件渲染）
             showNavTools: true,
             pageLoaded: vm.items?.count ?? 0,

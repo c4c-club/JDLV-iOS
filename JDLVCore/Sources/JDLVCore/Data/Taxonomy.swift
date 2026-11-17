@@ -111,9 +111,10 @@ extension Q {
     // 回退 makers → jdb.filters.makers(derived)；回退 codes → 无匹配模板（guard 拒绝 → q() 吞掉 → 恒空）。
 
     public static func taxonomy() async -> [String: Any] {
-        // 每段独立容错，吞一切异常（Android 局部 q(sql) 对位）
+        // 每段独立容错，吞一切异常（Android 局部 q(sql) 对位）；
+        // R7 P2：4 条重派生聚合走 background lane（并发 1），首屏列表不再排队等它们
         func q(_ sql: String) async -> [Row] {
-            do { return try await Db.query("jdb", sql) } catch { return [] }
+            do { return try await Db.query("jdb", sql, lane: .background) } catch { return [] }
         }
         // 四段并行
         async let makers0 = q("SELECT id, name, videos_count c FROM makers ORDER BY videos_count DESC LIMIT 500")

@@ -94,6 +94,8 @@ private struct ShtContent: View {
                 approx: true, note: footerNote, hasMore: vm.hasMore,
                 totalLine: updatedTotalLine,
                 onLoadNext: { Task { await vm.loadNext() } }),
+            // R7 P2：网格页外层普通 VStack —— CardGrid 内部 LazyVGrid 是唯一懒容器（单层懒）
+            contentLazy: false,
             showNavTools: true,
             pageLoaded: items.count,
             pageTotal: vm.total,

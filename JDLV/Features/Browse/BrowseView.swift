@@ -106,6 +106,8 @@ private struct BrowseContent: View {
                 loaded: items.count, total: vm.total, loadingMore: vm.loadingMore,
                 approx: vm.approx, note: vm.derived, hasMore: vm.hasMore,
                 onLoadNext: { Task { await vm.loadNext() } }),
+            // R7 P2：网格页外层普通 VStack —— CardGrid 内部 LazyVGrid 是唯一懒容器（单层懒）
+            contentLazy: false,
             showNavTools: true,
             pageLoaded: items.count,
             pageTotal: vm.total,

@@ -22,8 +22,10 @@ struct ActorsView: View {
     @State private var searchText = ""
     @State private var debounceTask: Task<Void, Never>? = nil
 
-    init() {
-        _vm = StateObject(wrappedValue: ActorsVM.makeDefault())
+    /// R7 P2：Tab 容器只渲染当前 route —— VM 由 AppRoot 上提持有（切 Tab 不重建），
+    /// 不传则自持（默认，独立预览/测试用）。
+    init(vm: ActorsVM? = nil) {
+        _vm = StateObject(wrappedValue: vm ?? ActorsVM.makeDefault())
     }
 
     private var items: [Row] { vm.items ?? [] }
@@ -41,6 +43,8 @@ struct ActorsView: View {
                 loaded: items.count, total: vm.total, loadingMore: vm.loadingMore,
                 approx: false, hasMore: vm.hasMore,
                 onLoadNext: { Task { await vm.loadNext() } }),
+            // R7 P2：网格页外层普通 VStack —— CardGrid 内部 LazyVGrid 是唯一懒容器（单层懒）
+            contentLazy: false,
             showNavTools: true,
             pageLoaded: items.count,
             pageTotal: vm.total,

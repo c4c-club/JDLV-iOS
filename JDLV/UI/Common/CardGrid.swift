@@ -7,13 +7,12 @@ import SwiftUI
 //  - cellWidth(pageWidth:columns:) = (W - 2*margin - (N-1)*spacing) / N
 //  - chunk(items:columns:) 行分块，最后一行不足用 nil 占位保证左对齐。
 //
-//  视图：CardGrid = LazyVStack（或普通 VStack）+ HStack(alignment:.top) 行；
-//  每个 cell 固定 frame(cellW, cardH)，行内 spacing = gridSpacing，
-//  行间 spacing = gridSpacing；空位补 Color.clear。
-//
-//  无嵌套 lazy 契约（13 §3.1 原则 6）：PageScaffold 的 content 已是 LazyVStack，
-//  页面网格用 `lazy: false`（默认）的普通 VStack 行 —— LazyVStack 的直接子项是
-//  HStack 行，行内不再嵌 lazy 容器；独立使用（无外层 lazy）时可传 lazy: true。
+//  视图：CardGrid = LazyVGrid（固定列宽 GridItem(.fixed)）+ ForEach(items) cell 级懒加载；
+//  每个 cell 固定 frame(cellW, cardH)，spacing = gridSpacing。
+//  R7 P2：旧 chunk 行实现（lazy 标志 + 全量 ForEach 所有行）退役 —— 单层懒加载
+//  （硬规则 7）：网格页 PageScaffold 传 contentLazy:false（外层普通 VStack），
+//  LazyVGrid 是唯一懒容器，滚动只构建可见 cell；空位左对齐由 Grid 列布局天然保证。
+//  GridMath.chunk 保留（GridRowsTests / CardLayoutTests 单测依赖）。
 //
 
 // MARK: - 纯布局数学（可单测）
@@ -85,48 +84,43 @@ struct CardGrid<Item, Cell: View>: View {
     let columns: Int
     let cellWidth: CGFloat
     let cellHeight: CGFloat
-    /// true = 内部 LazyVStack（独立顶层使用）；false = 普通 VStack（PageScaffold content 内）
-    var lazy: Bool = false
+    /// R7 P2：true（默认）= LazyVGrid cell 级懒加载；false = 普通 VStack（全量，仅诊断用）
+    var useLazyGrid: Bool = true
     /// 外层 wrapper 的 accessibility 前缀（"card_browse" → card_browse_0…；
     /// 打在含固定 frame 的 wrapper 上 —— LayoutAudit 读到的 frame = cellW×cellH 精确值）
     var idPrefix: String = ""
     @ViewBuilder var cell: (Item) -> Cell
 
+    /// 固定列宽（GridItem(.fixed)）—— 布局审计 frame 精确值不受容器宽度抖动影响
+    private var gridItems: [GridItem] {
+        Array(repeating: GridItem(.fixed(cellWidth), spacing: ComponentMetrics.gridSpacing),
+              count: columns)
+    }
+
     var body: some View {
-        Group {
-            if lazy {
-                LazyVStack(alignment: .leading, spacing: ComponentMetrics.gridSpacing) {
-                    rows
-                }
-            } else {
-                VStack(alignment: .leading, spacing: ComponentMetrics.gridSpacing) {
-                    rows
-                }
+        if useLazyGrid {
+            LazyVGrid(columns: gridItems, alignment: .leading,
+                      spacing: ComponentMetrics.gridSpacing) {
+                gridCells
+            }
+        } else {
+            VStack(alignment: .leading, spacing: ComponentMetrics.gridSpacing) {
+                gridCells
             }
         }
     }
 
     @ViewBuilder
-    private var rows: some View {
-        let chunked = GridMath.chunk(items, columns: columns)
-        ForEach(chunked.indices, id: \.self) { r in
-            HStack(alignment: .top, spacing: ComponentMetrics.gridSpacing) {
-                ForEach(chunked[r].indices, id: \.self) { c in
-                    let idx = r * columns + c
-                    ZStack {
-                        if let item = chunked[r][c] {
-                            cell(item)
-                        } else {
-                            Color.clear
-                        }
-                    }
-                    .frame(width: cellWidth, height: cellHeight, alignment: .top)
-                    // 显式 a11y 容器（children: .contain）—— 保证 XCUI 以 card_<page>_<idx>
-                    // 查询到精确 cellW×cellH 的 wrapper frame（Group+identifier 不保证成节点）
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier(idPrefix.isEmpty ? "" : "\(idPrefix)_\(idx)")
-                }
+    private var gridCells: some View {
+        ForEach(Array(items.enumerated()), id: \.offset) { idx, item in
+            ZStack {
+                cell(item)
             }
+            .frame(width: cellWidth, height: cellHeight, alignment: .top)
+            // 显式 a11y 容器（children: .contain）—— 保证 XCUI 以 card_<page>_<idx>
+            // 查询到精确 cellW×cellH 的 wrapper frame（Group+identifier 不保证成节点）
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(idPrefix.isEmpty ? "" : "\(idPrefix)_\(idx)")
         }
     }
 }

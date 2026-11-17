@@ -254,11 +254,22 @@ public enum ConnFactory {
 
 // MARK: - MySQL 池
 
-/// 连接池（对齐 Android DbPool）：每库 3 连接 + 信号量 + 世代号 + 空闲回收。
+/// R7 P2 连接池分层：interactive（首屏/详情/交互）与 background（taxonomy/统计/
+/// 索引聚合）分信号量 —— background 恒并发 <=1，interactive 恒有 3 条可用，
+/// 首屏列表永不排在后台聚合之后。
+public enum DbLane: String {
+    case interactive
+    case background
+}
+
+/// 连接池（对齐 Android DbPool）：每库 4 连接（interactive 3 + background 1）
+/// + 分层信号量 + 世代号 + 空闲回收。
 /// 超时不重试；取消作废连接；连接级失败重试 1 次（共 2 次尝试）；
 /// 连接级失败置离线 60s、无网 30s；查询成功/探活成功清该库标记。
 public final class MySQLPool {
-    public static let POOL_PER_DB = 3
+    public static let POOL_PER_DB = 4
+    public static let INTERACTIVE_PER_DB = 3
+    public static let BACKGROUND_PER_DB = 1
     public static let IDLE_CLOSE_MS: Int64 = 600_000   // 10 分钟（严格大于回收）
     public static let DBS = ["jdb", "sht"]
 
@@ -279,6 +290,7 @@ public final class MySQLPool {
     private let lock = NSLock()
     private var gen: Int64 = 0
     private var sems: [String: AsyncSemaphore] = [:]
+    private var semsBg: [String: AsyncSemaphore] = [:]
     private var idle: [String: [Slot]] = [:]
     private var created: [String: Int] = [:]
 
@@ -299,7 +311,8 @@ public final class MySQLPool {
 
     init() {
         for w in MySQLPool.DBS {
-            sems[w] = AsyncSemaphore(MySQLPool.POOL_PER_DB)
+            sems[w] = AsyncSemaphore(MySQLPool.INTERACTIVE_PER_DB)
+            semsBg[w] = AsyncSemaphore(MySQLPool.BACKGROUND_PER_DB)
             idle[w] = []
             created[w] = 0
         }
@@ -414,9 +427,10 @@ public final class MySQLPool {
     // MARK: 查询主流程
 
     public func query(
-        which: String, sql: String, params: [SQLValue?] = [], timeoutSec: Int? = nil
+        which: String, sql: String, params: [SQLValue?] = [], timeoutSec: Int? = nil,
+        lane: DbLane = .interactive
     ) async throws -> [Row] {
-        guard let sem = sems[which] else {
+        guard let sem = (lane == .background ? semsBg[which] : sems[which]) else {
             // R9/R13：未知 which → 类型化错误（不再 fatalError）
             throw DbError(kind: .semantic, message: "未知数据源 (which=\(which))")
         }
@@ -433,7 +447,13 @@ public final class MySQLPool {
         var attempt = 0
         while true {
             attempt += 1
+            // R7 P2：db.wait 按 lane 打点（>=100ms 才 mark，防日志洪水）
+            let waitT0 = Perf.nowMs()
             await sem.acquire()
+            let waitedMs = Perf.nowMs() - waitT0
+            if waitedMs >= 100 {
+                Perf.mark("db.wait.\(lane.rawValue)", "\(waitedMs)ms queue")
+            }
             var slot: Slot? = nil
             do {
                 slot = try await borrow(which, s)
@@ -458,8 +478,8 @@ public final class MySQLPool {
                     throw CancellationError()
                 }
                 if error is QueryTimeoutError {
-                    // 语句超时不重试（Android 语义：作废连接 + 直接抛）
-                    throw QueryTimeoutError("查询超时 (\(ts)s) — 可在设置里放宽查询超时")
+                    // 语句超时不重试（Android 语义：作废连接 + 直接抛）；带 lane 名便于归因
+                    throw QueryTimeoutError("查询超时 (\(ts)s, \(lane.rawValue) lane) — 可在设置里放宽查询超时")
                 }
                 let connLevel = ErrText.isConn(error)
                 if !connLevel || attempt >= 2 {

@@ -126,8 +126,15 @@ struct AppRoot: View {
     @StateObject private var router = Router()
     @StateObject private var services = AppServices.shared
 
-    // R4 P3：按需挂载 —— 只渲染访问过的 Tab；未访问 Tab 用占位，绝不创建根页/触发 onAppear 查询
-    @State private var visitedTabs: Set<String> = ["search"]
+    // R7 P2：Tab 容器只渲染当前 route（隐藏页不再参与布局/跑图片/滚动监听）；
+    // 各 Tab 根页 VM 上提到此 —— 切 Tab 不重建 VM、列表/筛选/导航状态全部保留；
+    // 每 Tab 的 path 仍在 Router（返回时二级栈不丢）。
+    @StateObject private var searchVM = SearchVM.makeDefault(
+        isOnline: { !AppServices.shared.offlineJdb })
+    @StateObject private var browseVM = BrowseVM()
+    @StateObject private var actorsVM = ActorsVM.makeDefault()
+    @StateObject private var shtVM = ShtVM()
+    @StateObject private var favsVM = FavsVM.makeDefault()
 
     private struct TabDef {
         let route: String
@@ -149,38 +156,14 @@ struct AppRoot: View {
         // 自定义底栏（对齐 Android TOP_DESTS）：UITabBarController 在 >5 个 tab 时
         // 折叠成「更多」，Android 6 Tab 1:1 需要自绘；二级页隐藏底栏（导航不变量）。
         ZStack(alignment: .bottom) {
-            // 内容层：Tab 按需挂载（R4 P3）——访问过的 Tab 保留 NavigationStack（切换不丢状态）；
-            // 未访问的用占位（不创建根页、不触发 onAppear 查询、不建 1s timer）
-            ForEach(Self.tabs, id: \.route) { t in
-                if visitedTabs.contains(t.route) {
-                    NavigationStack(path: pathBinding(t.route)) {
-                        tabRoot(t.route, label: t.label)
-                            .navigationDestination(for: Route.self) { route in
-                                RouteDestination(route: route)
-                            }
+            // 内容层：只渲染当前 Tab 的 NavigationStack（R7 P2，替换 opacity 常驻）。
+            // path 数据驱动：切 Tab = path 绑定换到目标 Tab 的独立 path（二级栈保留），
+            // 根页视图由 tabRoot(router.tab) 切换，VM 均为 AppRoot @StateObject（不重建）。
+            NavigationStack(path: pathBinding(router.tab)) {
+                tabRoot(router.tab, label: Self.tabLabel(router.tab))
+                    .navigationDestination(for: Route.self) { route in
+                        RouteDestination(route: route)
                     }
-                    .opacity(router.tab == t.route ? 1 : 0)
-                    .allowsHitTesting(router.tab == t.route)
-                    // R5 P4：accessibilityHidden 对 NavigationStack 子树实测不完全生效
-                    //（J3 dump：隐藏 home 根的 294 处元素泄漏进 AX 树，可见根的
-                    // card_browse_N 标识符反被吞）→ 隐藏根用 children:.ignore 整棵摘除
-                    .accessibilityElement(children: router.tab == t.route ? .contain : .ignore)
-                    .accessibilityHidden(router.tab != t.route)
-                } else if router.tab == t.route {
-                    // 首次切入当帧的占位：避免 onChange 插入前的白屏一帧
-                    ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .onChange(of: router.tab) { tab in
-                if !visitedTabs.contains(tab) {
-                    visitedTabs.insert(tab)
-                    #if DEBUG
-                    print("[Perf] visitedTabs now: \(visitedTabs.sorted())")
-                    #endif
-                }
             }
             // 顶部横幅（内容之上、Tab 内容顶部；离线按库粒度 + 恢复 6s 自消）
             VStack(spacing: 0) {
@@ -211,9 +194,8 @@ struct AppRoot: View {
             services.syncOfflineFlags(networkOnline: NetworkMonitor.shared.online)
             // R4 P3：启动区间开始（HomeView 首屏数据到达时 end）
             PerfSignposts.beginLaunchOnce()
-            #if DEBUG
-            print("[Perf] AppRoot onAppear, initial visitedTabs: \(visitedTabs.sorted())")
-            #endif
+            // R7 P2：启动后 10s 主线程卡顿 watchdog（>100ms 停顿计数；到期输出 hitchCount）
+            PerfSignposts.startHitchWatch(seconds: 10)
         }
         // 全局 Toast（SnackbarHost 对位）
         .overlay { ToastHost(services: services) }
@@ -274,19 +256,24 @@ struct AppRoot: View {
         }
     }
 
+    /// 当前 Tab 的显示名（占位根用；正常 6 Tab 不走 default）
+    static func tabLabel(_ route: String) -> String {
+        tabs.first(where: { $0.route == route })?.label ?? route
+    }
+
     @ViewBuilder
     private func tabRoot(_ tabName: String, label: String) -> some View {
         switch tabName {
         case "search":
-            HomeView()   // P9a：首页三段态 + 搜索态（Features/Search/HomeView.swift）
+            HomeView(vm: searchVM)   // P9a：首页三段态 + 搜索态（Features/Search/HomeView.swift）
         case "browse":
-            BrowseView()   // P9b：浏览页（自持 BrowseVM；toolbar/筛选/网格/翻页）
+            BrowseView(vm: browseVM)   // P9b：浏览页（toolbar/筛选/网格/翻页）
         case "actors":
-            ActorsView()   // P9c：女优列表（自持 ActorsVM；3 列 1:1 / 搜索 / 排序）
+            ActorsView(vm: actorsVM)   // P9c：女优列表（3 列 1:1 / 搜索 / 排序）
         case "sht":
-            ShtView()   // P9d：98t 列表（Features/Sht/ShtView.swift；自持 ShtVM）
+            ShtView(vm: shtVM)   // P9d：98t 列表（Features/Sht/ShtView.swift）
         case "favs":
-            FavsView()   // P9e：收藏三 tab（Features/Favs/FavsView.swift；自持 FavsVM）
+            FavsView(vm: favsVM)   // P9e：收藏三 tab（Features/Favs/FavsView.swift）
         case "settings":
             SettingsView()   // P12：设置页全量（Features/Settings；11 分组卡 + 诊断）
         default:

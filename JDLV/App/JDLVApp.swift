@@ -5,6 +5,8 @@ struct JDLVApp: App {
     @StateObject private var store: SettingsStore
 
     init() {
+        // R7 P2：冷启动 t0（firstCard 毫秒口径 = init → 首屏数据到位）
+        PerfSignposts.markLaunchT0()
         let args = ProcessInfo.processInfo.arguments
         // A9/R8：UI 测试隔离钩子（Keychain service 覆盖 / 独立 defaults suite / 种子设置）
         KeychainStore.applyLaunchArgFaults(args)

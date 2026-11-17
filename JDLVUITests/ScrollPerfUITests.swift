@@ -60,4 +60,41 @@ final class ScrollPerfUITests: XCTestCase {
         XCTAssertTrue(elapsed <= 15.6,
                       "首页 10 次滑动 \(elapsed)s 超校准预算（15.6s；任务目标 10s 待产品侧优化）")
     }
+
+    // MARK: R7 P2 冷启动预算（5 次 terminate+launch；读 AX 通道 firstCard 毫秒）
+
+    /// 读取 perf_firstcard AX 值（App 内 PerfSignposts.firstCardMs；-1 = 未就绪轮询等待）
+    private func readFirstCardMs(_ app: XCUIApplication, round: Int) -> Int64 {
+        let probe = app.descendants(matching: .any)["perf_firstcard"].firstMatch
+        XCTAssertTrue(probe.waitForExistence(timeout: 30),
+                      "perf_firstcard not found (round \(round))")
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            if let v = probe.value as? String, let n = Int64(v), n >= 0 { return n }
+            usleep(200_000)
+        }
+        return -1
+    }
+
+    func testColdLaunchBudgets() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-JDLV_DEMO", "1",
+                               "-JDLV_DEFAULTS_SUITE", "perf_\(UUID().uuidString.prefix(8))",
+                               "-JDLV_KEYCHAIN_SERVICE", "perfks_\(UUID().uuidString.prefix(8))"]
+        var samples: [Int64] = []
+        for round in 0..<5 {
+            app.launch()   // launch 自带 terminate 现有实例 → 每轮都是冷启动
+            let ms = readFirstCardMs(app, round: round)
+            XCTAssertGreaterThanOrEqual(ms, 0, "firstCard 未打点 (round \(round))")
+            samples.append(ms)
+            app.terminate()
+        }
+        let sorted = samples.sorted()
+        let p50 = sorted[sorted.count / 2]
+        // 5 样本 95 分位 = 最大值（ceil(0.95*n)-1）
+        let p95 = sorted[max(0, Int((0.95 * Double(sorted.count)).rounded(.up)) - 1)]
+        print("PERF firstCard samples=\(samples) p50=\(p50)ms p95=\(p95)ms")
+        XCTAssertLessThanOrEqual(p50, 1500, "firstCard P50 \(p50)ms 超预算 1500ms")
+        XCTAssertLessThanOrEqual(p95, 3000, "firstCard P95 \(p95)ms 超预算 3000ms")
+    }
 }

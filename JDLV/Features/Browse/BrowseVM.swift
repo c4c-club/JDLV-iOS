@@ -481,15 +481,32 @@ final class BrowseVM: ObservableObject {
 
     // MARK: 生命周期（C.2）
 
-    /// bind：years/makers 均空 → loadFilters+reload；
+    /// bind：years/makers 均空 → reload（首屏优先）+ taxonomy 延后单飞；
     /// 否则仅 syncFromSettings（回读 viewMode/per/sort/asc）。
+    /// R7 P2：列表请求不再等 taxonomy（旧序 await loadFilters → await reload 等于
+    /// 先跑完 4 条重派生聚合才发列表）；缓存命中在 loadFilters 内即时应用。
     /// dataEpoch 参数保留（R6 PHASE2：epoch 不再驱动任何自动刷新）。
     func bind(dataEpoch: Int) async {
         if years.isEmpty && makers.isEmpty {
-            await loadFilters()
             await reload()
+            loadFiltersDeferred()
         } else {
             syncFromSettings()
+        }
+    }
+
+    /// R7 P2：taxonomy 延后单飞 —— 400ms 让首屏列表先占 interactive 池；
+    /// 未命中缓存的 Q.taxonomy() 4 条重聚合走 background lane；inFlight 防叠加。
+    /// （Task 继承 MainActor：sleep 是挂起不占线程，状态访问隔离安全。）
+    private var filtersInFlight = false
+    private func loadFiltersDeferred() {
+        guard !filtersInFlight else { return }
+        filtersInFlight = true
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard let self, self.filtersInFlight else { return }
+            await self.loadFilters()
+            self.filtersInFlight = false
         }
     }
 
@@ -535,6 +552,7 @@ final class BrowseVM: ObservableObject {
     private func fetch(append: Bool, fromRefresh: Bool) async {
         reqId += 1
         let rid = reqId
+        countTask?.cancel()   // R7 P2：新请求取消在途 COUNT（延迟任务可取消）
         let targetPage = append ? page + 1 : page
         if !append { anchors.removeAll() }   // 筛选/排序/跳页变化锚点作废（NA-34）
         let key = Self.listCacheKey(f: f, sort: sort, asc: asc, per: per, page: targetPage)
@@ -572,7 +590,15 @@ final class BrowseVM: ObservableObject {
 
     private func countIfNeeded(rid: Int, append: Bool, targetPage: Int) async {
         if !append && targetPage == 1 {
-            await fetchCount(rid: rid)
+            // R7 P2：COUNT 延迟 800ms（首屏/图片先行）且可取消；f/sort 值捕获防错位
+            countTask?.cancel()
+            let capF = f
+            let capSort = sort
+            countTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                guard !Task.isCancelled else { return }
+                await self?.fetchCount(rid: rid, f: capF, sort: capSort)
+            }
         }
     }
 
@@ -631,15 +657,20 @@ final class BrowseVM: ObservableObject {
         // 后台 Q.movieCovers(ids) 回填 cover_url（rid 校验后），不动滚动位置。
     }
 
+    /// 延迟计数任务（R7 P2：新请求到来时 cancel；rid 校验仍兜底 reqId 错位）
+    private var countTask: Task<Void, Never>?
+
     /// 首屏异步计数：bcount:{f}:{sort} TTL 5 分钟；Q.browseCount 失败 -1 → 保持「已加载 N 条」
     /// （-1 不落缓存，避免瞬时失败把计数通道封死 5 分钟）
-    private func fetchCount(rid: Int) async {
+    private func fetchCount(rid: Int, f: Filters, sort: String) async {
         let key = Self.countCacheKey(f: f, sort: sort)
         if let hit = cache.get(key, ttlMinutes: 5), let c = Self.numOf(hit, "count") {
             if rid == reqId && c >= 0 { total = c }
             return
         }
+        let countT0 = Int64(Date().timeIntervalSince1970 * 1000)
         let c = await source.browseCount(f: f, sort: sort)
+        PerfSignposts.mark("count.load", Int64(Date().timeIntervalSince1970 * 1000) - countT0)
         guard rid == reqId else { return }
         if c >= 0 {
             cache.put(key, ["count": c])

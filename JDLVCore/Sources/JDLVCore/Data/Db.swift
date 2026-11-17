@@ -39,19 +39,22 @@ public enum Db {
 
     // MARK: 查询
 
-    /// 只读查询 → [Row]；语句超时 = 设置里的查询超时（默认 8s）；执行前经 SqlPolicy.guard
+    /// 只读查询 → [Row]；语句超时 = 设置里的查询超时（默认 8s）；执行前经 SqlPolicy.guard。
+    /// lane（R7 P2）：聚合/统计走 .background（并发 1），首屏/交互默认 .interactive。
     public static func query(
-        _ which: String, _ sql: String, _ params: [SQLValue?] = []
+        _ which: String, _ sql: String, _ params: [SQLValue?] = [],
+        lane: DbLane = .interactive
     ) async throws -> [Row] {
-        try await MySQLPool.shared.query(which: which, sql: sql, params: params)
+        try await MySQLPool.shared.query(which: which, sql: sql, params: params, lane: lane)
     }
 
     /// 标量：第一行第一列；Number→Long，否则字符串解析，兜底 0L；空结果 → 0L
     /// （A10/R10：按结果集列定义首位取值，不再依赖无序字典 keys.first）
     public static func scalar(
-        _ which: String, _ sql: String, _ params: [SQLValue?] = []
+        _ which: String, _ sql: String, _ params: [SQLValue?] = [],
+        lane: DbLane = .interactive
     ) async throws -> Int64 {
-        let rows = try await query(which, sql, params)
+        let rows = try await query(which, sql, params, lane: lane)
         guard let first = rows.first else { return 0 }
         let key = first.orderedKeys.first ?? first.keys.first
         guard let key else { return 0 }

@@ -26,6 +26,10 @@ struct PageScaffold<Content: View>: View {
     /// LoadMoreFooter 集成（nil = 无分页 footer）
     var loadMore: LoadMoreConfig? = nil
 
+    /// R7 P2：正文容器（true = LazyVStack 包 content，详情/杂项页；
+    /// false = 普通 VStack，网格页 —— CardGrid 内部 LazyVGrid 是唯一懒容器，硬规则 7 单层懒）
+    var contentLazy: Bool = true
+
     /// 右下角 PageChip + 回顶（false = 不挂）
     var showNavTools: Bool = false
     /// R4 P5：底部避让（-1 = 读环境 tabBarInset；TabBar 页 56；显式 0 = 详情页）
@@ -103,15 +107,33 @@ struct PageScaffold<Content: View>: View {
         } else if empty {
             EmptyBox(text: emptyText, hint: emptyHint)
         } else {
+            contentContainer
+                .id(ListScaffoldConst.topAnchor)
+        }
+    }
+
+    /// R7 P2：正文容器按 contentLazy 分流（结构等价，仅容器类型不同）
+    @ViewBuilder
+    private var contentContainer: some View {
+        if contentLazy {
             LazyVStack(alignment: .leading, spacing: 0) {
-                content()
-                if let cfg = loadMore {
-                    LoadMoreFooter(config: cfg)
-                }
-                // R4 P5：底部余量 —— PageChip/FAB 不压最后一行
-                Color.clear.frame(height: effBottomInset + 88)
+                contentBody
             }
-            .id(ListScaffoldConst.topAnchor)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                contentBody
+            }
+        }
+    }
+
+    private var contentBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+            if let cfg = loadMore {
+                LoadMoreFooter(config: cfg)
+            }
+            // R4 P5：底部余量 —— PageChip/FAB 不压最后一行
+            Color.clear.frame(height: effBottomInset + 88)
         }
     }
 

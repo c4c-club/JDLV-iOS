@@ -279,7 +279,10 @@ final class ShtVM: ObservableObject {
         return cache.appendingPathComponent("share", isDirectory: true)
     }
     /// 分类延后时长（S11-P6 简化：Android 3s 轮询 + 200ms → 固定 200ms；测试可改 0）
-    var catsDelayMs: UInt64 = 200
+    /// R7 P2：分类延后 800ms（200 → 800）+ fire-and-forget，首屏列表先行
+    var catsDelayMs: UInt64 = 800
+    /// bind 启动的分类任务（新 bind 不再触发——boundOnce 守卫；留作取消接缝）
+    private var catsTask: Task<Void, Never>?
 
     // MARK: 状态（A.4 ShtUi 逐字段）
 
@@ -432,11 +435,13 @@ final class ShtVM: ObservableObject {
         boundOnce = true
         syncFromSettings()
         await reload()
-        // 分类延后（S11-P6）：≥200ms 再 loadCats(false)，避免与首屏并发抢连接。
-        // R6 PHASE3：不再以首屏成功为前提 —— 离线/远程空库时同样加载分类
-        //（loadCats 失败走静态兜底），保证主版筛选任何状态下都有选项。
-        try? await Task.sleep(nanoseconds: catsDelayMs * 1_000_000)
-        await loadCats(force: false)
+        // 分类延后（R7 P2：800ms + fire-and-forget，bind 不再等待 80k 聚合完成）。
+        // 聚合查询走 background lane（并发 1）；离线/空库失败仍走静态兜底（R6 PHASE3）。
+        catsTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: catsDelayMs * 1_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.loadCats(force: false)
+        }
     }
 
     /// 设置回读（viewMode/shtHasMagnet/shtPer；store 未注入 → 静默跳过）
@@ -734,8 +739,10 @@ final class ShtVM: ObservableObject {
             applyCats(stale)
             return
         }
+        let catsT0 = Int64(Date().timeIntervalSince1970 * 1000)
         do {
             let d = try await source.shtCategories()
+            PerfSignposts.mark("cats.load", Int64(Date().timeIntervalSince1970 * 1000) - catsT0)
             let remoteMains = d["mains"] as? [Row] ?? []
             if remoteMains.isEmpty {
                 applyFallbackCats()

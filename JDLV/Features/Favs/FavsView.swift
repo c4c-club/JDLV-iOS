@@ -22,8 +22,9 @@ struct FavsView: View {
     @State private var showExportShare: Bool = false
     @State private var exportPayload: String = ""
 
-    init() {
-        _vm = StateObject(wrappedValue: FavsVM.makeDefault())
+    /// R7 P2：VM 由 AppRoot 上提持有；不传则自持。
+    init(vm: FavsVM? = nil) {
+        _vm = StateObject(wrappedValue: vm ?? FavsVM.makeDefault())
     }
 
     private var rows: [Row] { vm.rows(tab) }

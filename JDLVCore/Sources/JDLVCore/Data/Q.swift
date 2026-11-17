@@ -631,13 +631,14 @@ public enum Q {
             let (whereStr, params, derivedWindow) = await whereOf(f)
             if whereStr == " WHERE 1=0" { return 0 }
             if let dw = derivedWindow {
-                // ★ S16-06: 仅月计数与列表同派生窗口（20000），不再全表 substr 扫描
+                // ★ S16-06: 仅月计数与列表同派生窗口（20000），不再全表 substr 扫描；
+                // R7 P2：派生窗口 COUNT 可达数百 ms → background lane，不与首屏/翻页抢连接
                 return try await Db.scalar(
                     "jdb",
                     "SELECT COUNT(*) FROM (SELECT id FROM movies " +
                         "ORDER BY release_date DESC LIMIT \(dw)) k " +
                         "JOIN movies m ON m.id = k.id\(whereStr)",
-                    params)
+                    params, lane: .background)
             }
             if whereStr.isEmpty {
                 // 无筛选: information_schema 估算 (毫秒级, "约 N 部")
@@ -646,7 +647,9 @@ public enum Q {
                     "SELECT TABLE_ROWS FROM information_schema.tables " +
                         "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'movies'")
             }
-            return try await Db.scalar("jdb", "SELECT COUNT(*) FROM movies m\(whereStr)", params)
+            // R7 P2：带筛选 COUNT（数百 ms 到数秒）走 background lane + 800ms 延迟（VM 层）
+            return try await Db.scalar(
+                "jdb", "SELECT COUNT(*) FROM movies m\(whereStr)", params, lane: .background)
         } catch {
             return -1   // UI 只显示"已加载 N 条"
         }
@@ -799,9 +802,20 @@ public enum Q {
             let whereStr = clauses.isEmpty ? "" : "WHERE " + clauses.joined(separator: " AND ")
             let sorts = actorSorts(eff)
             let order = sorts[sort] ?? sorts["videos"] ?? "videos_count DESC"
+            // R7 P2 附：videos_count DESC 在 10 万行上 filesort ~1.3s（女优首屏+翻页都吃）。
+            // 按 videos_count 排序时追加 WHERE videos_count > 0 缩窗：0/NULL 值本就沉底，
+            // 裁掉尾部空值行不改变有效结果，且让排序可走 (merged_into, videos_count) 索引前缀。
+            let narrowStr: String
+            if actorSortKey(order) == "videos_count" {
+                narrowStr = whereStr.isEmpty
+                    ? "WHERE videos_count > 0"
+                    : whereStr + " AND videos_count > 0"
+            } else {
+                narrowStr = whereStr
+            }
             let rows = try await Db.query(
                 "jdb",
-                "SELECT \(listCols) FROM actors \(whereStr) ORDER BY \(order) " +
+                "SELECT \(listCols) FROM actors \(narrowStr) ORDER BY \(order) " +
                     "LIMIT ? OFFSET ?",
                 params + [.int(Int64(per)), .int(Int64((page - 1) * per))])
             // TODO(P5): Indexer.upsertActorsAsync(rows)
@@ -1023,29 +1037,33 @@ public enum Q {
         let win = 80000   // ★ P3.9：20000 → 80000 帖
         // R3 问题 9：main 用 COALESCE(NULLIF(TRIM(board),''), cat_name) 归一化
         // （与 ShtSearch.list/count/shtExport 同口径）；board_name 仍副版、type 仍分类。
+        // R7 P2：3 条 80k 派生聚合走 background lane（并发 1），首屏列表不再排队等它们
         let subs = try await Db.query(
             "sht",
             "SELECT COALESCE(NULLIF(TRIM(board), ''), cat_name) main, board_name name, COUNT(*) c FROM " +
                 "(SELECT board, board_name, cat_name FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
                 "WHERE board_name IS NOT NULL " +
-                "GROUP BY main, board_name")
+                "GROUP BY main, board_name",
+            lane: .background)
         let cats = try await Db.query(
             "sht",
             "SELECT cat_name name, COUNT(*) c FROM " +
                 "(SELECT cat_name FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
-                "WHERE cat_name IS NOT NULL GROUP BY cat_name ORDER BY c DESC")
+                "WHERE cat_name IS NOT NULL GROUP BY cat_name ORDER BY c DESC",
+            lane: .background)
         let types = try await Db.query(
             "sht",
             "SELECT board_name sub, `type` name, COUNT(*) c FROM " +
                 "(SELECT board_name, `type` FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
-                "WHERE `type` IS NOT NULL AND `type` != '' GROUP BY board_name, `type`")
+                "WHERE `type` IS NOT NULL AND `type` != '' GROUP BY board_name, `type`",
+            lane: .background)
         let total: Int64
         do {
             total = try await Db.scalar(
                 "sht",
                 "SELECT TABLE_ROWS FROM information_schema.tables " +
                     "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
-                strs([tt]))
+                strs([tt]), lane: .background)
         } catch {
             total = -1
         }
