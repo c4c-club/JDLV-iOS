@@ -57,6 +57,8 @@ final class ProductionSmokeUITests: XCTestCase {
             "-JDLV_DEFAULTS_SUITE", suite,
             "-JDLV_KEYCHAIN_SERVICE", service,
             "-JDLV_SEED_SETTINGS", b64,
+            // R7 P1：种子口令需保留（真实连接 fixture）→ seed 写代际标记，首启不 purge
+            "-JDLV_SEED_KEEP_SECRETS",
         ]
         app.launch()
         return app

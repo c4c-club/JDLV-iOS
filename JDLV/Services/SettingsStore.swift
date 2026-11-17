@@ -93,6 +93,9 @@ final class SettingsStore: ObservableObject {
     @Published private(set) var secretReadMessage = ""
     /// 最近一次写失败的状态文案（persist FAILED 时由 UI 呈现）
     @Published private(set) var secretWriteMessage = ""
+    /// R7 P1：安装代际 purge 失败（任一删除未成功 → 未写 jdlv_install_id）。
+    /// 本会话按「无口令」处理并复用 secretReadFailed 文案通道；下次启动重试。
+    @Published private(set) var secretPurgePending = false
     /// A-7 自愈发生（锁定残留被自动解除）—— UI 提示用
     @Published private(set) var healedResidualLock = false
 
@@ -180,6 +183,12 @@ final class SettingsStore: ObservableObject {
         if let v = dict["lock_secret"] as? String {
             _ = KeychainStore.setResult(v, forKey: "lock_secret")
         }
+        // R7 P1：种子需要保留口令的测试（ProductionSmoke 真实连接）显式带本 arg
+        // → seed 后写安装代际标记（同代际 → ensureGeneration 不 purge）；
+        // 不带 = 模拟「卸载重装」（新代际 → 首启 purge 清掉种子口令）。
+        if args.contains("-JDLV_SEED_KEEP_SECRETS") {
+            defaults.set(UUID().uuidString, forKey: SecretVault.installIDKey)
+        }
         #endif
     }
 
@@ -189,6 +198,10 @@ final class SettingsStore: ObservableObject {
         self.defaults = defaults
         self.keychainWriter = keychainWriter
         KeychainStore.applyLaunchArgFaults(ProcessInfo.processInfo.arguments)
+        // R7 P1：安装代际判定在任何口令读取之前（Keychain 不随 App 删除清空）。
+        // purge 失败 → 不写标记，本会话按「无口令」处理 + secretReadFailed 文案，
+        // 下次启动重试；成功则写 jdlv_install_id，之后正常重启/升级绝不清。
+        secretPurgePending = !SecretVault.ensureGeneration(defaults: defaults)
         var s: AppSettings
         if let data = defaults.data(forKey: AppSettings.storageDefaultsKey) {
             s = AppSettings.fromStorageJSON(data)
@@ -218,6 +231,17 @@ final class SettingsStore: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 var updated = self.settings
+                if self.secretPurgePending {
+                    // R7 P1：purge 未完成（标记未写）→ 本会话绝不回填 Keychain 历史值，
+                    // 复用现有 secretReadFailed 文案通道；下次启动 ensureGeneration 重试。
+                    self.secretReadFailed = true
+                    self.secretReadMessage = "口令清理未完成：历史口令已按不可用处理，请重新输入"
+                    self.loaded = true
+                    self.observeProtectedDataAvailable()
+                    AppBootstrap.box.update(updated)
+                    ProxyTunnelManager.shared.reconcile(updated)
+                    return
+                }
                 // R4：仅当键尚未被任何写入路径管理（persisted 与内存均空）时才采用后台读值，
                 // 避免与并发 updateSettingsNow 的 persisted 缓存竞态（partial-write 回滚测试）
                 if self.persistedLocalPass.isEmpty && updated.localPass.isEmpty {
@@ -273,7 +297,9 @@ final class SettingsStore: ObservableObject {
     /// R5 P2：Keychain 读取移到后台（MainActor 不得同步调 KeychainStore.getResult），
     /// 读毕 hop 回主 actor 更新状态；失败则保留失败态 + 刷新文案（可再次重试）。
     func retrySecretLoads() {
-        guard secretReadFailed else { return }
+        // R7 P1：purge pending 期间禁止重试回填（Keychain 里仍有历史值），
+        // 必须等下次启动 ensureGeneration 成功后再正常加载。
+        guard secretReadFailed, !secretPurgePending else { return }
         Task.detached(priority: .userInitiated) { [weak self] in
             var anyFail = false
             var msgs: String = ""

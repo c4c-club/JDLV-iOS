@@ -314,4 +314,45 @@ final class SettingsUITests: XCTestCase {
         }
         return cond()
     }
+
+    // MARK: R7 P1 安装代际清零：seed Keychain（无代际标记）= 卸载重装态
+
+    /// 种子口令 + 全新 defaults（无 jdlv_install_id）→ 首启 purge → 设置页密码行
+    /// 必须为空（无点）；点「明文」（模拟器无可用认证 → BiometricGate 拒绝，覆盖层
+    /// 不出现；即便 CI 模拟器配置了认证，purge 后覆盖层文本也为空）——旧口令两种
+    /// 状态都不得以任何形式出现在 UI 文本中。
+    func testFreshInstallPasswordFieldEmpty() throws {
+        let stalePass = "stale-legacy-pass"
+        let seedDict: [String: Any] = ["remote_pass": stalePass]
+        let seedJSON = try JSONSerialization.data(withJSONObject: seedDict)
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-JDLV_SEED_SETTINGS", seedJSON.base64EncodedString(),
+            "-JDLV_DEFAULTS_SUITE", "uitest_\(UUID().uuidString.prefix(8))",
+            "-JDLV_KEYCHAIN_SERVICE", "ks_\(UUID().uuidString.prefix(8))",
+        ]
+        app.launch()
+        openSettings(app)   // 首启门禁路径 → 数据源卡默认展开
+
+        let passField = app.secureTextFields.matching(
+            NSPredicate(format: "label == %@ OR placeholderValue == %@", "密码", "密码")
+        ).firstMatch
+        XCTAssertTrue(passField.waitForExistence(timeout: 8), "密码 SecureField not found")
+        let v1 = (passField.value as? String) ?? ""
+        XCTAssertTrue(v1.isEmpty,
+                      "重装代际密码行必须为空（value 非 empty，\(v1.count) chars）")
+
+        let plainBtn = app.buttons["明文"].firstMatch
+        if plainBtn.waitForExistence(timeout: 3) {
+            plainBtn.tap()
+            Thread.sleep(forTimeInterval: 0.8)
+        }
+        let leaked = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", stalePass)
+        )
+        XCTAssertEqual(leaked.count, 0, "旧口令明文不得出现在任何 UI 文本中")
+        let v2 = (passField.value as? String) ?? ""
+        XCTAssertTrue(v2.isEmpty, "点明文后密码位仍必须为空（\(v2.count) chars）")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
 }

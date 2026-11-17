@@ -30,6 +30,8 @@ enum KeychainStore {
         var write = false
         /// 仅这些 key 写失败（构造「部分写」场景用）
         var failKeys: Set<String> = []
+        /// R7 P1：删除失败注入（purge 代际清零「失败不写标记、下次重试」测试用）
+        var failDelete = false
     }
 
     /// 单测直接置位；进程启动时由 launch argument 驱动（见 init_from_args）
@@ -134,12 +136,21 @@ enum KeychainStore {
         (try? getResult(key).get()) ?? nil
     }
 
-    static func delete(_ key: String) {
+    /// R7 P1：删除并返回原始 OSStatus（SecretVault.purgeDBSecrets 需区分
+    /// errSecItemNotFound 与真实失败）。service 参数覆盖历史 service 清理。
+    static func deleteResult(_ key: String, service: String? = nil) -> OSStatus {
+        if fault.failDelete {
+            return errSecInteractionNotAllowed
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: service ?? self.service,
             kSecAttrAccount as String: key,
         ]
-        SecItemDelete(query as CFDictionary)
+        return SecItemDelete(query as CFDictionary)
+    }
+
+    static func delete(_ key: String) {
+        _ = deleteResult(key)
     }
 }
