@@ -112,28 +112,31 @@ struct PageScaffold<Content: View>: View {
         }
     }
 
-    /// R7 P2：正文容器按 contentLazy 分流（结构等价，仅容器类型不同）
+    /// R7 P2：正文容器按 contentLazy 分流。
+    /// 注意两个分支都必须把 content() 的行作为容器的【直接子项】展开：
+    /// contentLazy=true 的 LazyVStack 行级懒加载依赖多子项（R4 P3 契约）；
+    /// 若用单个 VStack 包装 content()，LazyVStack 退化为单子项 = 全页一次性构建
+    /// （Top250 横滑行整行进 AX 树 → 布局审计越界误报，run 44184380369 实证）。
     @ViewBuilder
     private var contentContainer: some View {
         if contentLazy {
             LazyVStack(alignment: .leading, spacing: 0) {
-                contentBody
+                content()
+                if let cfg = loadMore {
+                    LoadMoreFooter(config: cfg)
+                }
+                // R4 P5：底部余量 —— PageChip/FAB 不压最后一行
+                Color.clear.frame(height: effBottomInset + 88)
             }
         } else {
             VStack(alignment: .leading, spacing: 0) {
-                contentBody
+                content()
+                if let cfg = loadMore {
+                    LoadMoreFooter(config: cfg)
+                }
+                // R4 P5：底部余量 —— PageChip/FAB 不压最后一行
+                Color.clear.frame(height: effBottomInset + 88)
             }
-        }
-    }
-
-    private var contentBody: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            content()
-            if let cfg = loadMore {
-                LoadMoreFooter(config: cfg)
-            }
-            // R4 P5：底部余量 —— PageChip/FAB 不压最后一行
-            Color.clear.frame(height: effBottomInset + 88)
         }
     }
 

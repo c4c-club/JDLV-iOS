@@ -376,6 +376,11 @@ final class BrowseVMTests: XCTestCase {
         src.countValue = 87
         let vm = makeVM(src, cache)
         await vm.reload()
+        // R7 P2：COUNT 延迟 800ms 且可取消 —— 轮询等待异步计数落定（上限 3s）
+        let deadline = Date().addingTimeInterval(3)
+        while vm.total != 87 && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
         XCTAssertEqual(vm.total, 87)
         // 计数缓存键 bcount:{f}:{sort} 已落
         XCTAssertNotNil(cache.store[BrowseVM.countCacheKey(f: Filters(), sort: "release_date")])
