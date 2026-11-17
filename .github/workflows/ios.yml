@@ -318,42 +318,32 @@ jobs:
           bash scripts/verify_ipa.sh JDLV-unsigned.ipa --known-values /tmp/known.values --known-hashes /tmp/known.sha256 \
             --out build/attachments/ipa-verify-report.txt
 
-      - name: Upload simulator zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: JDLV-Simulator-app-zip
-          path: JDLV-Simulator.app.zip
+      # P0 关闸：IPA / 模拟器包 / UI 测试截图 / 崩溃报告一律不再上传 artifact
+      # （公开仓库任何访客可下载 artifact；候选三件套只经 release job 的 draft 流程交付）。
+      # 失败日志仅在 PR 事件上传：先脱敏（邮箱/IP/口令形态/连接串），脱敏失败整包不上传。
+      - name: Redact build logs (PR only, fail-closed)
+        if: failure() && github.event_name == 'pull_request'
+        run: |
+          set -eo pipefail
+          mkdir -p build/redacted
+          for f in build/*.log; do
+            [ -e "$f" ] || continue
+            sed -E \
+              -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[REDACTED-EMAIL]/g' \
+              -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/[REDACTED-IP]/g' \
+              -e 's/[Pp]assword[=:][[:space:]]*[^[:space:]]+/[REDACTED-PW]/g' \
+              -e 's#(mysql|https?)://[^/[:space:]@]+:[^@[:space:]]+@#\1://[REDACTED]@#g' \
+              "$f" > "build/redacted/$(basename "$f")"
+          done
+          echo "redacted log files: $(ls build/redacted | wc -l)"
 
-      - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: JDLV-unsigned-ipa
-          path: JDLV-unsigned.ipa
-
-      - name: Upload UI test attachments
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ui-test-attachments
-          path: build/attachments
-          if-no-files-found: ignore
-
-      - name: Upload build logs on failure
-        if: failure()
+      - name: Upload redacted build logs (PR only, 1d retention)
+        if: failure() && github.event_name == 'pull_request' && success()
         uses: actions/upload-artifact@v4
         with:
           name: xcodebuild-logs
-          path: build/*.log
-          if-no-files-found: ignore
-
-      - name: Upload crash reports on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: diagnostic-reports
-          path: |
-            ~/Library/Logs/DiagnosticReports/*.ips
-            ~/Library/Logs/DiagnosticReports/Retired/*.ips
+          path: build/redacted/*.log
+          retention-days: 1
           if-no-files-found: ignore
 
   security:
@@ -383,26 +373,50 @@ jobs:
         run: python3 scripts/check_hits_manifest.py --report /tmp/history.txt --manifest scripts/secret_classification.txt
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    # R10/C2：等全部 job 成功才发布（R4 起 security 纳入 needs）
+    # P0：发布默认关闭——仅 tag 推送且 vars.R7_RELEASE_ENABLED == '1' 时才进入；
+    # environment: release 在仓库侧配置 required reviewers（人工审批）。
+    # 流程铁律：先 draft（仅协作者可见）→ verify PASS → 才 --draft=false 公开。
+    if: startsWith(github.ref, 'refs/tags/v') && vars.R7_RELEASE_ENABLED == '1'
     needs: [guard, core-linux, core-mysql, ios, security]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    environment: release
+    runs-on: macos-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        with:
-          name: JDLV-unsigned-ipa
-          path: dist
-      - uses: actions/download-artifact@v4
-        with:
-          name: JDLV-Simulator-app-zip
-          path: dist
-      - name: Re-verify IPA (security gate)
+      - name: Install xcodegen + resource gate + generate project
+        run: |
+          set -e
+          brew install xcodegen
+          bash scripts/check_resource_tree.sh
+          xcodegen generate
+      - name: Build simulator app (Debug, iphonesimulator)
+        run: |
+          set -eo pipefail
+          mkdir -p build dist
+          xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath build/DerivedData build 2>&1 | tee build/build-sim.log
+          ditto -c -k --sequesterRsrc --keepParent build/DerivedData/Build/Products/Debug-iphonesimulator/JDLV.app dist/JDLV-Simulator.app.zip
+      - name: Archive unsigned IPA (Release, iphoneos)
+        run: |
+          set -eo pipefail
+          xcodebuild -project JDLV.xcodeproj -scheme JDLV -sdk iphoneos -configuration Release -destination 'generic/platform=iOS' -archivePath build/JDLV.xcarchive archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R build/JDLV.xcarchive/Products/Applications/JDLV.app Payload/
+          zip -qry dist/JDLV-unsigned.ipa Payload
+          otool -l Payload/JDLV.app/JDLV | grep 'minos 16.0'
+      - name: Create draft release (collaborators only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          cd dist
+          sha256sum JDLV-unsigned.ipa JDLV-Simulator.app.zip > SHA256SUMS.txt
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft --title "${GITHUB_REF_NAME}" --notes "JDLV iOS ${GITHUB_REF_NAME} candidate binaries" JDLV-unsigned.ipa JDLV-Simulator.app.zip SHA256SUMS.txt
+      - name: Verify IPA (security gate, fail-closed)
         env:
           JDLV_KNOWN_SECRETS_B64: ${{ secrets.JDLV_KNOWN_SECRETS_B64 || '' }}
         run: |
@@ -415,11 +429,10 @@ jobs:
           python3 scripts/derive_known_hashes.py --root . --values-out /tmp/known.values --hashes-out /tmp/known.sha256 "${EXTRA[@]}"
           bash scripts/verify_ipa.sh dist/JDLV-unsigned.ipa --known-values /tmp/known.values --known-hashes /tmp/known.sha256 \
             --out dist/ipa-verify-report.txt
-      - name: Checksums + GitHub Release
+      - name: Publish release (draft=false, only on exact PASS)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -e
-          cd dist
-          sha256sum JDLV-unsigned.ipa JDLV-Simulator.app.zip > SHA256SUMS.txt
-          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --notes "JDLV iOS ${GITHUB_REF_NAME} binaries" JDLV-unsigned.ipa JDLV-Simulator.app.zip SHA256SUMS.txt
+          set -eo pipefail
+          grep -qx 'IPA VERIFY: PASS' dist/ipa-verify-report.txt
+          gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false

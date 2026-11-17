@@ -36,6 +36,32 @@ android_hits=$(git ls-files | grep -E 'JDLV-Mobile/app/sr[c]' || true)
 
 grep -q 'MARKETING_VERSION: 1.6.1' project.yml || { echo 'guard FAIL: version'; exit 1; }
 
+# P0 gate 1: workflows must never upload public build artifacts (.ipa/.app.zip);
+# every upload-artifact step must stay free of bundle paths (public repo rule)
+wf_ipa=$(awk '
+  /actions\/upload-artifact/ { blk = 1; next }
+  /^      - [a-zA-Z]/ || /^  [a-zA-Z0-9_-]+:/ { blk = 0 }
+  blk && (/\.ipa/ || /\.app\.zip/) { print FILENAME ": " $0 }
+' .github/workflows/*.yml)
+[ -z "$wf_ipa" ] || { echo 'guard FAIL: workflow uploads public build artifact'; echo "$wf_ipa"; exit 1; }
+echo 'workflow artifact gate: no .ipa/.app.zip uploads'
+
+# P0 gate 2: release must be human-approved (environment: release) and draft-first
+grep -q 'environment: release' .github/workflows/ios.yml || { echo 'guard FAIL: release not environment-gated'; exit 1; }
+grep -q -- '--draft' .github/workflows/ios.yml || { echo 'guard FAIL: release not draft-first'; exit 1; }
+echo 'release gate: environment: release + draft flow present'
+
+# P0 gate 3 (version drift, P8 pending): compare project.yml MARKETING_VERSION
+# against the R7 target when docs/28 is locally present (gitignored, so CI runs
+# without it). Mismatch before P8 is a WARN, not a gate failure.
+if [ -f 'docs/28_分段执行_R7/00_MASTER.md' ]; then
+  r7_target=$(grep -oE '版本 [0-9]+\.[0-9]+\.[0-9]+' 'docs/28_分段执行_R7/00_MASTER.md' | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+  r7_cur=$(grep -oE 'MARKETING_VERSION: [0-9.]+' project.yml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+  if [ -n "$r7_target" ] && [ -n "$r7_cur" ] && [ "$r7_cur" != "$r7_target" ]; then
+    echo "guard WARN: MARKETING_VERSION $r7_cur != R7 target $r7_target (bump scheduled in P8)"
+  fi
+fi
+
 # R3 gate: keyboard API audit (asciiCapable/inputView/UIKeyInput banned)
 kb_hits=$(grep -R -E "asciiCapable|inputView|UIKeyInput" JDLV --include='*.swift' || true)
 [ -z "$kb_hits" ] || { echo 'guard FAIL: banned keyboard API (issue 1 audit)'; echo "$kb_hits"; exit 1; }
