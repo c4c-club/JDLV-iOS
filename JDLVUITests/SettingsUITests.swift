@@ -59,12 +59,15 @@ final class SettingsUITests: XCTestCase {
         let page = app.descendants(matching: .any)["settings_page"].firstMatch
         if page.waitForExistence(timeout: 5) && page.isHittable { return }
         // R7 P2：runner 进程 print 可靠进 CI 日志（被测 App 的 print 不可靠）——
-        // 失败前落关键元素状态，定位「隐藏根干扰 or tab 未切换」
-        print("DIAG settings: group_db exists=\(dbGroup.exists) hittable=\(dbGroup.exists ? dbGroup.isHittable : false) " +
-              "page exists=\(page.exists) hittable=\(page.exists ? page.isHittable : false) " +
-              "tab_settings exists=\(app.buttons["tab_settings"].exists) " +
-              "tab_search exists=\(app.buttons["tab_search"].exists) " +
-              "settings_page exists=\(app.descendants(matching: .any)["settings_page"].count)")
+        // 失败前落关键元素状态，定位「隐藏根干扰 or tab 未切换」。
+        // 先取局部变量再插值：嵌套插值+三目会触发 type-check 超时（CI 实证）
+        let gExists = dbGroup.exists
+        let gHit = gExists ? dbGroup.isHittable : false
+        let pExists = page.exists
+        let pHit = pExists ? page.isHittable : false
+        let tsBtn = app.buttons["tab_settings"].exists
+        let seBtn = app.buttons["tab_search"].exists
+        print("DIAG settings: group_db=\(gExists)/hit\(gHit) page=\(pExists)/hit\(pHit) tab_settings=\(tsBtn) tab_search=\(seBtn)")
         XCTAssertTrue(false, "settings page not active（隐藏根干扰或 tab 未切换）")
     }
 
