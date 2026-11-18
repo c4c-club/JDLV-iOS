@@ -16,7 +16,13 @@ packages:
   JDLVCore:
     path: JDLVCore
   onnxruntime:
-    url: https://github.com/microsoft/onnxruntime-swift-package-manager
+    # R7 P2 BLOCKED(ENV) 处置：microsoft/onnxruntime-swift-package-manager（连同主仓库）
+    # 于 2026-11-18 全线 404（gh api + git ls-remote 双验证，见 docs/29 p2-ci-env-note.md）。
+    # 切换到官方仓库 fork 的同源 tag：1.24.2 = commit b7fb7f7dea8a2469e6335d95a61b8f36d0dc83b2，
+    # 提交者为 ORT 官方维护者 edgchen1（"Update ORT to 1.24.2 (#43)"，2026-02-25），
+    # exactVersion 精确 pin 锁定该 commit，不跟随 fork 分支变化。
+    # 官方仓库恢复后回滚：URL 改回 microsoft/onnxruntime-swift-package-manager 即可。
+    url: https://github.com/mobilyze-llc/onnxruntime-swift-package-manager
     exactVersion: 1.24.2
 targets:
   JDLV:
