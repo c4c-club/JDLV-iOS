@@ -65,6 +65,19 @@ struct HomeView: View {
         queryTrim.isEmpty && vm.home != nil && !history.isEmpty
     }
 
+    /// R7 P2：首屏打点 tick（普通函数体，非 ViewBuilder —— if 语句合法）。
+    /// 每 0.5s 由 TimelineView 调用：首屏数据非空即幂等 endLaunchOnce，
+    /// probe value 同帧取最新 firstCardMs（AX 更新不依赖 render/onChange 链）。
+    private func firstCardProbe(_ vm: SearchVM) -> some View {
+        if vm.home != nil || vm.items != nil {
+            PerfSignposts.endLaunchOnce()
+        }
+        return Color.clear
+            .frame(width: 1, height: 1)
+            .accessibilityIdentifier("perf_firstcard")
+            .accessibilityValue("\(PerfSignposts.firstCardMs)")
+    }
+
     // MARK: body
 
     var body: some View {
@@ -84,13 +97,7 @@ struct HomeView: View {
         // body 重算链完全解耦（CI 四轮实证那条链在 demo 时序下不可靠）。
         .overlay(alignment: .topTrailing) {
             TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                if vm.home != nil || vm.items != nil {
-                    PerfSignposts.endLaunchOnce()
-                }
-                Color.clear
-                    .frame(width: 1, height: 1)
-                    .accessibilityIdentifier("perf_firstcard")
-                    .accessibilityValue("\(PerfSignposts.firstCardMs)")
+                firstCardProbe(vm)
             }
         }
         .onAppear {
