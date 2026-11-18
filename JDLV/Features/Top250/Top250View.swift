@@ -109,6 +109,10 @@ struct Top250View: View {
                 Top250Row(m: m) {
                     router.push(.movie(m.s("id")))
                 }
+                // R7 P2：无 contain 时外层 identifier 落不到 AX element（Button 是叶子，
+                // 容器不是 element）→ LayoutAudit collect(t250row_) 恒空、走降级源误收
+                // 其他页卡片；contain 让本行成为 AX 容器，锚点才真正进树。
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("t250row_\(i)")
             }
         }

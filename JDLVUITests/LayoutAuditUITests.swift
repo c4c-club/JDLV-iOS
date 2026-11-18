@@ -347,14 +347,19 @@ final class LayoutAuditUITests: XCTestCase {
         //    可达则完整审计，不可达如实记 skippedPages（验收报告单列））
         openTab(app, "search")
         _ = app.descendants(matching: .any)["home_push_movie"].firstMatch.waitForExistence(timeout: 20)
-        _ = tapIfExist(app.buttons["viewall_top"], 15)
+        // R7 P2：viewall_top 在第 3 段（首屏视口外）——屏外元素 coordinate tap 落空
+        // → 从未 push，waitFirstCard 的降级 collect 在首页就命中"演示"卡 → 在首页
+        // 上跑 top250 审计产生越界误报。先滚动到可见再点。
+        scrollUntilVisible(app, app.buttons["viewall_top"])
+        _ = tapIfExist(app.buttons["viewall_top"], 10)
         if !waitFirstCard(app, page: "top250", prefix: "t250row_", timeout: 20) {
             app.terminate()
             app.launch()
             _ = app.buttons["tab_search"].waitForExistence(timeout: 20)
             _ = app.descendants(matching: .any)["home_push_movie"].firstMatch
                 .waitForExistence(timeout: 25)
-            _ = tapIfExist(app.buttons["viewall_top"], 15)
+            scrollUntilVisible(app, app.buttons["viewall_top"])
+            _ = tapIfExist(app.buttons["viewall_top"], 10)
             waitHealing(app, app.descendants(matching: .any)["t250row_0"].firstMatch,
                         timeout: 25)
         }

@@ -100,7 +100,9 @@ struct HomeView: View {
             }
         }
         // R4 P3：首屏数据到达（vm.items 首次非空）→ 启动区间结束（幂等）
-        .onChange(of: vm.items != nil) { loaded in
+        // R7 P2：首屏数据 = 三段态(vm.home)或搜索态(vm.items)任一到达 —— 冷启动落在
+        // 三段态，items 恒 nil，onChange 永不触发（run 44208464147 firstCard 恒 -1 实证）
+        .onChange(of: vm.home != nil || vm.items != nil) { loaded in
             if loaded {
                 PerfSignposts.endLaunchOnce()
                 firstCardAx = PerfSignposts.firstCardMs
