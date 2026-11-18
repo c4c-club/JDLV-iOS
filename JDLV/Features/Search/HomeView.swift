@@ -75,7 +75,8 @@ struct HomeView: View {
         return Color.clear
             .frame(width: 1, height: 1)
             .accessibilityIdentifier("perf_firstcard")
-            .accessibilityValue("\(PerfSignposts.firstCardMs)")
+            // 诊断格式 "ms|h:<home>|i:<items>" —— UI 测试取 | 前毫秒段；失败消息带全串
+            .accessibilityValue("\(PerfSignposts.firstCardMs)|h:\(vm.home != nil)|i:\(vm.items != nil)")
     }
 
     // MARK: body

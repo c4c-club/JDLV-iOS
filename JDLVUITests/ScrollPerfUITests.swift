@@ -70,9 +70,15 @@ final class ScrollPerfUITests: XCTestCase {
                       "perf_firstcard not found (round \(round))")
         let deadline = Date().addingTimeInterval(20)
         while Date() < deadline {
-            if let v = probe.value as? String, let n = Int64(v), n >= 0 { return n }
+            if let v = probe.value as? String {
+                let msPart = v.split(separator: "|").first.map(String.init) ?? v
+                if let n = Int64(msPart), n >= 0 { return n }
+            }
             usleep(200_000)
         }
+        // 失败时把完整诊断串带进断言（ms|h:<home>|i:<items>）
+        let diag = (probe.value as? String) ?? "<nil>"
+        XCTFail("firstCard probe 未就绪 (round \(round)): \(diag)")
         return -1
     }
 
