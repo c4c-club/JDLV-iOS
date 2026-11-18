@@ -57,8 +57,15 @@ final class SettingsUITests: XCTestCase {
         let dbGroup = app.descendants(matching: .any)["settings_group_db"].firstMatch
         if dbGroup.waitForExistence(timeout: 8) && dbGroup.isHittable { return }
         let page = app.descendants(matching: .any)["settings_page"].firstMatch
-        XCTAssertTrue(page.waitForExistence(timeout: 5) && page.isHittable,
-                      "settings page not active（隐藏根干扰或 tab 未切换）")
+        if page.waitForExistence(timeout: 5) && page.isHittable { return }
+        // R7 P2：runner 进程 print 可靠进 CI 日志（被测 App 的 print 不可靠）——
+        // 失败前落关键元素状态，定位「隐藏根干扰 or tab 未切换」
+        print("DIAG settings: group_db exists=\(dbGroup.exists) hittable=\(dbGroup.exists ? dbGroup.isHittable : false) " +
+              "page exists=\(page.exists) hittable=\(page.exists ? page.isHittable : false) " +
+              "tab_settings exists=\(app.buttons["tab_settings"].exists) " +
+              "tab_search exists=\(app.buttons["tab_search"].exists) " +
+              "settings_page exists=\(app.descendants(matching: .any)["settings_page"].count)")
+        XCTAssertTrue(false, "settings page not active（隐藏根干扰或 tab 未切换）")
     }
 
     /// R5 P3：失败时附截图 + AX 树 dump（可复核，不盲猜）
