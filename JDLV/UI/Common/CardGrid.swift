@@ -29,11 +29,12 @@ extension EnvironmentValues {
     }
 }
 
-/// 页面侧取容器宽度：注入值 > 0 用之；否则回退水平 size class 估算（首帧兜底）。
-/// R4 P3：删除 393 硬编码 —— compact 首帧兜底改 320（最小机型；宁可窄不可溢出）。
+/// 页面侧取容器宽度：注入值 > 0 用之；否则返回 0（未知宽度）。
+/// R7 P3：删除 320/768 兜底 —— 兜底值参与 cellWidth 计算会在首帧/转场产生
+/// 「窄一截」中间态（402pt 屏网格 320、右侧空 82pt，任务 04 C1/C2）；
+/// 未知宽度交由 ContainerWidthReader 画骨架占位。
 func resolvedContainerWidth(_ envWidth: CGFloat, hSize: UserInterfaceSizeClass?) -> CGFloat {
-    if envWidth > 0 { return envWidth }
-    return hSize == .regular ? 768 : 320
+    return max(0, envWidth)
 }
 
 /// R6 PHASE3：容器宽读取（环境向下通道）。
@@ -42,22 +43,34 @@ func resolvedContainerWidth(_ envWidth: CGFloat, hSize: UserInterfaceSizeClass?)
 /// （R5 CI 截图实证失效：402pt 屏恒走 320 兜底 → 浏览/女优/98t 右侧 ~82pt 空白）。
 struct ContainerWidthReader<Content: View>: View {
     @Environment(\.containerWidth) private var envWidth
-    @Environment(\.horizontalSizeClass) private var hSize
     @ViewBuilder var content: (CGFloat) -> Content
 
     var body: some View {
-        content(resolvedContainerWidth(envWidth, hSize: hSize))
+        let w = resolvedContainerWidth(envWidth, hSize: nil)
+        if w > 0 {
+            content(w)
+        } else {
+            // R7 P3：未知宽度不画网格（320 兜底会窄一截），先画骨架占位
+            SkeletonGrid(columns: 2)
+        }
     }
 }
 
 enum GridMath {
-    /// 列宽公式：cellW = (W - 2*margin - (N-1)*spacing) / N（13 §3.4）
+    /// 列宽公式：cellW = (W - 2*margin - (N-1)*spacing) / N（13 §3.4）。
+    /// R7 P3 契约：pageWidth 必须是【已扣除水平 padding 的可用宽度】——
+    /// 调用方用 fittingWidth(container:horizontalPadding:) 统一扣减，禁止手写 -24/-32。
     static func cellWidth(pageWidth: CGFloat, columns: Int,
                           margin: CGFloat = ComponentMetrics.pageMargin,
                           spacing: CGFloat = ComponentMetrics.gridSpacing) -> CGFloat {
         guard pageWidth > 0, columns >= 1 else { return 0 }
         let usable = pageWidth - 2 * margin - CGFloat(columns - 1) * spacing
         return max(0, usable / CGFloat(columns))
+    }
+
+    /// R7 P3：容器宽 → 网格可用宽的统一扣减（替代各调用点手写 -24/-32 的猜宽写法）
+    static func fittingWidth(container: CGFloat, horizontalPadding: CGFloat) -> CGFloat {
+        max(0, container - horizontalPadding * 2)
     }
 
     /// 行分块：每行 columns 个；最后一行不足用 nil 占位（Color.clear）保证左对齐。

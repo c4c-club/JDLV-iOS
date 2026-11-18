@@ -284,7 +284,8 @@ jobs:
           # layout-report（字符串附件）导出为 UUID.txt → 按内容定位
           REPORT=$(grep -l 'violations' ./*.txt ./*.json 2>/dev/null | head -1 || true)
           if [ -z "$REPORT" ]; then echo 'FAIL layout-report.json missing (LayoutAuditUITests did not run)'; exit 1; fi
-          python3 -I "$GITHUB_WORKSPACE/scripts/verify_layout.py" "$REPORT"
+          # R7 P3：--strict = 页数门槛（pagesAudited >= 14）+ skippedPages 判红
+          python3 -I "$GITHUB_WORKSPACE/scripts/verify_layout.py" "$REPORT" --strict
 
       - name: Package simulator app
         run: |

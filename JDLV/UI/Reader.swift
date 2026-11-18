@@ -258,8 +258,11 @@ struct ReaderParagraph: UIViewRepresentable {
         default:
             font = base
         }
-        // 实际可用宽度（容器宽 − padding 12×2 − 阅读器容器 padding 12×2）随系统更新
-        label.preferredMaxLayoutWidth = UIScreen.main.bounds.width - 48
+        // R7 P3：以实际容器宽计算（UIScreen.main.bounds 在分屏/横竖屏失真，
+        // 出口检查「UIScreen.main 不参与布局」）；superview 未布局时退 361 兜底
+        // （仅影响行高预测，与 makeUIView 初始值一致）
+        let container = label.superview?.bounds.width ?? 0
+        label.preferredMaxLayoutWidth = container > 0 ? container - 48 : 361
         let ps = NSMutableParagraphStyle()
         // 行高 = rdFontPt × rdLineHeight（三端口径）：lineSpacing = 目标行高 − 字体自然行高
         ps.lineSpacing = max(0, fontPt * lineHeight - font.lineHeight)

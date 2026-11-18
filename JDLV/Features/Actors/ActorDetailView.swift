@@ -18,10 +18,6 @@ import JDLVCore
 struct ActorDetailView: View {
     @EnvironmentObject private var router: Router
     @Environment(\.appTheme) private var theme
-    @Environment(\.horizontalSizeClass) private var hSize
-    @Environment(\.containerWidth) private var envWidth
-    // R4 P3：二级页环境里没有 PageScaffold 注入 → 自测宽（background GeometryReader 发 preference）
-    @State private var measuredWidth: CGFloat = 0
     let aid: String
 
     @StateObject private var vm: ActorDetailVM
@@ -39,9 +35,6 @@ struct ActorDetailView: View {
     // MARK: 派生
 
     private var name: String { vm.actor?.s("name") ?? "" }
-    private var pageWidth: CGFloat {
-        measuredWidth > 0 ? measuredWidth : resolvedContainerWidth(envWidth, hSize: hSize)
-    }
 
     var body: some View {
         Group {
@@ -56,12 +49,6 @@ struct ActorDetailView: View {
             }
         }
         .background(theme.bg0.ignoresSafeArea())
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(key: PageContainerWidthKey.self, value: geo.size.width)
-            }
-        )
-        .onPreferenceChange(PageContainerWidthKey.self) { measuredWidth = $0 }
         .navigationTitle(name.isEmpty ? ActorDetailCopy.navTitleFallback : name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -81,19 +68,23 @@ struct ActorDetailView: View {
     // MARK: 正文（R4 P6：ScrollViewReader + profileCard + moviesSection + 底部余量 96）
 
     private var content: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                ScrollOffsetReader(space: "actor_detail_space")
-                    .id("actor_top")
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    profileCard
-                    moviesSection
-                    // 尾部余量：PageChip/FAB 不压最后一行（≥8pt 间距要求）
-                    Color.clear.frame(height: 96)
+        // R7 P3：GeometryReader 同布局周期直读宽 —— 替换 background 测量 + preference
+        // + 320 兜底链（首帧/转场时 preference 未到 → resolvedContainerWidth 320 →
+        // 电影网格右缘差 82pt 的根因，任务 04 C1）。
+        GeometryReader { geo in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    ScrollOffsetReader(space: "actor_detail_space")
+                        .id("actor_top")
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        profileCard
+                        moviesSection(innerW: GridMath.fittingWidth(container: geo.size.width, horizontalPadding: 12))
+                        // 尾部余量：PageChip/FAB 不压最后一行（≥8pt 间距要求）
+                        Color.clear.frame(height: 96)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-            }
             .coordinateSpace(name: "actor_detail_space")
             .scrollTopOffsetWatcher(show: $showScrollTop)
             .overlay(alignment: .bottomTrailing) {
@@ -107,8 +98,10 @@ struct ActorDetailView: View {
                 }
                 .padding(.trailing, 12)
                 .padding(.bottom, 16)
+                }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: 资料卡（R4 P6 版式：88 头像 + chips + Divider + InfoCell 网格）
@@ -210,7 +203,8 @@ struct ActorDetailView: View {
 
     // MARK: 出演影片区（R4 P6：Menu 合并排序/方向 + 标签按钮 + CardGrid 2 列）
 
-    private var moviesSection: some View {
+    /// R7 P3：innerW 由 content 的 GeometryReader 直读传入（已扣 12pt×2 padding）
+    private func moviesSection(innerW: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(ActorDetailCopy.moviesTitle(vm.total))
                 .font(.system(size: 14, weight: .bold))
@@ -224,13 +218,13 @@ struct ActorDetailView: View {
                 AppText(ActorDetailCopy.emptyMovies, lvl: .meta)
                     .padding(.top, 12)
             } else {
-                // R4 P4：content 已有 12pt 水平 padding → 内宽 = pageWidth - 24，
-                // GridMath margin 显式传 0，杜绝双重扣（320pt 不裁切）
-                let innerW = pageWidth - 24
+                // R4 P4：GridMath margin 显式传 0，杜绝双重扣（320pt 不裁切）；
+                // innerW 来自 GeometryReader 直读（R7 P3），无 320 兜底中间态
                 let cellW = GridMath.cellWidth(pageWidth: innerW, columns: 2, margin: 0)
                 CardGrid(items: vm.items, columns: 2,
                          cellWidth: cellW,
-                         cellHeight: CardLayout.movieSmallH(cellW: cellW)) { mv in
+                         cellHeight: CardLayout.movieSmallH(cellW: cellW),
+                         idPrefix: "card_actor_detail") { mv in
                     MovieCard(m: mv, viewMode: 0, onClick: {
                         router.push(.movie(mv.s("id")))
                     })

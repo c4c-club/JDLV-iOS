@@ -21,10 +21,12 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # 本轮审计的页面清单（LayoutAuditUITests.testAllPagesCardLayoutAudit）
+# R7 P3 扩展：+ actor-detail / movie-detail / sht-detail / article-detail / settings
 EXPECTED_PAGES = [
     "home-recent", "home-hot", "home-top",
-    "browse", "actors", "sht",
-    "articles", "hot-reviews", "top250", "favs",
+    "browse", "actors", "actor-detail", "sht", "sht-detail",
+    "articles", "article-detail", "hot-reviews", "top250", "favs",
+    "settings",
 ]
 
 
@@ -32,12 +34,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("report")
     ap.add_argument("--pages", default="")
+    ap.add_argument("--strict", action="store_true",
+                    help="页数门槛：pagesAudited < EXPECTED_PAGES 也判红（R7 P3）")
     args = ap.parse_args()
 
     with open(args.report, "r", encoding="utf-8") as f:
         data = json.load(f)
     violations = data.get("violations", [])
     skipped = data.get("skippedPages", [])
+    pages_audited = data.get("pagesAudited", [])
     all_ok = True
     for v in violations:
         print("VIOLATION [%s] %s: %s" % (v.get("page"), v.get("element"), v.get("violation")))
@@ -47,6 +52,13 @@ def main():
     if skipped:
         # blocker B1：top250 demo 入口不可达（验收报告单列）——如实放行其余页
         print("SKIPPED PAGES (blocker B1): %s" % skipped)
+        if args.strict:
+            print("STRICT skipped pages present -> fail")
+            all_ok = False
+    if args.strict and len(pages_audited) < len(EXPECTED_PAGES):
+        print("STRICT pagesAudited=%d < expected=%d (%s)"
+              % (len(pages_audited), len(EXPECTED_PAGES), ",".join(EXPECTED_PAGES)))
+        all_ok = False
 
     pages = [p for p in args.pages.split(",") if p] or EXPECTED_PAGES
     seen = {v.get("page") for v in violations}

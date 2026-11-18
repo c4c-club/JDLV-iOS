@@ -386,6 +386,55 @@ final class LayoutAuditUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "favs", prefix: "fav_row", columns: 1, spacing: 8, checkScroll: false)
 
+        // 9) 女优详情（R7 P3：GeometryReader 直读宽修复验收 —— 电影网格右缘 = 屏宽-12±3；
+        //    详情页满宽口径 margin 12 = content .padding(.horizontal, 12)×2）
+        openTab(app, "actors")
+        waitFirstCard(app, page: "actors", prefix: "card_actors_")
+        _ = tapIfExist(app.descendants(matching: .any)["card_actors_0"].firstMatch, 5)
+        waitFirstCard(app, page: "actor-detail", prefix: "card_actor_detail_", timeout: 20)
+        Thread.sleep(forTimeInterval: 1.0)
+        audit(app, page: "actor-detail", prefix: "card_actor_detail_", columns: 2, spacing: 12,
+              checkScroll: true, checkFullWidth: true, fullWidthMargin: 12)
+        navBack(app)
+
+        // 10) 影片详情（内容自适应页：关键元素存在 + 可滚动，无网格断言）
+        openTab(app, "browse")
+        waitFirstCard(app, page: "browse", prefix: "card_browse_")
+        _ = tapIfExist(app.descendants(matching: .any)["card_browse_0"].firstMatch, 5)
+        waitFirstCard(app, page: "movie-detail", prefix: "magnet_card", timeout: 20)
+        Thread.sleep(forTimeInterval: 1.0)
+        audit(app, page: "movie-detail", prefix: "magnet_card", columns: 1, spacing: 8,
+              checkScroll: true)
+        navBack(app)
+
+        // 11) 98t 详情（sht 首卡点击进入；阅读器内容元素）
+        openTab(app, "sht")
+        waitFirstCard(app, page: "sht", prefix: "shtcard_")
+        _ = tapIfExist(app.descendants(matching: .any)["shtcard_0"].firstMatch, 5)
+        waitFirstCard(app, page: "sht-detail", prefix: "sht_reader_aa", timeout: 20)
+        Thread.sleep(forTimeInterval: 1.0)
+        audit(app, page: "sht-detail", prefix: "sht_reader_aa", columns: 1, spacing: 8,
+              checkScroll: true)
+        navBack(app)
+
+        // 12) 文章详情（articles 首行点击进入；容器恒存在）
+        openTab(app, "search")
+        _ = tapIfExist(app.buttons["entry_articles"])
+        waitFirstCard(app, page: "articles", prefix: "article_card")
+        _ = tapIfExist(app.descendants(matching: .any)["article_card"].firstMatch, 5)
+        waitFirstCard(app, page: "article-detail", prefix: "article_detail", timeout: 20)
+        Thread.sleep(forTimeInterval: 1.0)
+        audit(app, page: "article-detail", prefix: "article_detail", columns: 1, spacing: 8,
+              checkScroll: true)
+        navBack(app)
+
+        // 13) 设置（激活根判据复用 SettingsUITests 口径：group_db 恒存在且 hittable）
+        openTab(app, "settings")
+        waitFirstCard(app, page: "settings", prefix: "settings_group_db", timeout: 15)
+        Thread.sleep(forTimeInterval: 1.0)
+        audit(app, page: "settings", prefix: "settings_group_db", columns: 1, spacing: 8,
+              checkScroll: false)
+
         flushReport()
         XCTAssertTrue(report.isEmpty, "layout violations: \(report.count) → layout-report.json")
     }
