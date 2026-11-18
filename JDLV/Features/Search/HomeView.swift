@@ -78,13 +78,16 @@ struct HomeView: View {
         .background(theme.bg0.ignoresSafeArea())
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
-        // R7 P2：firstCard 毫秒 AX 通道（perf_firstcard；UI 测试跨进程读取；
-        // 1×1 透明不参与布局；loaded 后 body 重算时值为已落 firstCardMs）
+        // R7 P2：firstCard 毫秒 AX 通道（perf_firstcard；UI 测试跨进程读取）。
+        // TimelineView 每 0.5s 重算 → value 直接读静态 firstCardMs，AX 更新与
+        // onChange/onAppear/body 重算链完全解耦（此前三链任一断即恒 -1，CI 实证）。
         .overlay(alignment: .topTrailing) {
-            Color.clear
-                .frame(width: 1, height: 1)
-                .accessibilityIdentifier("perf_firstcard")
-                .accessibilityValue("\(firstCardAx)")
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityIdentifier("perf_firstcard")
+                    .accessibilityValue("\(PerfSignposts.firstCardMs)")
+            }
         }
         .onAppear {
             vm.bind(to: store, persistMode: persistMode)
