@@ -79,10 +79,14 @@ struct HomeView: View {
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
         // R7 P2：firstCard 毫秒 AX 通道（perf_firstcard；UI 测试跨进程读取）。
-        // TimelineView 每 0.5s 重算 → value 直接读静态 firstCardMs，AX 更新与
-        // onChange/onAppear/body 重算链完全解耦（此前三链任一断即恒 -1，CI 实证）。
+        // TimelineView 每 0.5s 的闭包同时充当【打点引擎】：首屏数据（三段态 vm.home
+        // 或搜索态 vm.items）非空即调用幂等 endLaunchOnce —— 与 onChange/onAppear/
+        // body 重算链完全解耦（CI 四轮实证那条链在 demo 时序下不可靠）。
         .overlay(alignment: .topTrailing) {
             TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                if vm.home != nil || vm.items != nil {
+                    PerfSignposts.endLaunchOnce()
+                }
                 Color.clear
                     .frame(width: 1, height: 1)
                     .accessibilityIdentifier("perf_firstcard")
