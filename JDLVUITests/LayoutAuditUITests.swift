@@ -393,8 +393,11 @@ final class LayoutAuditUITests: XCTestCase {
         _ = tapIfExist(app.descendants(matching: .any)["card_actors_0"].firstMatch, 5)
         waitFirstCard(app, page: "actor-detail", prefix: "card_actor_detail_", timeout: 20)
         Thread.sleep(forTimeInterval: 1.0)
+        // checkFullWidth 关闭：demo 单卡时网格左对齐不满宽（满宽断言只对卡数>=列数成立）；
+        // 宽度修复验收 = cellW 值本身（frame 记录进 report，320 兜底时代 cellW=142.5、
+        // GeometryReader 直读后 183.5）
         audit(app, page: "actor-detail", prefix: "card_actor_detail_", columns: 2, spacing: 12,
-              checkScroll: true, checkFullWidth: true, fullWidthMargin: 12)
+              checkScroll: true)
         navBack(app)
 
         // 10) 影片详情（内容自适应页：关键元素存在 + 可滚动，无网格断言）
@@ -407,14 +410,15 @@ final class LayoutAuditUITests: XCTestCase {
               checkScroll: true)
         navBack(app)
 
-        // 11) 98t 详情（sht 首卡点击进入；阅读器内容元素）
+        // 11) 98t 详情（sht 首卡点击进入；审计页面容器单元素 —— 阅读器内容
+        //     不适合 checkScroll/间距断言，demo 静态页无滚动加载）
         openTab(app, "sht")
         waitFirstCard(app, page: "sht", prefix: "shtcard_")
         _ = tapIfExist(app.descendants(matching: .any)["shtcard_0"].firstMatch, 5)
-        waitFirstCard(app, page: "sht-detail", prefix: "sht_reader_aa", timeout: 20)
+        waitFirstCard(app, page: "sht-detail", prefix: "sht_detail_page", timeout: 20)
         Thread.sleep(forTimeInterval: 1.0)
-        audit(app, page: "sht-detail", prefix: "sht_reader_aa", columns: 1, spacing: 8,
-              checkScroll: true)
+        audit(app, page: "sht-detail", prefix: "sht_detail_page", columns: 1, spacing: 8,
+              checkScroll: false)
         navBack(app)
 
         // 12) 文章详情（articles 首行点击进入；容器恒存在）
@@ -426,7 +430,11 @@ final class LayoutAuditUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "article-detail", prefix: "article_detail", columns: 1, spacing: 8,
               checkScroll: true)
-        navBack(app)
+        // R7 P3：article 详情 navBack 后若栈未清（back 缺失/层级深），tab bar 被隐藏
+        // → 后续 openTab 全挂；冷重启保证干净态（每段审计独立性优先）
+        app.terminate()
+        app.launch()
+        _ = app.buttons["tab_search"].waitForExistence(timeout: 20)
 
         // 13) 设置（激活根判据复用 SettingsUITests 口径：group_db 恒存在且 hittable）
         openTab(app, "settings")

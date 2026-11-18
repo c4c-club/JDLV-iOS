@@ -48,12 +48,13 @@ final class LayoutWidthTests: XCTestCase {
         }
     }
 
-    /// R4 P3：首帧兜底 320（宁窄不溢出），实测宽度经 PageContainerWidthKey 到位
+    /// R7 P3：320/768 兜底已删（窄一截中间态根因）—— 未知宽度返回 0，
+    /// ContainerWidthReader 对 0 画骨架占位；注入值 > 0 恒用注入值
     func testResolvedContainerWidthFallback() {
-        XCTAssertEqual(resolvedContainerWidth(0, hSize: .compact), 320,
-                       "compact 兜底 = 320（不再是 393）")
-        XCTAssertEqual(resolvedContainerWidth(0, hSize: nil), 320)
-        XCTAssertEqual(resolvedContainerWidth(0, hSize: .regular), 768)
+        XCTAssertEqual(resolvedContainerWidth(0, hSize: .compact), 0,
+                       "未知宽度返回 0（骨架占位，无 320 兜底）")
+        XCTAssertEqual(resolvedContainerWidth(0, hSize: nil), 0)
+        XCTAssertEqual(resolvedContainerWidth(0, hSize: .regular), 0)
         XCTAssertEqual(resolvedContainerWidth(402, hSize: .compact), 402,
                        "注入值 > 0 恒用注入值")
     }
