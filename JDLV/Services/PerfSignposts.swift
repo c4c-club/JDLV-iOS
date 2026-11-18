@@ -26,9 +26,15 @@ enum PerfSignposts {
     }
 
     static func endLaunchOnce() {
-        guard launchOpen else { return }
-        launchOpen = false
-        os_signpost(.end, log: launch, name: "launch")
+        // R7 P2：幂等改为按 firstCardMs 判定 —— launchOpen（begin 在 AppRoot.onAppear）
+        // 与首屏数据（demo 本地毫秒级）可能时序倒挂：onChange 先于 begin 触发时
+        // 旧 guard 直接早退，firstCardMs 永失机会（CI 三轮 -1 实证）。
+        // t0 来自 JDLVApp.init（必然早于一切），begin 未跑就不发孤立 end signpost。
+        guard firstCardMs < 0 else { return }
+        if launchOpen {
+            launchOpen = false
+            os_signpost(.end, log: launch, name: "launch")
+        }
         let ms = Int64((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         firstCardMs = ms
         print("[Perf] firstCard=\(ms)ms")
