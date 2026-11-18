@@ -88,6 +88,12 @@ struct HomeView: View {
         }
         .onAppear {
             vm.bind(to: store, persistMode: persistMode)
+            // R7 P2：保底打点 —— demo 数据快于首帧时 vm.home 在首次求值前已非 nil，
+            // onChange（无 initial 语义，iOS16 API）不触发；onAppear 补一次幂等检查
+            if vm.home != nil || vm.items != nil {
+                PerfSignposts.endLaunchOnce()
+                firstCardAx = PerfSignposts.firstCardMs
+            }
             // R4 P13：suite 隔离的历史首载
             history = SearchHistory.load(defaults: store.defaults)
             // UI 测试注入：-JDLV_TEST_SEARCH <q> → 启动即搜（B2 修复；DEBUG+demo 恒 nil）
