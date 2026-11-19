@@ -266,19 +266,19 @@ final class SettingsTests: XCTestCase {
         s.lockSecret = "pbkdf2-sha256$120000$abc$def"
 
         let storage = s.toStorage()
-        XCTAssertEqual(storage.count, 73)   // R4 S1：+allow_insecure_http
+        XCTAssertEqual(storage.count, 76)   // R4 S1：+allow_insecure_http; R7-P6：+3 筛选记忆键
         let back = AppSettings.fromStorage(storage)
         XCTAssertEqual(back, s)
     }
 
-    /// 口令键剔除：storageWithoutSecrets 恰 69 键且不含 remote_pass/local_pass/lock_secret
+    /// 口令键剔除：storageWithoutSecrets 恰 73 键且不含 remote_pass/local_pass/lock_secret
     func test_storageWithoutSecrets() {
         var s = AppSettings()
         s.remotePass = "pw-remote"
         s.localPass = "pw-local"
         s.lockSecret = "hash"
         let stripped = s.storageWithoutSecrets
-        XCTAssertEqual(stripped.count, 70)   // R4 S1：73 − 3 口令键
+        XCTAssertEqual(stripped.count, 73)   // R4 S1：73 − 3 口令键; R7-P6：76 − 3 口令键
         XCTAssertNil(stripped["remote_pass"])
         XCTAssertNil(stripped["local_pass"])
         XCTAssertNil(stripped["lock_secret"])
