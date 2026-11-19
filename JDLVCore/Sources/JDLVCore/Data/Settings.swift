@@ -27,7 +27,7 @@ import Foundation
 
 public struct AppSettings: Equatable {
 
-    // MARK: - String 键（30，KS 表；键名与字段名一一对应）
+    // MARK: - String 键（33，KS 表；键名与字段名一一对应）
 
     public var dbSrc: String = "remote"          // 数据源：local / remote
     public var localHost: String = "127.0.0.1"
@@ -59,6 +59,9 @@ public struct AppSettings: Equatable {
     public var shtMirrorHost: String = ""
     public var lockType: String = "none"         // none / pin / pattern / biometric
     public var lockSecret: String = ""           // 哈希后的凭据：Store 层走 Keychain
+    public var shtMain: String = ""              // R7-P6：98t 主版筛选记忆（空 = 全部）
+    public var shtCat: String = ""               // R7-P6：98t 副版筛选记忆
+    public var shtType: String = ""              // R7-P6：98t 分类筛选记忆
 
     // MARK: - Int 键（24，KI 表）
 
@@ -115,10 +118,10 @@ public struct AppSettings: Equatable {
     public init() {}
 }
 
-// MARK: - 键名常量表（DataStore 键名逐字，顺序即 B 表 1..72）
+// MARK: - 键名常量表（DataStore 键名逐字，顺序即 B 表 1..75）
 
 public extension AppSettings {
-    /// String 键（30）
+    /// String 键（33）
     static let KS: [String] = [
         "db_src", "local_host", "local_port", "local_user", "local_pass",
         "local_jdb", "local_sht", "remote_host", "remote_port", "remote_user",
@@ -126,6 +129,7 @@ public extension AppSettings {
         "jdb_sort", "actor_sort", "actor_gender", "rd_font_family", "rd_bg_color",
         "rd_fg_color", "rd_alt_a", "rd_alt_b", "proxy_host", "proxy_port",
         "jdb_img_host", "sht_mirror", "sht_mirror_host", "lock_type", "lock_secret",
+        "sht_main", "sht_cat", "sht_type",
     ]
     /// Int 键（24）
     static let KI: [String] = [
@@ -279,6 +283,9 @@ public extension AppSettings {
         s.shtMirrorHost = readS(d, "sht_mirror_host", s.shtMirrorHost)
         s.lockType = readS(d, "lock_type", s.lockType)
         s.lockSecret = readS(d, "lock_secret", s.lockSecret)
+        s.shtMain = readS(d, "sht_main", s.shtMain)
+        s.shtCat = readS(d, "sht_cat", s.shtCat)
+        s.shtType = readS(d, "sht_type", s.shtType)
 
         // 24 KI（rd_line_height / rd_paragraph 为 ×10 的 Int；taxonomy_ts 秒级 Int → Int64）
         s.perPage = readI(d, "per_page", s.perPage)
@@ -333,7 +340,7 @@ public extension AppSettings {
         return s.normalized()
     }
 
-    /// 全量 72 键输出（键名 snake_case 逐字）。口令键由 Store 落盘前剔除（storageWithoutSecrets）。
+    /// 全量 75 键输出（键名 snake_case 逐字）。口令键由 Store 落盘前剔除（storageWithoutSecrets）。
     func toStorage() -> [String: Any] {
         var d: [String: Any] = [:]
         // 30 KS
@@ -367,6 +374,9 @@ public extension AppSettings {
         d["sht_mirror_host"] = shtMirrorHost
         d["lock_type"] = lockType
         d["lock_secret"] = lockSecret
+        d["sht_main"] = shtMain
+        d["sht_cat"] = shtCat
+        d["sht_type"] = shtType
         // 24 KI
         d["per_page"] = perPage
         d["sht_per"] = shtPer

@@ -351,7 +351,7 @@ final class SettingsStore: ObservableObject {
     // MARK: - 落盘
 
     /// 全量落盘：口令（remote_pass/local_pass/lock_secret）写 Keychain；
-    /// 其余 69 键 JSON 编码后写 UserDefaults 单键 `jdlv_settings_v1`。
+    /// 其余 72 键 JSON 编码后写 UserDefaults 单键 `jdlv_settings_v1`。
     /// A7/R7：口令三键原子化 —— 预写校验，任一失败回滚已写键到 persisted* 旧值，
     /// 抛 PersistError（绝不半写）；写失败文案入 secretWriteMessage。
     /// R4 P4：Keychain 物理写入走串行后台 KeychainWriter actor（SecItem 离主线程）；

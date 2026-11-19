@@ -15,22 +15,25 @@ import XCTest
 
 final class SettingsTests: XCTestCase {
 
-    // MARK: - 键表结构（R4 S1：73 = String 30 + Int 24 + Boolean 19）
+    // MARK: - 键表结构（R4 S1：73 = String 30 + Int 24 + Boolean 19；R7-P6：+3 = 76）
 
-    /// KS 30 / KI 24 / KB 19，合计 73，互不重叠且并集即 73
+    /// KS 33 / KI 24 / KB 19，合计 76，互不重叠且并集即 76
     func test_keyTableCounts() {
-        XCTAssertEqual(AppSettings.KS.count, 30)
+        XCTAssertEqual(AppSettings.KS.count, 33)
         XCTAssertEqual(AppSettings.KI.count, 24)
         XCTAssertEqual(AppSettings.KB.count, 19)
-        XCTAssertEqual(AppSettings.KS.count + AppSettings.KI.count + AppSettings.KB.count, 73)
+        XCTAssertEqual(AppSettings.KS.count + AppSettings.KI.count + AppSettings.KB.count, 76)
         let all = Set(AppSettings.KS).union(AppSettings.KI).union(AppSettings.KB)
-        XCTAssertEqual(all.count, 73)
+        XCTAssertEqual(all.count, 76)
     }
 
     /// 键名逐字抽查（含易错的下划线/拼写）
     func test_keyNamesVerbatim() {
         XCTAssertEqual(AppSettings.KS.first, "db_src")
-        XCTAssertEqual(AppSettings.KS.last, "lock_secret")
+        XCTAssertEqual(AppSettings.KS.last, "sht_type", "R7-P6 尾接 3 键后 sht_type 收尾")
+        XCTAssertTrue(AppSettings.KS.contains("sht_main"))
+        XCTAssertTrue(AppSettings.KS.contains("sht_cat"))
+        XCTAssertTrue(AppSettings.KS.contains("sht_type"))
         XCTAssertTrue(AppSettings.KS.contains("remote_port"))
         XCTAssertTrue(AppSettings.KS.contains("jdb_img_host"))
         XCTAssertTrue(AppSettings.KS.contains("sht_mirror_host"))
@@ -403,5 +406,34 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(normalizePer(30), 20)
         XCTAssertEqual(normalizePer(50), 40)
         XCTAssertEqual(normalizePer(70), 60)
+    }
+
+    // MARK: - R7-P6：98t 筛选记忆三键（sht_main/sht_cat/sht_type; 任务 07 步骤 1）
+
+    /// 三键 roundtrip：String 字段 ↔ toStorage/fromStorage 全量往返
+    func test_shtFilterKeysRoundtrip() {
+        var s = AppSettings()
+        s.shtMain = "有码中文字幕"
+        s.shtCat = "有码原创"
+        s.shtType = "字幕"
+        let d = s.toStorage()
+        XCTAssertEqual(d["sht_main"] as? String, "有码中文字幕")
+        XCTAssertEqual(d["sht_cat"] as? String, "有码原创")
+        XCTAssertEqual(d["sht_type"] as? String, "字幕")
+        let back = AppSettings.fromStorage(d)
+        XCTAssertEqual(back.shtMain, "有码中文字幕")
+        XCTAssertEqual(back.shtCat, "有码原创")
+        XCTAssertEqual(back.shtType, "字幕")
+        XCTAssertEqual(back.shtMain, "有码中文字幕", "fromStorage 归一后保持")
+    }
+
+    /// 旧版本 JSON 缺三键 → 回默认空（全部），不报错（任务 07 出口检查 1）
+    func test_shtFilterKeysMissingCompatible() {
+        let old = AppSettings().toStorage()
+        let d = old.filter { !["sht_main", "sht_cat", "sht_type"].contains($0.key) }
+        let s = AppSettings.fromStorage(d)
+        XCTAssertEqual(s.shtMain, "")
+        XCTAssertEqual(s.shtCat, "")
+        XCTAssertEqual(s.shtType, "")
     }
 }

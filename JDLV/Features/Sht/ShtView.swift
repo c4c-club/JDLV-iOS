@@ -186,6 +186,7 @@ private struct ShtContent: View {
                                 .padding(.vertical, 1)
                                 .background(Capsule().fill(theme.accent))
                                 .offset(x: 8, y: -6)
+                                .accessibilityIdentifier("sht_filter_badge")
                         }
                     }
             }
@@ -328,6 +329,7 @@ private struct ShtFilterSheet: View {
                         }
                     }
                     .disabled(subList.isEmpty)
+                    .accessibilityIdentifier("sht_sub_picker")
                     Picker("分类", selection: typeBinding) {
                         Text("全部").tag("")
                         if typeList.isEmpty {
@@ -338,6 +340,7 @@ private struct ShtFilterSheet: View {
                         }
                     }
                     .disabled(typeList.isEmpty)
+                    .accessibilityIdentifier("sht_type_picker")
                     Picker("每页", selection: perBinding) {
                         ForEach(["20", "40", "60", "80", "100"], id: \.self) { p in
                             Text(p).tag(p)

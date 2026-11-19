@@ -444,12 +444,17 @@ final class ShtVM: ObservableObject {
         }
     }
 
-    /// 设置回读（viewMode/shtHasMagnet/shtPer；store 未注入 → 静默跳过）
+    /// 设置回读（viewMode/shtHasMagnet/shtPer + R7-P6 主/副/分类筛选记忆；
+    /// store 未注入 → 静默跳过）。筛选键空 = 全部；bind 首次在 reload 前调用,
+    /// 冷启动首查即按记忆筛选（任务 07 §3）。
     func syncFromSettings() {
         guard let s = store?.settings else { return }
         viewMode = s.viewMode
         hasMagnet = s.shtHasMagnet
         per = normalizePer(s.shtPer, default: 20)
+        main = s.shtMain
+        cat = s.shtCat
+        type = s.shtType
     }
 
     // MARK: 查询与刷新语义
@@ -624,44 +629,60 @@ final class ShtVM: ObservableObject {
 
     // MARK: 筛选入口（C5：全部 page=1 重查，SWR 保留旧列表）
 
-    /// setMain：级联清空 cat+type；page=1 + reload
+    /// setMain：级联清空 cat+type；page=1 + reload。
+    /// R7-P6：筛选记忆落盘（sht_main/sht_cat/sht_type, updateSettings 合并写）。
     func setMain(_ v: String) async {
         main = v
         cat = ""
         type = ""
         page = 1
+        store?.updateSettings { [m = self.main] in
+            $0.shtMain = m
+            $0.shtCat = ""
+            $0.shtType = ""
+        }
         await refetch()
     }
 
-    /// setCat：级联清空 type；page=1 + reload
+    /// setCat：级联清空 type；page=1 + reload（R7-P6: sht_cat/sht_type 落盘）
     func setCat(_ v: String) async {
         cat = v
         type = ""
         page = 1
+        store?.updateSettings { [c = self.cat] in
+            $0.shtCat = c
+            $0.shtType = ""
+        }
         await refetch()
     }
 
-    /// setType：page=1 + reload
+    /// setType：page=1 + reload（R7-P6: sht_type 落盘）
     func setType(_ v: String) async {
         type = v
         page = 1
+        store?.updateSettings { [t = self.type] in
+            $0.shtType = t
+        }
         await refetch()
     }
 
     /// clearFilters（R3 FilterSheet「重置」）：主版清空（级联清 cat+type）+ 关磁力开关 +
-    /// 模糊/语义关闭，page=1 + reload
+    /// 模糊/语义关闭，page=1 + reload。R7-P6: 三筛选键与磁力一次性落盘（任务 07 §2）。
     func clearFilters() async {
         main = ""
         cat = ""
         type = ""
-        if hasMagnet {
-            hasMagnet = false
-            store?.updateSettings { $0.shtHasMagnet = false }
-        }
+        if hasMagnet { hasMagnet = false }
         fuzzy = false
         semantic = false
         anchors.removeAll()
         page = 1
+        store?.updateSettings { [hm = self.hasMagnet] in
+            $0.shtMain = ""
+            $0.shtCat = ""
+            $0.shtType = ""
+            $0.shtHasMagnet = hm
+        }
         await refetch()
     }
 
@@ -733,10 +754,12 @@ final class ShtVM: ObservableObject {
         defer { catLoading = false }
         if !force, let hit = cache.get(Self.CAT_KEY, ttlMinutes: Self.CAT_TTL_MINUTES) {
             applyCats(hit)
+            await validateFiltersAgainstCats()
             return
         }
         if !force, let stale = cache.stale(Self.CAT_KEY) {
             applyCats(stale)
+            await validateFiltersAgainstCats()
             return
         }
         let catsT0 = Int64(Date().timeIntervalSince1970 * 1000)
@@ -758,6 +781,7 @@ final class ShtVM: ObservableObject {
                 cache.put(Self.CAT_KEY, d)
             }
             applyCats(d)
+            await validateFiltersAgainstCats()
         } catch {
             // 分类加载失败静默（不阻塞列表；C8）→ 静态兜底
             applyFallbackCats()
@@ -775,6 +799,46 @@ final class ShtVM: ObservableObject {
         types = d["types"] as? [Row] ?? []
         catTs = Self.numOf(d, "ts") ?? 0
         catSource = "remote"
+    }
+
+    /// R7-P6（任务 07 §3）：猫表就绪后校验记忆筛选 —— main 不在 mains / cat 不在
+    /// 对应 subs / type 不在 types → 级联清空 + 落盘 + Toast「筛选已失效，已重置」，
+    /// 不阻塞列表。cat 非空但 main 为空：保持 cat，仅校验存在性（与现有级联语义一致）。
+    /// 仅 remote 来源校验（fallback 兜底 subs/types 为空, 校验会误清记忆值）。
+    private func validateFiltersAgainstCats() async {
+        guard catSource == "remote" else { return }
+        var m = main
+        var c = cat
+        var t = type
+        var changed = false
+        func hit(_ list: [Row], _ name: String) -> Bool {
+            list.contains { $0.s("name") == name }
+        }
+        if !m.isEmpty && !hit(mains, m) {
+            m = ""; c = ""; t = ""
+            changed = true
+        }
+        if !c.isEmpty && !hit(subs, c) {
+            c = ""; t = ""
+            changed = true
+        }
+        if !t.isEmpty && !hit(types, t) {
+            t = ""
+            changed = true
+        }
+        guard changed else { return }
+        main = m
+        cat = c
+        type = t
+        anchors.removeAll()
+        page = 1
+        store?.updateSettings { [m, c, t] in
+            $0.shtMain = m
+            $0.shtCat = c
+            $0.shtType = t
+        }
+        onToast("筛选已失效，已重置")
+        await refetch()
     }
 
     /// R6 PHASE3：主版静态兜底（口径 = 应用自述版区结构，与 demo 种子/详情徽标判定一致）。

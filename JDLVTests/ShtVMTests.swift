@@ -849,4 +849,79 @@ final class ShtVMTests: XCTestCase {
         // 元信息行（D4：非空项 " · " 连接）
         XCTAssertEqual(lit.metaLine, "原创小说 · 2024-01-01")
     }
+
+    // MARK: - R7-P6：筛选记忆（任务 07 步骤 3/5）
+
+    /// bind 首次进入先恢复记忆筛选（syncFromSettings 在 reload 前）→ 首查带记忆值
+    @MainActor
+    func testRestoreFiltersBeforeFirstFetch() async {
+        let ud = UserDefaults(suiteName: "shtvm_restore_\(UUID().uuidString.prefix(8))")!
+        let store = SettingsStore(defaults: ud)
+        store.settings.shtMain = "有码中文字幕"
+        store.settings.shtCat = "有码原创"
+        let src = MockShtSource()
+        src.responses = [page(["101"])]
+        let vm = makeVM(src)
+        vm.store = store
+        await vm.bind(dataEpoch: 1)
+        XCTAssertEqual(vm.main, "有码中文字幕", "冷启动恢复主版记忆")
+        XCTAssertEqual(vm.cat, "有码原创", "冷启动恢复副版记忆")
+        XCTAssertEqual(src.seenMains.first, "有码中文字幕", "首查按记忆筛选查询")
+        XCTAssertEqual(src.seenCats.first, "有码原创")
+    }
+
+    /// 猫表就绪后校验：main 不在 mains → 级联清空 cat/type + 落盘 + Toast（任务 07 §3）
+    @MainActor
+    func testInvalidFilterClearedAfterCats() async {
+        let src = MockShtSource()
+        src.responses = [page(["101"])]
+        src.catsPayload = [
+            "categories": [Row](),
+            "mains": [Row(["name": .string("有码中文字幕"), "c": .int(3)])],
+            "subs": [Row(["main": .string("有码中文字幕"), "name": .string("有码原创"), "c": .int(3)])],
+            "types": [Row(["sub": .string("有码原创"), "name": .string("字幕"), "c": .int(3)])],
+            "total": Int64(3), "approx": true,
+            "ts": Int64(1_730_000_000_000),
+            "sections": ["mains": "ok", "subs": "ok", "types": "ok"],
+        ]
+        let ud = UserDefaults(suiteName: "shtvm_invalid_\(UUID().uuidString.prefix(8))")!
+        let store = SettingsStore(defaults: ud)
+        store.settings.shtMain = "已下架版区"
+        store.settings.shtCat = "幽灵副版"
+        store.settings.shtType = "幽灵分类"
+        let toasts = ToastBox()
+        let vm = makeVM(src, MockCache(), toasts)
+        vm.store = store
+        vm.main = "已下架版区"      // 记忆恢复后的内存态（bind 前手动注入）
+        vm.cat = "幽灵副版"
+        vm.type = "幽灵分类"
+        await vm.loadCats(force: true)
+        XCTAssertEqual(vm.main, "", "main 失效 → 级联清空")
+        XCTAssertEqual(vm.cat, "")
+        XCTAssertEqual(vm.type, "")
+        XCTAssertTrue(toasts.list.contains("筛选已失效，已重置"), "失效提示逐字")
+        XCTAssertEqual(store.settings.shtMain, "", "清空结果已落盘")
+    }
+
+    /// cat 非空但 main 为空：保持 cat，仅校验存在性（任务 07 §3 尾条）
+    @MainActor
+    func testCatKeptWhenMainEmptyButSubValid() async {
+        let src = MockShtSource()
+        src.responses = [page(["101"])]
+        src.catsPayload = [
+            "categories": [Row](),
+            "mains": [Row(["name": .string("有码中文字幕"), "c": .int(3)])],
+            "subs": [Row(["main": .string("有码中文字幕"), "name": .string("有码原创"), "c": .int(3)])],
+            "types": [Row](),
+            "total": Int64(3), "approx": true,
+            "ts": Int64(1_730_000_000_000),
+            "sections": ["mains": "ok", "subs": "ok", "types": "empty"],
+        ]
+        let vm = makeVM(src)
+        vm.main = ""
+        vm.cat = "有码原创"
+        await vm.loadCats(force: true)
+        XCTAssertEqual(vm.main, "")
+        XCTAssertEqual(vm.cat, "有码原创", "main 空时 cat 不被级联清空")
+    }
 }
