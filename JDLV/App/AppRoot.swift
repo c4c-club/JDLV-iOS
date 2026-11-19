@@ -161,10 +161,11 @@ struct AppRoot: View {
             // 根页视图由 tabRoot(router.tab) 切换，VM 均为 AppRoot @StateObject（不重建）。
             NavigationStack(path: pathBinding(router.tab)) {
                 tabRoot(router.tab, label: Self.tabLabel(router.tab))
-                    // R7 P2：恢复 R4 P5 的覆盖页 AX 语义 —— 当前 Tab 栈深>0 时根页摘出
-                    // AX 树（NavigationStack 被覆盖的栈底仍进 AX 快照，首页横滑卡会被
-                    // LayoutAudit 降级源误收为越界元素；run 44191556931 实证）
-                    .accessibilityHidden(!pathBinding(router.tab).wrappedValue.isEmpty)
+                    // R7 P3：accessibilityHidden 已移除 —— 该标记与 SettingsUITests 的
+                    // AX 快照超时强相关（run 44208464147/44377107733/44425348724 三次
+                    // 复现）；其原本防的「Top250 降级源误收首页横滑卡」已由
+                    // t250row_N contain 锚点 + 入口 scrollUntilVisible 根治
+                    // （各审计页 collect 正源命中，降级源不再触发），hidden 无存在必要。
                     .navigationDestination(for: Route.self) { route in
                         RouteDestination(route: route)
                     }
