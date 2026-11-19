@@ -27,6 +27,7 @@ struct FetchFailure: Error, CustomStringConvertible {
 /// verifiedJdbFetch 据此触发备用图床重试（R7-P5 A2）
 struct TransportFailure: Error, CustomStringConvertible {
     let message: String
+    init(_ message: String) { self.message = message }
     var description: String { message }
 }
 
