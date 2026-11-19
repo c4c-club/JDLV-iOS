@@ -81,7 +81,7 @@ private struct ShtContent: View {
     /// R7 P4：是否有筛选条件（空态文案/重置按钮分流；q 空白归一与 ShtSearch 同口径）
     private var hasActiveFilters: Bool {
         !vm.main.isEmpty || !vm.cat.isEmpty || !vm.type.isEmpty ||
-            !vm.q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.hasMagnet
+            !vm.queryState.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.hasMagnet
     }
 
     // MARK: body

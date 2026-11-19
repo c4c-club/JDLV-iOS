@@ -791,7 +791,7 @@ final class ShtVM: ObservableObject {
     /// ScrollView，筛选/搜索变化后替换 items 时 offset 归零（防「视口停在内容之外」
     /// 的纯空白，任务 05 G5a）；翻页 append 不改指纹（page 不参与）。
     var listIdentity: String {
-        "\(main)|\(cat)|\(type)|\(q)|\(sort)|\(hasMagnet ? 1 : 0)"
+        "\(main)|\(cat)|\(type)|\(queryState)|\(sort)|\(hasMagnet ? 1 : 0)"
     }
 
     /// R7 P4 G1/G3：有依据兜底 —— 不再清空 subs/types、不再用写死版区名（G3 写死名
@@ -802,7 +802,7 @@ final class ShtVM: ObservableObject {
         var mainC: [String: Int64] = [:]
         var subC: [String: Int64] = [:]
         var typeC: [String: Int64] = [:]
-        for r in items {
+        for r in items ?? [] {
             let cn = r.s("cat_name")
             if !cn.isEmpty { mainC[cn, default: 0] += 1 }
             let bn = r.s("board_name")
