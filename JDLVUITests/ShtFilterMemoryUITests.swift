@@ -79,6 +79,11 @@ final class ShtFilterMemoryUITests: XCTestCase {
         // ① 清残留（固定 suite 可能有上轮 CI 的记忆）：打开筛选 → 重置 → 落盘清空
         openFilterSheet(app)
         let resetBtn = app.buttons["sht_filter_reset"].firstMatch
+        // Form 是懒加载 List：重置 Section 屏外时不在 AX 树，需滚到底
+        if !resetBtn.waitForExistence(timeout: 4) {
+            app.swipeUp()
+            if !resetBtn.waitForExistence(timeout: 4) { app.swipeUp() }
+        }
         XCTAssertTrue(resetBtn.waitForExistence(timeout: 6), "sheet 内无重置按钮")
         resetBtn.tap()
         closeFilterSheet(app)
@@ -108,7 +113,13 @@ final class ShtFilterMemoryUITests: XCTestCase {
         let app3 = launchApp()
         gotoSht(app3)
         openFilterSheet(app3)
-        app3.buttons["sht_filter_reset"].firstMatch.tap()
+        let reset3 = app3.buttons["sht_filter_reset"].firstMatch
+        if !reset3.waitForExistence(timeout: 4) {
+            app3.swipeUp()
+            if !reset3.waitForExistence(timeout: 4) { app3.swipeUp() }
+        }
+        XCTAssertTrue(reset3.waitForExistence(timeout: 6), "sheet 内无重置按钮(第二次)")
+        reset3.tap()
         closeFilterSheet(app3)
         app3.terminate()
 
