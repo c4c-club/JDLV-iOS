@@ -857,8 +857,7 @@ final class ShtVMTests: XCTestCase {
     func testRestoreFiltersBeforeFirstFetch() async {
         let ud = UserDefaults(suiteName: "shtvm_restore_\(UUID().uuidString.prefix(8))")!
         let store = SettingsStore(defaults: ud)
-        store.settings.shtMain = "有码中文字幕"
-        store.settings.shtCat = "有码原创"
+        store.updateSettings { $0.shtMain = "有码中文字幕"; $0.shtCat = "有码原创" }
         let src = MockShtSource()
         src.responses = [page(["101"])]
         let vm = makeVM(src)
@@ -886,9 +885,7 @@ final class ShtVMTests: XCTestCase {
         ]
         let ud = UserDefaults(suiteName: "shtvm_invalid_\(UUID().uuidString.prefix(8))")!
         let store = SettingsStore(defaults: ud)
-        store.settings.shtMain = "已下架版区"
-        store.settings.shtCat = "幽灵副版"
-        store.settings.shtType = "幽灵分类"
+        store.updateSettings { $0.shtMain = "已下架版区"; $0.shtCat = "幽灵副版"; $0.shtType = "幽灵分类" }
         let toasts = ToastBox()
         let vm = makeVM(src, MockCache(), toasts)
         vm.store = store
