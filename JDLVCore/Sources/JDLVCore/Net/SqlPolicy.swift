@@ -224,6 +224,7 @@ public enum SqlPolicy {
             reg("img.selftest.movie", #"select id, cover_url from movies order by release_date desc limit \d+"#, "probe", "图床自检取样 (索引序 30 条)"),
             reg("img.selftest.thread", #"select tid, url from (sht_)?thread_images order by tid desc limit \d+"#, "probe", "98t 图床自检取样 (PK 序 20 条)"),
             reg("img.selftest.article", #"select content_html from articles order by released_at desc limit \d+"#, "probe", "资讯正文图取样 (小表 5 条)"),
+            reg("img.selftest.avatar", #"select id, avatar_url from actors order by videos_count desc limit \d+"#, "probe", "女优头像自检取样 (videos_count 序 30 条)"),
             // P5 精确搜索 / 女优性别 / 番号直达
             reg("jdb.search.exact.number", #"select .* from movies m where m\.number = \? or m\.number like \? order by m\.release_date desc(, m\.id desc)? limit \? offset \?"#, "idx", "番号精确/前缀 (idx_movies_number)"),
             reg("jdb.actors.ids", #"select id, name(, gender)? from actors where id in \(.+\)"#, "pk", "PK IN 批量取女优 (性别)"),

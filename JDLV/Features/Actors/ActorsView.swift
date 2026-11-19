@@ -138,7 +138,7 @@ struct ActorsView: View {
                         cellHeight: CardLayout.actorH(cellW: cellW),
                         idPrefix: "card_actors") { pair in
             let (i, a) = pair
-            return ActorCard(a: a) {
+            return ActorCard(a: a, axAvatarId: "actoravatar_\(i)") {
                 router.push(.actor(a.s("id")))
             }
         }

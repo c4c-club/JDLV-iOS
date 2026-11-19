@@ -244,6 +244,9 @@ public enum CdnRewrite {
         case .sht, .external: return urlOrId
         default: break
         }
+        // R7-P5 A1：/avatars/ 强制 APP CDN —— WEB CDN (c0) 无代理不可达, 头像走 c0
+        // 时连接超时/重置全灭; 与用户图床选择无关, alt 回退链保持 app↔web 互换。
+        if path.hasPrefix("/avatars/") { return APP_CDN + APP_CDN_PREFIX + path }
         let s = settings().jdbImgHost
         if s == "web" { return WEB_CDN + path }
         if isBlank(s) || s == "app" { return APP_CDN + APP_CDN_PREFIX + path }

@@ -116,6 +116,110 @@ enum CdnSelfTest {
         }
     }
 
+    // MARK: - R7-P5 头像/封面连通性自检
+
+    /// 头像自检单条结果: host + 路径段, 不含完整 URL 与查询串（任务 06 步骤 4）
+    struct AvatarProbeResult {
+        let isAvatar: Bool     // true=avatar_url / false=cover
+        let host: String
+        let pathSeg: String    // /avatars / /covers / other
+        let code: Int          // 0 = 传输层异常
+        let ms: Int64
+        let altUsed: Bool
+        let ok: Bool
+        let err: String
+
+        var line: String {
+            let tag = isAvatar ? "avatar" : "cover"
+            let altText = altUsed ? " · alt=1" : ""
+            return ok
+                ? "\(tag) \(host)\(pathSeg) HTTP \(code)\(altText) · \(ms)ms OK"
+                : "\(tag) \(host)\(pathSeg) code=\(code == 0 ? "ERR" : String(code)) · \(err)"
+        }
+    }
+
+    /// 女优头像样例: videos_count 序 30 条, 内存挑非空 avatar_url 前 3
+    /// （img.selftest.avatar; 异常 → 空）
+    private static func sampleAvatars() async -> [String] {
+        do {
+            let rows = try await Db.query(
+                "jdb", "SELECT id, avatar_url FROM actors ORDER BY videos_count DESC LIMIT 30")
+            return rows.map { $0.s("avatar_url") }.filter { !$0.isEmpty }.prefix(3).map { $0 }
+        } catch {
+            return []
+        }
+    }
+
+    /// app 封面样例: 索引序取 30 条, 内存挑含 /covers/ 的前 n 条（img.selftest.movie; 异常 → 兜底样例）
+    private static func sampleAppCovers(_ n: Int) async -> [String] {
+        do {
+            let rows = try await Db.query(
+                "jdb", "SELECT id, cover_url FROM movies ORDER BY release_date DESC LIMIT 30")
+            let hits = rows.map { $0.s("cover_url") }.filter { $0.contains("/covers/") }
+            if hits.count >= n { return Array(hits.prefix(n)) }
+            return hits + Array(repeating: FALLBACK_APP_URL, count: n - hits.count)
+        } catch {
+            return Array(repeating: FALLBACK_APP_URL, count: n)
+        }
+    }
+
+    /// 头像/封面探测: 先过 jdbImgUrl（与真实加载同链路重写, avatars 强制 APP CDN）→
+    /// GET（fetchRaw 含代理回退）→ 失败再 altJdbImgUrl 一次并记录 altUsed
+    static func probeImage(_ raw: String, isAvatar: Bool) async -> AvatarProbeResult {
+        let u = CdnRewrite.jdbImgUrl(raw)
+        let host = CdnRewrite.hostOnly(u)
+        let segs = CdnRewrite.imgPathOf(u)?.split(separator: "/") ?? []
+        let pathSeg = "/\(segs.first.map(String.init) ?? "other")"
+        let t0 = Perf.nowMs()
+        do {
+            let (_, code) = try await ImagePipeline.shared.fetchRaw(url: u, kind: CdnRewrite.kindOf(u))
+            let ms = Perf.nowMs() - t0
+            if (200..<300).contains(code) {
+                return AvatarProbeResult(isAvatar: isAvatar, host: host, pathSeg: pathSeg,
+                                         code: code, ms: ms, altUsed: false, ok: true, err: "")
+            }
+            return await probeAlt(u, host: host, pathSeg: pathSeg, isAvatar: isAvatar,
+                                  firstCode: code, ms0: ms)
+        } catch {
+            let ms = Perf.nowMs() - t0
+            return await probeAlt(u, host: host, pathSeg: pathSeg, isAvatar: isAvatar,
+                                  firstCode: 0, ms0: ms,
+                                  firstErr: String(describing: type(of: error)))
+        }
+    }
+
+    /// 失败后的备用图床确认（一次）; alt 也不通 → 汇总失败
+    private static func probeAlt(_ u: String, host: String, pathSeg: String, isAvatar: Bool,
+                                 firstCode: Int, ms0: Int64, firstErr: String = "") async -> AvatarProbeResult {
+        let t1 = Perf.nowMs()
+        if let altUrl = CdnRewrite.altJdbImgUrl(u),
+           let (_, code2) = try? await ImagePipeline.shared.fetchRaw(url: altUrl, kind: CdnRewrite.kindOf(altUrl)),
+           (200..<300).contains(code2) {
+            return AvatarProbeResult(isAvatar: isAvatar, host: host, pathSeg: pathSeg,
+                                     code: code2, ms: ms0 + (Perf.nowMs() - t1),
+                                     altUsed: true, ok: true, err: "")
+        }
+        let err = firstErr.isEmpty
+            ? (firstCode == 0 ? "transport, alt 亦失败" : "HTTP \(firstCode), alt 亦失败")
+            : "\(firstErr), alt 亦失败"
+        return AvatarProbeResult(isAvatar: isAvatar, host: host, pathSeg: pathSeg,
+                                 code: firstCode, ms: ms0 + (Perf.nowMs() - t1),
+                                 altUsed: false, ok: false, err: err)
+    }
+
+    /// R7-P5 头像自检: 库内 3 个 avatar_url + 3 个 cover, 逐个 GET,
+    /// 输出 host 维度结果与是否走了备用图床（不含完整 URL）
+    static func runAvatarCheck() async -> [AvatarProbeResult] {
+        var out: [AvatarProbeResult] = []
+        for a in await sampleAvatars() {
+            out.append(await probeImage(a, isAvatar: true))
+        }
+        for c in await sampleAppCovers(3) {
+            out.append(await probeImage(c, isAvatar: false))
+        }
+        return out
+    }
+
     /// "app"/"web"/"sht"/"ext" → CdnKind（自检取样 kind 名与熔断桶名一致）
     private static func cdnKind(_ kind: String) -> CdnKind {
         switch kind {

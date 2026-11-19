@@ -121,6 +121,7 @@ struct PosterImage: View {
         .contentShape(Rectangle())
         .onTapGesture {
             ImgBreaker.shared.resetCooling()
+            ImagePipeline.shared.clearNegativeCache(for: url)
             retryKey += 1
             onRetry?()
         }

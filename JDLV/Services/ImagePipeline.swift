@@ -23,6 +23,40 @@ struct FetchFailure: Error, CustomStringConvertible {
     var description: String { message }
 }
 
+/// 传输层失败（超时/DNS/连接重置等网络层错误; 404 等 HTTP 状态不算）——
+/// verifiedJdbFetch 据此触发备用图床重试（R7-P5 A2）
+struct TransportFailure: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
+}
+
+/// R7-P5 A3 负缓存: 失败 URL 30s 内直接拦下不再发请求 —— 熔断要连败 3 次才冷却,
+/// 滚动中首败后的逐帧重试仍会拖慢页面（任务 06 步骤 3）; 手动重试 clear 后放行。
+final class FailedURLCache {
+    static let TTL: TimeInterval = 30
+    private var map: [String: Date] = [:]
+    private let lock = NSLock()
+
+    func mark(_ u: String, at: Date = Date()) {
+        lock.lock(); map[u] = at; lock.unlock()
+    }
+
+    /// now 可注入（测试用）; 过期条目惰性清除
+    func isBlocked(_ u: String, now: Date = Date()) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard let t = map[u] else { return false }
+        if now.timeIntervalSince(t) >= Self.TTL {
+            map.removeValue(forKey: u)
+            return false
+        }
+        return true
+    }
+
+    func clear(_ u: String) {
+        lock.lock(); map.removeValue(forKey: u); lock.unlock()
+    }
+}
+
 /**
  * 图片管线（对齐 Android CdnRewrite.client 拦截器链 + Coil 磁盘缓存）:
  *  ① 直连失败自动代理回退（ProxyFallbackInterceptor 语义: IOException / 403+5xx
@@ -75,6 +109,8 @@ final class ImagePipeline: ImageLoading {
     // MARK: - in-flight 去重（R5 P2：确定性移除）
 
     private let inflightGate = InflightGate<String, Data>()
+    /// R7-P5 A3: 失败 URL 负缓存（TTL 30s; 手动重试 clear）
+    private let negativeCache = FailedURLCache()
 
     // MARK: - URLSession 池（jdb/98t 各自代理开关; 关闭直连）
 
@@ -126,6 +162,8 @@ final class ImagePipeline: ImageLoading {
         if u.isEmpty { return nil }
         if ImgBreaker.shared.isBucketCooling(kind.bucket) { return nil }
         if ImgBreaker.shared.isUrlCooling(u) { return nil }
+        // R7-P5 A3: 负缓存命中直接失败（键 = 重写后 URL, 与熔断冷却同键）
+        if negativeCache.isBlocked(u) { return nil }
         // R4 P4：变体缓存键 u|maxPixel|half —— 命中即最终图（含半图裁切，免重复裁）
         let mkey = Self.memKey(u, maxPixel, half)
         if let hit = memCache.object(forKey: mkey as NSString) {
@@ -149,9 +187,11 @@ final class ImagePipeline: ImageLoading {
             let data = try await entry.value
             guard let img = await decodeDetached(data, maxPixel: maxPixel) else {
                 ImgBreaker.shared.recordFailure(u, error: "ImageDataInvalid")
+                negativeCache.mark(u)
                 return nil
             }
             ImgBreaker.shared.recordSuccess(u)
+            negativeCache.clear(u)
             return cacheVariant(mkey, img, half: half)
         } catch is CancellationError {
             return nil
@@ -159,6 +199,7 @@ final class ImagePipeline: ImageLoading {
             // 取消不算失败（Android Coil 取消不进 onError）
             if Task.isCancelled { return nil }
             ImgBreaker.shared.recordFailure(u, error: String(describing: type(of: error)))
+            negativeCache.mark(u)
             return nil
         }
     }
@@ -211,6 +252,13 @@ final class ImagePipeline: ImageLoading {
         inflightGate.leave(key, interest: ticket)
     }
 
+    /// 手动重试绕过负缓存（R7-P5: PosterImage/AspectImage/ZoomableImage retryKey 侧调用;
+    /// 键与 image() 一致 —— 重写后 URL）
+    func clearNegativeCache(for url: String) {
+        guard let g = ImgBreaker.guarded(url) else { return }
+        negativeCache.clear(CdnRewrite.rewrite(g))
+    }
+
     // MARK: - 网络层（含解码/验证/备用图床）
 
     /// in-flight 任务体: 拉取 + (jdb) 解码/魔数验证/备用图床重试; 成功即写两级缓存
@@ -228,9 +276,29 @@ final class ImagePipeline: ImageLoading {
         return data
     }
 
-    /// jdb 图片: 404/410 → 备用图床; 解码/魔数不过 → 备用图床重试一次
-    /// （Android DecodeVerifyInterceptor + verifyJdb 语义, altMark 打点逐字）
+    /// jdb 图片: 404/410 → 备用图床; 解码/魔数不过 → 备用图床重试一次;
+    /// 传输失败（超时/DNS/重置）→ 备用图床重试一次（R7-P5 A2: 原直接上抛,
+    /// 无代理时 c0 头像全灭而封面不受影响 —— 传输层错误同样该换图床）
     private func verifiedJdbFetch(_ u: String, _ kind: CdnKind) async throws -> Data {
+        do {
+            return try await jdbVerifyCore(u, kind)
+        } catch let e as TransportFailure {
+            guard let altUrl = CdnRewrite.altJdbImgUrl(u) else {
+                altMark(false, "transport no-alt", url: u)
+                throw e
+            }
+            if let (d, _) = try? await fetchRaw(url: altUrl, kind: kind),
+               let dec = verifiedData(d) {
+                altMark(true, "transport", url: u)
+                return dec
+            }
+            altMark(false, "transport alt-fail", url: u)
+            throw e
+        }
+    }
+
+    /// 主体: 一次 fetchRaw + 404/410 换床 + 解码失败换床（transport 由外层捕获）
+    private func jdbVerifyCore(_ u: String, _ kind: CdnKind) async throws -> Data {
         let (data, code) = try await fetchRaw(url: u, kind: kind)
         if code == 404 || code == 410 {
             guard let altUrl = CdnRewrite.altJdbImgUrl(u) else {
@@ -271,7 +339,7 @@ final class ImagePipeline: ImageLoading {
     private func altMark(_ ok: Bool, _ why: String, url: String) {
         let altKind = url.lowercased().contains("spfcas") ? "web" : "app"
         Perf.mark("img.err",
-                  "alt=\(altKind) ok=\(ok ? 1 : 0) why=\(why) url=\(String(url.prefix(60)))")
+                  "alt=\(altKind) ok=\(ok ? 1 : 0) why=\(why) host=\(CdnRewrite.hostOnly(url))")
     }
 
     // MARK: - 直连失败自动代理回退（ProxyFallbackInterceptor 语义）
@@ -333,7 +401,8 @@ final class ImagePipeline: ImageLoading {
             if let fb = try await fallback(url: url, kind: kind, respectMute: respectMute) {
                 return fb
             }
-            throw FetchFailure(msg)
+            // R7-P5: 抛 TransportFailure —— verifiedJdbFetch 据此换备用图床
+            throw TransportFailure(msg)
         }
     }
 

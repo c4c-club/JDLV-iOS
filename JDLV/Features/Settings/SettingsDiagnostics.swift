@@ -232,13 +232,19 @@ enum SettingsDiagnostics {
                 SelfTestLine(text: "\(kind) 200 · 45KB · \(label)OK · 88ms（演示模式）",
                              ok: true, failed: false)
             }
-            return [demo("app", "解码"), demo("web", "解码"), demo("sht", "图片"), demo("ext", "图片")]
+            return [demo("app", "解码"), demo("web", "解码"), demo("sht", "图片"), demo("ext", "图片"),
+                    SelfTestLine(text: "avatar/cover 6/6 OK（演示模式）", ok: true, failed: false)]
         }
         let results = await CdnSelfTest.run()
-        return results.map {
+        var lines = results.map {
             selfTestLine(kind: $0.kind, code: $0.code, bytes: $0.bytes,
                          decoded: $0.decoded, ms: $0.ms, err: $0.err)
         }
+        // R7-P5: 头像/封面连通性 6 条（host 维度 + 是否走备用图床; 任务 06 步骤 4）
+        for r in await CdnSelfTest.runAvatarCheck() {
+            lines.append(SelfTestLine(text: r.line, ok: r.ok, failed: false))
+        }
+        return lines
     }
 
     // MARK: 缓存清理（§10 两按钮）

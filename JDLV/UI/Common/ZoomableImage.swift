@@ -32,6 +32,7 @@ struct ZoomableImage: View {
             } else if failed {
                 Button {
                     failed = false
+                    ImagePipeline.shared.clearNegativeCache(for: url)
                     retryKey += 1
                 } label: {
                     Text("加载失败 · 点击重试")

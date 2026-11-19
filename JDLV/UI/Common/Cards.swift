@@ -250,12 +250,19 @@ struct ShtCoverPlaceholder: View {
 
 struct ActorCard: View {
     let a: Row
+    /// R7-P5: 头像 AX id（头像成功率 UI 测试统计用; nil 不设 id）
+    var axAvatarId: String? = nil
     var onClick: () -> Void
+
+    @State private var avatarPhase = ""
 
     var body: some View {
         Button(action: onClick) {
             VStack(alignment: .leading, spacing: 0) {
-                AspectImage(url: a.s("avatar_url"), ratio: 1, radius: 0)   // Img.actorAvatar()
+                AspectImage(url: MovieImg.actorAvatar(a.s("avatar_url")), ratio: 1, radius: 0,
+                            onPhase: { avatarPhase = $0 })
+                    .accessibilityIdentifier(axAvatarId ?? "")
+                    .accessibilityValue(avatarPhase)
                 VStack(alignment: .leading, spacing: 2) {
                     AppText(a.s("name").isEmpty ? " " : a.s("name"), lvl: .meta,
                             maxLines: 1, fontWeight: .medium, tight: true)

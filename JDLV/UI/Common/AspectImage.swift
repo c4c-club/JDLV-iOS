@@ -30,6 +30,8 @@ struct AspectImage: View {
     /// 灯箱等全屏位传 0（照片不裁圆角）
     var radius: CGFloat = ComponentMetrics.imageCorner
     var onRetry: (() -> Void)? = nil
+    /// R7-P5: 加载终态回调（nocover/loading/ok/failed）—— 头像成功率 AX 通道用
+    var onPhase: ((String) -> Void)? = nil
 
     @Environment(\.appTheme) private var theme
     @State private var phase: Phase = .loading
@@ -130,6 +132,7 @@ struct AspectImage: View {
         .contentShape(Rectangle())
         .onTapGesture {
             ImgBreaker.shared.resetCooling()
+            ImagePipeline.shared.clearNegativeCache(for: url)
             retryKey += 1
             onRetry?()
         }
@@ -140,6 +143,7 @@ struct AspectImage: View {
     private func load() async {
         if url.isEmpty {
             phase = .noCover
+            onPhase?("nocover")
             image = nil
             return
         }
@@ -148,11 +152,13 @@ struct AspectImage: View {
             if let img = TestImages.testImage(for: reqKey) {
                 image = img
                 phase = .ok
+                onPhase?("ok")
                 return
             }
         }
         #endif
         phase = .loading
+        onPhase?("loading")
         let kind = CdnRewrite.kindOf(url)
         let img = await ImagePipeline.shared.image(url: url, kind: kind, half: halfMode,
                                                    maxPixel: maxPixel, ticket: loadTicket)
@@ -160,9 +166,11 @@ struct AspectImage: View {
         if let img {
             image = img
             phase = .ok
+            onPhase?("ok")
         } else {
             image = nil
             phase = .failed
+            onPhase?("failed")
         }
     }
 }
