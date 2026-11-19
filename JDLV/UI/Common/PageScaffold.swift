@@ -21,6 +21,10 @@ struct PageScaffold<Content: View>: View {
     var onRetry: (() -> Void)? = nil
     var emptyText: String
     var emptyHint: String = ""
+    /// R7 P4：空态主操作（如「重置筛选」；nil = 无按钮）—— 空态必须可自助恢复，
+    /// 不允许「整页空白无出口」（任务 05 步骤 4）
+    var emptyActionTitle: String? = nil
+    var onEmptyAction: (() -> Void)? = nil
     var skeletonColumns: Int = 2
 
     /// LoadMoreFooter 集成（nil = 无分页 footer）
@@ -106,6 +110,11 @@ struct PageScaffold<Content: View>: View {
             ErrorBox(text: e, onRetry: onRetry)
         } else if empty {
             EmptyBox(text: emptyText, hint: emptyHint)
+            if let title = emptyActionTitle, let act = onEmptyAction {
+                Button(title) { act() }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("empty_action_button")
+            }
         } else {
             contentContainer
                 .id(ListScaffoldConst.topAnchor)

@@ -78,6 +78,12 @@ private struct ShtContent: View {
         }
     }
 
+    /// R7 P4：是否有筛选条件（空态文案/重置按钮分流；q 空白归一与 ShtSearch 同口径）
+    private var hasActiveFilters: Bool {
+        !vm.main.isEmpty || !vm.cat.isEmpty || !vm.type.isEmpty ||
+            !vm.q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.hasMagnet
+    }
+
     // MARK: body
 
     var body: some View {
@@ -87,7 +93,13 @@ private struct ShtContent: View {
             empty: itemsEmpty,
             error: vm.error,
             onRetry: { Task { await vm.reload() } },
-            emptyText: "远程 sehuatang 库暂无数据 (需抓取端上传或开启 mirror)",
+            // R7 P4：空态区分口径 —— 有筛选 → 「当前筛选无结果」+ 重置按钮（可自助恢复）；
+            // 无筛选 → 远程库暂无数据原文
+            emptyText: hasActiveFilters
+                ? "当前筛选无结果"
+                : "远程 sehuatang 库暂无数据 (需抓取端上传或开启 mirror)",
+            emptyActionTitle: hasActiveFilters ? "重置筛选" : nil,
+            onEmptyAction: hasActiveFilters ? { Task { await vm.clearFilters() } } : nil,
             skeletonColumns: vm.viewMode == 0 ? 2 : 1,
             loadMore: LoadMoreConfig(
                 loaded: items.count, total: vm.total, loadingMore: vm.loadingMore,
@@ -109,6 +121,9 @@ private struct ShtContent: View {
                 }
             }
         }
+        // R7 P4 G5a：筛选/搜索变化重建 ScrollView → offset 归零，防「新列表更短、
+        // 视口停在内容之外」的纯空白；翻页 append 不改 listIdentity 不重建
+        .id(vm.listIdentity)
         .navigationTitle("98t")
         .navigationBarTitleDisplayMode(.large)
         .toolbar { shtToolbar }
@@ -303,16 +318,26 @@ private struct ShtFilterSheet: View {
                     .accessibilityIdentifier("sht_main_picker")
                     Picker("副版", selection: subBinding) {
                         Text("全部").tag("")
+                        if subList.isEmpty {
+                            // R7 P4 G1：无选项不再只剩「全部」假象 —— 明示暂无 + 禁用
+                            // （刷新分类按钮在上方「分类索引」区）
+                            Text("暂无（可点刷新分类）").tag("__unavailable__")
+                        }
                         ForEach(subList.indices, id: \.self) { i in
                             Text(subList[i].s("name")).tag(subList[i].s("name"))
                         }
                     }
+                    .disabled(subList.isEmpty)
                     Picker("分类", selection: typeBinding) {
                         Text("全部").tag("")
+                        if typeList.isEmpty {
+                            Text("暂无（可点刷新分类）").tag("__unavailable__")
+                        }
                         ForEach(typeList.indices, id: \.self) { i in
                             Text(typeList[i].s("name")).tag(typeList[i].s("name"))
                         }
                     }
+                    .disabled(typeList.isEmpty)
                     Picker("每页", selection: perBinding) {
                         ForEach(["20", "40", "60", "80", "100"], id: \.self) { p in
                             Text(p).tag(p)

@@ -748,7 +748,15 @@ final class ShtVM: ObservableObject {
                 applyFallbackCats()
                 return
             }
-            cache.put(Self.CAT_KEY, d)
+            // R7 P4 G4：payload 完整性校验 —— subs/types 空「且」无 sections 显式标记
+            // = 不完整 → 不写 24h（下次强制重查）；Q 返回恒带 sections，显式标记
+            // （ok/empty/fallback）视为完整可缓存
+            let sections = d["sections"] as? [String: String] ?? [:]
+            let subOk = !(d["subs"] as? [Row] ?? []).isEmpty || sections["subs"] != nil
+            let typeOk = !(d["types"] as? [Row] ?? []).isEmpty || sections["types"] != nil
+            if subOk && typeOk {
+                cache.put(Self.CAT_KEY, d)
+            }
             applyCats(d)
         } catch {
             // 分类加载失败静默（不阻塞列表；C8）→ 静态兜底
@@ -771,6 +779,7 @@ final class ShtVM: ObservableObject {
 
     /// R6 PHASE3：主版静态兜底（口径 = 应用自述版区结构，与 demo 种子/详情徽标判定一致）。
     /// c=0 表示无远程计数；远端加载成功后整体覆盖（远端/离线合并语义）。
+    /// R7 P4 G3：仅作「列表也为空」时的最后退路 —— 有首屏数据时兜底值来自真实 items。
     static let FALLBACK_MAINS: [Row] = [
         Row(["name": .string("有码中文字幕"), "c": .int(0)]),
         Row(["name": .string("无码中文字幕"), "c": .int(0)]),
@@ -778,10 +787,40 @@ final class ShtVM: ObservableObject {
         Row(["name": .string("小说文学区"), "c": .int(0)]),
     ]
 
+    /// R7 P4 G5a：非 append apply 的筛选状态指纹 —— ShtView 以 .id(listIdentity) 重建
+    /// ScrollView，筛选/搜索变化后替换 items 时 offset 归零（防「视口停在内容之外」
+    /// 的纯空白，任务 05 G5a）；翻页 append 不改指纹（page 不参与）。
+    var listIdentity: String {
+        "\(main)|\(cat)|\(type)|\(q)|\(sort)|\(hasMagnet ? 1 : 0)"
+    }
+
+    /// R7 P4 G1/G3：有依据兜底 —— 不再清空 subs/types、不再用写死版区名（G3 写死名
+    /// 与真实库 board 不一致 → 选中必 0 行）；优先从当前首屏 items 聚合真实值
+    /// （值来自数据本身 → 用户选到必有结果），按出现次数降序；列表为空时 mains 退
+    /// 应用自述版区（FALLBACK_MAINS）、subs/types 保持空（UI 显示「暂无」并禁用）。
     private func applyFallbackCats() {
-        mains = Self.FALLBACK_MAINS
-        subs = []
-        types = []
+        var mainC: [String: Int64] = [:]
+        var subC: [String: Int64] = [:]
+        var typeC: [String: Int64] = [:]
+        for r in items {
+            let cn = r.s("cat_name")
+            if !cn.isEmpty { mainC[cn, default: 0] += 1 }
+            let bn = r.s("board_name")
+            if !bn.isEmpty { subC[bn, default: 0] += 1 }
+            let ty = r.s("type")
+            if !ty.isEmpty { typeC[ty, default: 0] += 1 }
+        }
+        func top(_ dict: [String: Int64]) -> [Row] {
+            dict.sorted { lhs, rhs in
+                if lhs.value != rhs.value { return lhs.value > rhs.value }
+                return lhs.key < rhs.key
+            }
+            .map { Row(["name": .string($0.key), "c": .int($0.value)]) }
+        }
+        let itemsMains = top(mainC)
+        mains = itemsMains.isEmpty ? Self.FALLBACK_MAINS : itemsMains
+        subs = top(subC)
+        types = top(typeC)
         catSource = "fallback"
     }
 

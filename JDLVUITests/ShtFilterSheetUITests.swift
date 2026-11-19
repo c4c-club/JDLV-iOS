@@ -55,4 +55,62 @@ final class ShtFilterSheetUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["sht_grid"].firstMatch
             .waitForExistence(timeout: 10), "关闭 sheet 后列表未恢复")
     }
+
+
+    /// R7 P4：连续 6 次筛选切换，每次断言非纯空白 —— searchBar 恒在（页面结构没塌）
+    /// 且（首卡 或 空态+重置按钮）可见（任务 05 步骤 6 / 出口检查 3）。
+    @MainActor
+    func testShtNeverBlankAfterFilterChange() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-JDLV_DEMO", "1",
+                               "-JDLV_DEFAULTS_SUITE", "uitest_\(UUID().uuidString.prefix(8))",
+                               "-JDLV_KEYCHAIN_SERVICE", "ks_\(UUID().uuidString.prefix(8))"]
+        app.launch()
+
+        let shtTab = app.buttons["tab_sht"].firstMatch
+        XCTAssertTrue(shtTab.waitForExistence(timeout: 20), "tab bar not found")
+        if shtTab.isHittable {
+            shtTab.tap()
+        } else {
+            shtTab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["sht_grid"].firstMatch
+            .waitForExistence(timeout: 60), "98t grid not rendered")
+
+        for round in 0..<6 {
+            app.buttons["sht_filter_button"].firstMatch.tap()
+            let mainPicker = app.descendants(matching: .any)["sht_main_picker"].firstMatch
+            XCTAssertTrue(mainPicker.waitForExistence(timeout: 15),
+                          "round \(round) 筛选 sheet 未渲染主版 Picker")
+            mainPicker.tap()
+            let label = round % 2 == 0 ? "有码中文字幕" : "全部"
+            let opt = app.buttons.containing(
+                NSPredicate(format: "label CONTAINS %@", label)).firstMatch
+            if opt.waitForExistence(timeout: 8) {
+                opt.tap()
+            } else {
+                let alt = app.descendants(matching: .any)
+                    .containing(NSPredicate(format: "label CONTAINS %@", label)).firstMatch
+                XCTAssertTrue(alt.waitForExistence(timeout: 8),
+                              "round \(round) 主版选项 \(label) 未出现")
+                alt.tap()
+            }
+            let done = app.buttons["sht_filter_done"].firstMatch
+            if done.waitForExistence(timeout: 6) {
+                done.tap()
+            } else {
+                app.swipeDown(velocity: .fast)   // 兜底关 sheet
+            }
+            // 非空白断言：结构（searchBar）恒在；内容 = 首卡 或 空态+重置按钮
+            XCTAssertTrue(app.descendants(matching: .any)["sht_searchbar"].firstMatch
+                .waitForExistence(timeout: 10), "round \(round) 搜索条消失（页面结构塌了）")
+            let hasCard = app.descendants(matching: .any)["shtcard_0"].firstMatch
+                .waitForExistence(timeout: 20)
+            let resetBtn = app.descendants(matching: .any)["empty_action_button"].firstMatch
+            let emptyText = app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "当前筛选无结果")).firstMatch
+            let nonBlank = hasCard || resetBtn.waitForExistence(timeout: 2) || emptyText.exists
+            XCTAssertTrue(nonBlank, "round \(round) 纯空白（无首卡也无空态出口）—— G5 复现")
+        }
+    }
 }

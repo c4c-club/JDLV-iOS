@@ -1035,28 +1035,58 @@ public enum Q {
     public static func shtCategories() async throws -> [String: Any] {
         let tt = await Db.tableOf("sht", "threads")
         let win = 80000   // ★ P3.9：20000 → 80000 帖
-        // R3 问题 9：main 用 COALESCE(NULLIF(TRIM(board),''), cat_name) 归一化
-        // （与 ShtSearch.list/count/shtExport 同口径）；board_name 仍副版、type 仍分类。
-        // R7 P2：3 条 80k 派生聚合走 background lane（并发 1），首屏列表不再排队等它们
-        let subs = try await Db.query(
-            "sht",
-            "SELECT COALESCE(NULLIF(TRIM(board), ''), cat_name) main, board_name name, COUNT(*) c FROM " +
-                "(SELECT board, board_name, cat_name FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
-                "WHERE board_name IS NOT NULL " +
-                "GROUP BY main, board_name",
-            lane: .background)
-        let cats = try await Db.query(
-            "sht",
-            "SELECT cat_name name, COUNT(*) c FROM " +
-                "(SELECT cat_name FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
-                "WHERE cat_name IS NOT NULL GROUP BY cat_name ORDER BY c DESC",
-            lane: .background)
-        let types = try await Db.query(
-            "sht",
-            "SELECT board_name sub, `type` name, COUNT(*) c FROM " +
-                "(SELECT board_name, `type` FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
-                "WHERE `type` IS NOT NULL AND `type` != '' GROUP BY board_name, `type`",
-            lane: .background)
+        // R7 P4（任务 05 G2）：三段【独立 do/catch】替代全有或全无的 try 串行 ——
+        // 任何一段抛错/列缺失只降级该段，不再整体 throw 连坐走静态兜底清空 subs/types。
+        // 列存在性用 Db.cols 探测：board 缺 → main 退化为 cat_name；type 缺 → types 空。
+        // 返回 sections 标记 {mains/subs/types/cats: ok|empty|fallback} 供 VM 判缓存完整性。
+        let have = await Db.cols("sht", tt)
+        let hasBoard = have.contains("board")
+        let hasBoardName = have.contains("board_name")
+        let hasType = have.contains("type")
+        var sections: [String: String] = [:]
+
+        var subs: [[String: Any]] = []
+        if hasBoardName || hasBoard {
+            do {
+                let mainExpr = hasBoard ? "COALESCE(NULLIF(TRIM(board), ''), cat_name)" : "cat_name"
+                let subExpr = hasBoardName ? "board_name" : "cat_name"
+                let pick = [hasBoard ? "board" : nil, hasBoardName ? "board_name" : nil, "cat_name"]
+                    .compactMap { $0 }.joined(separator: ", ")
+                subs = try await Db.query(
+                    "sht",
+                    "SELECT \(mainExpr) main, \(subExpr) name, COUNT(*) c FROM " +
+                        "(SELECT \(pick) FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
+                        "WHERE \(subExpr) IS NOT NULL " +
+                        "GROUP BY main, \(subExpr)",
+                    lane: .background)
+            } catch { subs = [] }
+        }
+        sections["subs"] = subs.isEmpty ? "empty" : "ok"
+
+        var cats: [[String: Any]] = []
+        do {
+            cats = try await Db.query(
+                "sht",
+                "SELECT cat_name name, COUNT(*) c FROM " +
+                    "(SELECT cat_name FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
+                    "WHERE cat_name IS NOT NULL GROUP BY cat_name ORDER BY c DESC",
+                lane: .background)
+        } catch { cats = [] }
+        sections["cats"] = cats.isEmpty ? "empty" : "ok"
+
+        var types: [[String: Any]] = []
+        if hasType && hasBoardName {
+            do {
+                types = try await Db.query(
+                    "sht",
+                    "SELECT board_name sub, `type` name, COUNT(*) c FROM " +
+                        "(SELECT board_name, `type` FROM \(tt) ORDER BY tid DESC LIMIT \(win)) k " +
+                        "WHERE `type` IS NOT NULL AND `type` != '' GROUP BY board_name, `type`",
+                    lane: .background)
+            } catch { types = [] }
+        }
+        sections["types"] = types.isEmpty ? "empty" : "ok"
+
         let total: Int64
         do {
             total = try await Db.scalar(
@@ -1067,28 +1097,36 @@ public enum Q {
         } catch {
             total = -1
         }
-        // mains：subs 按 main 聚和后按 c 降序（Kotlin sortedByDescending 稳定 →
-        // 并列保持首现顺序）
-        var acc: [(name: String, c: Int64)] = []
-        var firstIdx: [String: Int] = [:]
-        for r in subs {
-            let k = r.s("main")
-            if let p = firstIdx[k] {
-                acc[p].c += r.i("c")
-            } else {
-                firstIdx[k] = acc.count
-                acc.append((k, r.i("c")))
+        // mains：subs 段正常时按 main 聚合后按 c 降序（Kotlin sortedByDescending 稳定 →
+        // 并列保持首现顺序）；subs 段空/失败时退化为 cats（cat_name 即 main 的退化形态，
+        // R3 问题 9 口径：board 缺失时两者恒等）
+        let mains: [[String: Any]]
+        if subs.isEmpty {
+            mains = cats
+            sections["mains"] = mains.isEmpty ? "empty" : "fallback"
+        } else {
+            var acc: [(name: String, c: Int64)] = []
+            var firstIdx: [String: Int] = [:]
+            for r in subs {
+                let k = r.s("main")
+                if let p = firstIdx[k] {
+                    acc[p].c += r.i("c")
+                } else {
+                    firstIdx[k] = acc.count
+                    acc.append((k, r.i("c")))
+                }
             }
+            mains = acc.enumerated()
+                .sorted { lhs, rhs in
+                    if lhs.element.c != rhs.element.c { return lhs.element.c > rhs.element.c }
+                    return lhs.offset < rhs.offset
+                }
+                .map { ["name": $0.element.name, "c": $0.element.c] }
+            sections["mains"] = mains.isEmpty ? "empty" : "ok"
         }
-        let mains: [[String: Any]] = acc.enumerated()
-            .sorted { lhs, rhs in
-                if lhs.element.c != rhs.element.c { return lhs.element.c > rhs.element.c }
-                return lhs.offset < rhs.offset
-            }
-            .map { ["name": $0.element.name, "c": $0.element.c] }
         return [
             "categories": cats, "mains": mains, "subs": subs, "types": types,
-            "total": total, "approx": true, "ts": nowMs(),
+            "total": total, "approx": true, "ts": nowMs(), "sections": sections,
         ]
     }
 

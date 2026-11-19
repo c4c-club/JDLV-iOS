@@ -48,6 +48,8 @@ final class ShtVMTests: XCTestCase {
         // R6 PHASE3：分类兜底测试注入点
         var catsError: Error? = nil
         var catsEmpty = false
+        /// R7 P4：完整 payload 注入（含 sections 标记的缓存完整性用例）
+        var catsPayload: [String: Any]? = nil
 
         func shtBrowse(
             main: String, cat: String, type: String, q: String, hasMagnet: Bool,
@@ -84,6 +86,7 @@ final class ShtVMTests: XCTestCase {
             catCalls += 1
             if catForceCalls == 0 && catCalls > 0 { catForceCalls = catCalls }
             if let e = catsError { throw e }
+            if let p = catsPayload { return p }
             if catsEmpty {
                 return ["categories": [Row](), "mains": [Row](), "subs": [Row](),
                         "types": [Row](), "total": Int64(0), "approx": true,
@@ -141,16 +144,19 @@ final class ShtVMTests: XCTestCase {
 
     // MARK: 构造器
 
-    /// 帖子行（tid/title/post_date/last_checked/cover_url/magnet_count）
+    /// 帖子行（tid/title/post_date/last_checked/cover_url/magnet_count）；
+    /// R7 P4：+cat_name/board_name/type（有依据兜底聚合的来源字段）
     private func trows(
         _ tids: [String], date: String = "2024-01-01", checked: String = "2024-06-01 12:00",
-        cover: String = ""
+        cover: String = "", cat: String = "有码中文字幕",
+        board: String = "有码原创", type: String = "高清"
     ) -> [Row] {
         tids.map {
             Row([
                 "tid": .string($0), "title": .string("帖\($0)"),
                 "post_date": .string(date), "last_checked": .string(checked),
                 "cover_url": .string(cover), "magnet_count": .int(1),
+                "cat_name": .string(cat), "board_name": .string(board), "type": .string(type),
             ])
         }
     }
@@ -533,6 +539,72 @@ final class ShtVMTests: XCTestCase {
         XCTAssertEqual(src.catCalls, 1, "R6：分类加载不再以首屏成功为前提")
         XCTAssertEqual(vm.catSource, "fallback")
         XCTAssertFalse(vm.mains.isEmpty, "离线状态下主版筛选也有选项")
+    }
+
+    // MARK: R7 P4 分段降级 / 有依据兜底 / 缓存完整性（任务 05）
+
+    @MainActor
+    func testFallbackCatsFromItemsWhenRemoteThrows() async {
+        let src = MockShtSource()
+        src.responses = [page(["1", "2", "3"])]
+        src.catsError = FetchFailure("db down")
+        let vm = makeVM(src)
+        await vm.bind(dataEpoch: 0)
+        let dCats = Date().addingTimeInterval(3)
+        while vm.catSource.isEmpty && Date() < dCats {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(vm.catSource, "fallback")
+        // G1/G3：subs/types 不再被清空、不再用写死版区名 —— 来自首屏 items 聚合
+        //（值来自真实数据 → 用户选到必有结果）
+        XCTAssertFalse(vm.subs.isEmpty, "有依据兜底：subs 来自首屏 items（G1 不再清空）")
+        XCTAssertFalse(vm.types.isEmpty, "有依据兜底：types 来自首屏 items（G1 不再清空）")
+        XCTAssertFalse(vm.mains.isEmpty)
+        XCTAssertEqual(vm.subs.first?.s("name"), "有码原创",
+                       "兜底值 = items 里的真实 board_name（非写死名）")
+    }
+
+    @MainActor
+    func testFallbackFromListKeepsResultsWhenRemotePartiallyFails() async {
+        // G2：分类远程部分失败（subs 抛错）—— mock 模拟 Q 层分段降级后的形态：
+        // mains/types 正常、subs 空 + sections 标记 empty（不再整体 throw）
+        let src = MockShtSource()
+        src.responses = [page(["1", "2"])]
+        src.catsPayload = [
+            "categories": [Row](),
+            "mains": [Row(["name": .string("有码中文字幕"), "c": .int(64)])],
+            "subs": [Row](), "types": [Row(["sub": .string("有码原创"), "name": .string("高清"), "c": .int(16)])],
+            "total": Int64(0), "approx": true, "ts": Int64(1_730_000_000_000),
+            "sections": ["mains": "ok", "subs": "empty", "types": "ok"],
+        ]
+        let vm = makeVM(src)
+        await vm.bind(dataEpoch: 0)
+        let dCats = Date().addingTimeInterval(3)
+        while vm.catSource.isEmpty && Date() < dCats {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(vm.catSource, "remote", "分段降级：mains/types 段正常仍走远程")
+        XCTAssertFalse(vm.mains.isEmpty, "主版不受 subs 段失败影响（G2）")
+        XCTAssertFalse(vm.types.isEmpty, "types 段正常加载（G2）")
+        XCTAssertTrue(vm.subs.isEmpty, "subs 段降级为空（UI 显示暂无并禁用）")
+    }
+
+    @MainActor
+    func testIncompleteCatCacheNotPersisted() async {
+        let src = MockShtSource()
+        let cache = MockCache()
+        // G4：mains 有但 subs/types 空且无 sections 标记 = 不完整 → 不写 24h
+        src.catsPayload = [
+            "categories": [Row](),
+            "mains": [Row(["name": .string("有码中文字幕"), "c": .int(64)])],
+            "subs": [Row](), "types": [Row](),
+            "total": Int64(0), "approx": true, "ts": Int64(1_730_000_000_000),
+        ]
+        let vm = makeVM(src, cache)
+        await vm.loadCats(force: false)
+        XCTAssertEqual(vm.catSource, "remote")
+        await vm.loadCats(force: false)
+        XCTAssertEqual(src.catCalls, 2, "不完整 payload 不得写缓存（G4：下次强制重查）")
     }
 
     @MainActor
