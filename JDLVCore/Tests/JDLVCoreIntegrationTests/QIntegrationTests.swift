@@ -1050,16 +1050,15 @@ final class QIntegrationTests: XCTestCase {
         // 空串(1007) 均按 cat_name '国产原创' 归入 subs/mains（旧口径 board 非空才聚合会漏）
         XCTAssertEqual(subMap, ["tc": 3, "国产原创": 2, "tw": 1, "eu": 1],
                        "board NULL/空串按 cat_name 归入 subs")
-        let mains = res["mains"] as? [[String: Any]] ?? []
+        let mains = rowsOf(res, "mains")
         XCTAssertEqual(mains.count, 4)
-        XCTAssertEqual(mains.first?["name"] as? String, "tc", "Kotlin 侧按 c 降序")
-        XCTAssertEqual(mains.first?["c"] as? Int64, 3)
+        XCTAssertEqual(mains.first?.s("name"), "tc", "Kotlin 侧按 c 降序")
+        XCTAssertEqual(mains.first?.i("c"), 3)
+        // R7-P4：分段可用性标记（fixture 全段可用 → mains=ok）
+        let secs = res["sections"] as? [String: String] ?? [:]
+        XCTAssertEqual(secs["mains"], "ok")
         // mains 聚合计数 = subs 求和（R3 问题 9 一致性）
-        let mainsSum: Int64 = mains.reduce(0) { acc, m in
-            if let v = m["c"] as? Int64 { return acc + v }
-            if let v = m["c"] as? Int { return acc + Int64(v) }
-            return acc
-        }
+        let mainsSum: Int64 = mains.reduce(0) { $0 + $1.i("c") }
         let subsSum = subs.reduce(Int64(0)) { $0 + $1.i("c") }
         XCTAssertEqual(mainsSum, subsSum, "mains 计数与 subs 求和一致")
         let types = rowsOf(res, "types")
