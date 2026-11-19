@@ -1045,7 +1045,7 @@ public enum Q {
         let hasType = have.contains("type")
         var sections: [String: String] = [:]
 
-        var subs: [[String: Any]] = []
+        var subs: [Row] = []
         if hasBoardName || hasBoard {
             do {
                 let mainExpr = hasBoard ? "COALESCE(NULLIF(TRIM(board), ''), cat_name)" : "cat_name"
@@ -1063,7 +1063,7 @@ public enum Q {
         }
         sections["subs"] = subs.isEmpty ? "empty" : "ok"
 
-        var cats: [[String: Any]] = []
+        var cats: [Row] = []
         do {
             cats = try await Db.query(
                 "sht",
@@ -1074,7 +1074,7 @@ public enum Q {
         } catch { cats = [] }
         sections["cats"] = cats.isEmpty ? "empty" : "ok"
 
-        var types: [[String: Any]] = []
+        var types: [Row] = []
         if hasType && hasBoardName {
             do {
                 types = try await Db.query(
