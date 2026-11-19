@@ -1100,7 +1100,7 @@ public enum Q {
         // mains：subs 段正常时按 main 聚合后按 c 降序（Kotlin sortedByDescending 稳定 →
         // 并列保持首现顺序）；subs 段空/失败时退化为 cats（cat_name 即 main 的退化形态，
         // R3 问题 9 口径：board 缺失时两者恒等）
-        let mains: [[String: Any]]
+        let mains: [Row]
         if subs.isEmpty {
             mains = cats
             sections["mains"] = mains.isEmpty ? "empty" : "fallback"
@@ -1121,7 +1121,7 @@ public enum Q {
                     if lhs.element.c != rhs.element.c { return lhs.element.c > rhs.element.c }
                     return lhs.offset < rhs.offset
                 }
-                .map { ["name": $0.element.name, "c": $0.element.c] }
+                .map { Row(["name": .string($0.element.name), "c": .int($0.element.c)]) }
             sections["mains"] = mains.isEmpty ? "empty" : "ok"
         }
         return [
