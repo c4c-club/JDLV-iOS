@@ -121,7 +121,7 @@ final class SettingsUITests: XCTestCase {
         // 43772468705/43900500096 两次 line:100 证据；该处无法捕获框架错误，
         // 只能降低单次快照成本 + 拉长步间沉降）。
         for _ in 0..<maxSwipes {
-            usleep(300_000)
+            usleep(600_000)
             if el.exists {
                 let f = el.frame
                 if f.intersects(app.frame) { return true }
@@ -234,7 +234,9 @@ final class SettingsUITests: XCTestCase {
             guard scrollToElement(app, card) else { continue }   // 失败已附 dump
             card.tap()
             // R5 P3：展开内容构建落定（密集 tap+查询在负载 runner 上触发 AX 快照超时）
-            usleep(400_000)
+            // R7-P7：run 44602673573/44612220166×2/44764261026 连续 4 次 semantic 组附近
+            // "main thread busy 30s" 快照超时 —— 展开后沉降加长到 1.2s 降低 AX 求值密度
+            usleep(1_200_000)
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
         }
         // 锚点已在本用例前段硬断言（testImageModeOn），store 持久化由单测覆盖
