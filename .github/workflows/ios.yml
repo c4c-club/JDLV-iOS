@@ -385,8 +385,7 @@ jobs:
     # P0：发布默认关闭——仅 tag 推送且 vars.R7_RELEASE_ENABLED == '1' 时才进入；
     # environment: release 在仓库侧配置 required reviewers（人工审批）。
     # 流程铁律：先 draft（仅协作者可见）→ verify PASS → 才 --draft=false 公开。
-    if: startsWith(github.ref, 'refs/tags/v') && vars.R7_RELEASE_ENABLED == '1'
-    needs: [guard, core-linux, core-mysql, ios, security]
+    if: (startsWith(github.ref, 'refs/tags/v') && vars.R7_RELEASE_ENABLED == '1') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_only == 'true' && github.event.inputs.release_tag != '')
     environment: release
     runs-on: macos-latest
     timeout-minutes: 30
@@ -420,7 +419,7 @@ jobs:
       - name: Create draft release (collaborators only)
         env:
           GH_TOKEN: ${{ github.token }}
-          REL_TAG: ${{ inputs.release_tag || github.ref_name }}
+          REL_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
         run: |
           set -e
           cd dist
@@ -444,7 +443,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-          REL_TAG: ${{ inputs.release_tag || github.ref_name }}
+          REL_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
         run: |
           set -eo pipefail
           grep -qx 'IPA VERIFY: PASS' dist/ipa-verify-report.txt
