@@ -229,15 +229,18 @@ final class SettingsUITests: XCTestCase {
         // 按钮上（SettingsGroupCard.header）→ 精确 tap 头行切换展开，无坐标兜底
         let keys = ["db", "proxy", "jdbimg", "shtimg", "theme", "lock",
                     "browse", "semantic", "cache", "shadow"]
+        // R7-P7：展开→校验→立即收起 —— 10 组全展开时 AX 树过大, semantic 组附近
+        // snapshot 连续超时（44602673573/44612220166×2/44764261026/44790621247 五轮
+        // 中四轮 "main thread busy 30s"）；单组展开校验语义不变（crash 断言逐组保留）。
         for k in keys {
             let card = group(app, k)
             guard scrollToElement(app, card) else { continue }   // 失败已附 dump
             card.tap()
             // R5 P3：展开内容构建落定（密集 tap+查询在负载 runner 上触发 AX 快照超时）
-            // R7-P7：run 44602673573/44612220166×2/44764261026 连续 4 次 semantic 组附近
-            // "main thread busy 30s" 快照超时 —— 展开后沉降加长到 1.2s 降低 AX 求值密度
             usleep(1_200_000)
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
+            card.tap()   // 收起，保持 AX 树小
+            usleep(600_000)
         }
         // 锚点已在本用例前段硬断言（testImageModeOn），store 持久化由单测覆盖
         XCTAssertEqual(app.state, .runningForeground)
