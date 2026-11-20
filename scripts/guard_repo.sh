@@ -34,7 +34,7 @@ android_hits=$(git ls-files | grep -E 'JDLV-Mobile/app/sr[c]' || true)
 "$PYBIN" -I scripts/scan_repo_secrets.py --root . --mode head --out /tmp/r6-guard-head.txt
 "$PYBIN" -I scripts/check_hits_manifest.py --report /tmp/r6-guard-head.txt --manifest scripts/secret_classification.txt
 
-grep -q 'MARKETING_VERSION: 1.6.1' project.yml || { echo 'guard FAIL: version'; exit 1; }
+grep -q 'MARKETING_VERSION: 1.7.0' project.yml || { echo 'guard FAIL: version'; exit 1; }
 
 # P0 gate 1: workflows must never upload public build artifacts (.ipa/.app.zip);
 # every upload-artifact step must stay free of bundle paths (public repo rule)

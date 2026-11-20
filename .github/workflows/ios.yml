@@ -14,6 +14,14 @@ on:
         description: 'UI 测试过滤（only-testing 目标，逗号分隔，如 JDLVUITests/SettingsUITests,JDLVUITests/ProductionSmokeUITests；空 = 全量。R5 P3 引入，常驻）'
         required: false
         default: ''
+      build_only:
+        description: 'P7 候选包：true 时全量测试后构建 IPA/模拟器包并上传 draft release（绝不 publish）'
+        required: false
+        default: 'false'
+      release_tag:
+        description: 'build_only=true 时的 draft release tag（如 v1.7.0-rc1；空 = 不走候选包）'
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -412,11 +420,12 @@ jobs:
       - name: Create draft release (collaborators only)
         env:
           GH_TOKEN: ${{ github.token }}
+          REL_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -e
           cd dist
           sha256sum JDLV-unsigned.ipa JDLV-Simulator.app.zip > SHA256SUMS.txt
-          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft --title "${GITHUB_REF_NAME}" --notes "JDLV iOS ${GITHUB_REF_NAME} candidate binaries" JDLV-unsigned.ipa JDLV-Simulator.app.zip SHA256SUMS.txt
+          gh release create "${REL_TAG}" --repo "${GITHUB_REPOSITORY}" --draft --prerelease --title "${REL_TAG}" --notes "JDLV iOS ${REL_TAG} candidate binaries" JDLV-unsigned.ipa JDLV-Simulator.app.zip SHA256SUMS.txt
       - name: Verify IPA (security gate, fail-closed)
         env:
           JDLV_KNOWN_SECRETS_B64: ${{ secrets.JDLV_KNOWN_SECRETS_B64 || '' }}
@@ -431,9 +440,12 @@ jobs:
           bash scripts/verify_ipa.sh dist/JDLV-unsigned.ipa --known-values /tmp/known.values --known-hashes /tmp/known.sha256 \
             --out dist/ipa-verify-report.txt
       - name: Publish release (draft=false, only on exact PASS)
+        # R7-P7：dispatch build_only 候选包永远保持 draft（实机验证通过后 P8 才正式发布）
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
+          REL_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -eo pipefail
           grep -qx 'IPA VERIFY: PASS' dist/ipa-verify-report.txt
-          gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false
+          gh release edit "${REL_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false
