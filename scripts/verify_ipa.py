@@ -58,6 +58,11 @@ def bundle_allowed(rel):
     top = parts[0]
     if top == "Frameworks" and len(parts) >= 2 and parts[1].endswith(".framework"):
         return True
+    # R7-P7：Xcode 26 起 Swift 5 源码产物也会带 back-deploy 兼容 shim
+    # （Frameworks/libswiftCompatibilitySpan.dylib 等, 官方运行时, run 44805049841
+    # verify FAIL 证据）—— 裸 libswift*.dylib 与 *.framework 同为可解释内容。
+    if top == "Frameworks" and len(parts) == 2 and parts[1].startswith("libswift"):
+        return True
     if top.endswith(".bundle"):
         return True
     if top == "_CodeSignature":
