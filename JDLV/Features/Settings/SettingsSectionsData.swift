@@ -148,20 +148,23 @@ struct DataSourceCard: View {
         let isLocal = side == "local"
         SettingsLabeledRow(label: SettingsCopy.dsLabelHost) {
             CompactField(text: isLocal ? $localHost : $remoteHost,
-                         placeholder: SettingsCopy.dsPhHost) { v in
+                         placeholder: SettingsCopy.dsPhHost,
+                         id: isLocal ? "dsfield_local_host" : "dsfield_remote_host") { v in
                 editDebounced { if isLocal { $0.localHost = v } else { $0.remoteHost = v } }
             }
         }
         SettingsLabeledRow(label: SettingsCopy.dsLabelPort) {
             CompactField(text: isLocal ? $localPort : $remotePort,
                          placeholder: isLocal ? SettingsCopy.dsPhPortLocal : SettingsCopy.dsPhPortRemote,
-                         keyboard: .numberPad) { v in
+                         keyboard: .numberPad,
+                         id: isLocal ? "dsfield_local_port" : "dsfield_remote_port") { v in
                 editDebounced { if isLocal { $0.localPort = v } else { $0.remotePort = v } }
             }
         }
         SettingsLabeledRow(label: SettingsCopy.dsLabelUser) {
             CompactField(text: isLocal ? $localUser : $remoteUser,
-                         placeholder: SettingsCopy.dsPhUser) { v in
+                         placeholder: SettingsCopy.dsPhUser,
+                         id: isLocal ? "dsfield_local_user" : "dsfield_remote_user") { v in
                 editDebounced { if isLocal { $0.localUser = v } else { $0.remoteUser = v } }
             }
         }
@@ -182,19 +185,22 @@ struct DataSourceCard: View {
                                      if !Task.isCancelled { showPlain = false }
                                  }
                              }
-                         }) { v in
+                         },
+                         id: isLocal ? "dsfield_local_pass" : "dsfield_remote_pass") { v in
                 editDebounced { if isLocal { $0.localPass = v } else { $0.remotePass = v } }
             }
         }
         SettingsLabeledRow(label: SettingsCopy.dsLabelJdbDb) {
             CompactField(text: isLocal ? $localJdb : $remoteJdb,
-                         placeholder: SettingsCopy.dsPhJdb) { v in
+                         placeholder: SettingsCopy.dsPhJdb,
+                         id: isLocal ? "dsfield_local_jdb" : "dsfield_remote_jdb") { v in
                 editDebounced { if isLocal { $0.localJdb = v } else { $0.remoteJdb = v } }
             }
         }
         SettingsLabeledRow(label: SettingsCopy.dsLabelShtDb) {
             CompactField(text: isLocal ? $localSht : $remoteSht,
-                         placeholder: SettingsCopy.dsPhSht) { v in
+                         placeholder: SettingsCopy.dsPhSht,
+                         id: isLocal ? "dsfield_local_sht" : "dsfield_remote_sht") { v in
                 editDebounced { if isLocal { $0.localSht = v } else { $0.remoteSht = v } }
             }
         }

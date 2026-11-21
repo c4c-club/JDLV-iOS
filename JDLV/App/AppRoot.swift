@@ -23,6 +23,9 @@ struct AppGate: View {
 
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.colorScheme) private var colorScheme
+    // R6 SEG-01：首启流程显式状态 —— loaded 后冻结初值；800ms 防抖 autoSave 改变
+    // setupRequired 不再单独翻动门禁，仅「完成配置并进入」可结束首启流程。
+    @State private var setupFlow: Bool? = nil
 
     var body: some View {
         let s = store.settings
@@ -31,6 +34,8 @@ struct AppGate: View {
         let theme = AppTheme(
             pal: Theme.palette(themeName: s.themeName, systemDark: colorScheme == .dark),
             accentHex: Theme.accentOf(s.themeAccent))
+        // nil = 尚未冻结（首帧）→ 回退实时值；loaded 后由 onAppear/onChange 冻结
+        let inSetup = setupFlow ?? store.setupRequired
 
         Group {
             if lockNeeded && !store.unlocked {
@@ -44,14 +49,21 @@ struct AppGate: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(theme.bg0.ignoresSafeArea())
-            } else if !Self.isDemoMode && store.setupRequired {
-                FirstRunSetupView()
+            } else if !Self.isDemoMode && inSetup {
+                FirstRunSetupView(onDone: { setupFlow = false })
             } else {
                 AppRoot()
             }
         }
         .tint(theme.accent)
         .environment(\.appTheme, theme)
+        .onAppear {
+            // R6 SEG-01：冻结首启门禁初值，防抖落盘不再驱动门禁换页
+            if setupFlow == nil && store.loaded { setupFlow = store.setupRequired }
+        }
+        .onChange(of: store.loaded) { loaded in
+            if loaded && setupFlow == nil { setupFlow = store.setupRequired }
+        }
     }
 }
 
@@ -64,7 +76,11 @@ struct FirstRunSetupView: View {
     @EnvironmentObject private var store: SettingsStore
     @Environment(\.appTheme) private var theme
 
+    /// R6 SEG-01：完成回调 —— 仅「完成配置并进入」按钮经 flush+校验后触发
+    var onDone: () -> Void = {}
     @State private var showSettings = false
+    @State private var completing = false
+    @State private var incompleteError = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,9 +101,49 @@ struct FirstRunSetupView: View {
                     .padding(16)
                 }
             }
+            doneBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.bg0.ignoresSafeArea())
+    }
+
+    // MARK: R6 SEG-01：底部固定完成条（flush 防抖链 → 按权威值校验 → 通过才 onDone）
+
+    private var doneBar: some View {
+        VStack(spacing: 8) {
+            if incompleteError {
+                AppText("配置不完整：请检查主机 / 端口 / 账号 / 密码 / 库名",
+                        lvl: .bodyS, color: theme.red, maxLines: 2)
+                    .padding(.horizontal, 16)
+                    .accessibilityIdentifier("first_run_done_error")
+            }
+            SettingsActionButton(title: "完成配置并进入",
+                                 busyTitle: "保存中…",
+                                 busy: completing,
+                                 filled: true,
+                                 id: "first_run_done") {
+                completeSetup()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+        }
+        .background(theme.bg0.ignoresSafeArea(edges: .bottom))
+    }
+
+    private func completeSetup() {
+        guard !completing else { return }
+        incompleteError = false
+        completing = true
+        Task { @MainActor in
+            await store.flushPendingEdits()
+            completing = false
+            if store.setupRequired {
+                incompleteError = true
+            } else {
+                onDone()
+            }
+        }
     }
 
     // MARK: 说明卡 + 去设置

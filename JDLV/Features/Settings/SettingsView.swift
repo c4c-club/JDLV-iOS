@@ -570,6 +570,8 @@ struct CompactField: View {
     var trailingTitle: String? = nil
     var onTrailing: (() -> Void)? = nil
     var onChanged: (String) -> Void
+    /// R6 SEG-01：XCUI 稳定查询标识（连接字段 dsfield_<side>_<name>）
+    var id: String? = nil
 
     @Environment(\.appTheme) private var theme
 
@@ -591,6 +593,7 @@ struct CompactField: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .onChange(of: text) { onChanged($0) }
+            .accessibilityIdentifier(id ?? "")
 
             if let t = trailingTitle, let act = onTrailing {
                 Button(action: act) {
