@@ -102,12 +102,21 @@ struct CardGrid<Item, Cell: View>: View {
     /// 外层 wrapper 的 accessibility 前缀（"card_browse" → card_browse_0…；
     /// 打在含固定 frame 的 wrapper 上 —— LayoutAudit 读到的 frame = cellW×cellH 精确值）
     var idPrefix: String = ""
+    /// R6 SEG-03：true = GridItem(.flexible) 均分实测可用宽 —— 不依赖容器宽读数，
+    /// 结构上消除「固定列宽总和 < 容器」造成的右侧空白；cellWidth 仅作行高/frame 基准。
+    /// 默认 false：Browse/Actors/Home 维持 .fixed 旧行为（默认值不变即无回归面）。
+    var flexibleColumns: Bool = false
     @ViewBuilder var cell: (Item) -> Cell
 
-    /// 固定列宽（GridItem(.fixed)）—— 布局审计 frame 精确值不受容器宽度抖动影响
+    /// 固定列宽（GridItem(.fixed)）—— 布局审计 frame 精确值不受容器宽度抖动影响；
+    /// flexibleColumns=true 时改用 .flexible 均分（98t，R6 SEG-03）
     private var gridItems: [GridItem] {
-        Array(repeating: GridItem(.fixed(cellWidth), spacing: ComponentMetrics.gridSpacing),
-              count: columns)
+        if flexibleColumns {
+            return Array(repeating: GridItem(.flexible(), spacing: ComponentMetrics.gridSpacing),
+                         count: columns)
+        }
+        return Array(repeating: GridItem(.fixed(cellWidth), spacing: ComponentMetrics.gridSpacing),
+                     count: columns)
     }
 
     var body: some View {

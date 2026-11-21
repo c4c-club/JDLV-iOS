@@ -163,7 +163,8 @@ final class LayoutAuditUITests: XCTestCase {
                        columns: Int, spacing: CGFloat, checkScroll: Bool,
                        allowOffscreen: Bool = false,
                        checkFullWidth: Bool = false,
-                       fullWidthMargin: CGFloat = 16) {
+                       fullWidthMargin: CGFloat = 16,
+                       edgeTolerance: CGFloat = 3) {
         pagesAudited.append(page)
         var cards = collect(app, prefix: prefix)
         let isFallback = cards.contains { $0.0.contains("demo_") }
@@ -221,17 +222,24 @@ final class LayoutAuditUITests: XCTestCase {
             }
         }
         if checkFullWidth && !isFallback {
-            // R6 PHASE3：满宽断言（容差 3pt：3x 取整 + XCUI frame 损耗）。
+            // R6 PHASE3：满宽断言（默认容差 3pt：3x 取整 + XCUI frame 损耗）。
             // 320 兜底回归时右缘会停在 ~304（402pt 屏）→ 本断言必挂。
+            // R6 SEG-03：量化输出首 3 卡 frame + 屏宽（修复前/后对比数据源；
+            // cards 已按 (minY, minX) 排序 → prefix(3) = 首卡/行末卡/次行首卡）；
+            // 98t 用例传 edgeTolerance: 1（flexible 均分后右缘空白必须 ≤1pt）。
             let minX = cards.map { $0.1.minX }.min() ?? 0
             let maxX = cards.map { $0.1.maxX }.max() ?? 0
-            if abs(minX - fullWidthMargin) > 3 {
+            let frameDump = cards.prefix(3)
+                .map { "\($0.0): minX=\($0.1.minX) maxX=\($0.1.maxX) w=\($0.1.width)" }
+                .joined(separator: " | ")
+            print("LAYOUT-SEG03 \(page) screenW=\(screen.width) \(frameDump)")
+            if abs(minX - fullWidthMargin) > edgeTolerance {
                 addViolation(page, prefix,
-                             "grid left edge \(minX) != margin \(fullWidthMargin)±3")
+                             "grid left edge \(minX) != margin \(fullWidthMargin)±\(edgeTolerance)")
             }
-            if abs(maxX - (screen.width - fullWidthMargin)) > 3 {
+            if abs(maxX - (screen.width - fullWidthMargin)) > edgeTolerance {
                 addViolation(page, prefix,
-                             "grid right edge \(maxX) != \(screen.width - fullWidthMargin)±3 —— 右侧空白（容器宽未生效）")
+                             "grid right edge \(maxX) != \(screen.width - fullWidthMargin)±\(edgeTolerance) —— 右侧空白（容器宽未生效）")
             }
         }
         if checkScroll, cards.count >= 2 {
@@ -321,7 +329,7 @@ final class LayoutAuditUITests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1.0)
         audit(app, page: "sht", prefix: "shtcard_", columns: 2, spacing: 12,
-              checkScroll: true, checkFullWidth: true)
+              checkScroll: true, checkFullWidth: true, edgeTolerance: 1)
 
         // 5) 资讯（1 列行卡 96）
         openTab(app, "search")

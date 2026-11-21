@@ -19,6 +19,8 @@ struct SearchBarCompact: View {
     @Binding var text: String
     var placeholder: String = SearchCopy.searchPlaceholder
     var onSearch: () -> Void = {}
+    /// R6 SEG-03：外层水平 padding（98t 传 16 与卡片边缘对齐；默认 12，其他页不变）
+    var horizontalPadding: CGFloat = 12
 
     @Environment(\.appTheme) private var theme
 
@@ -57,7 +59,7 @@ struct SearchBarCompact: View {
             .background(RoundedRectangle(cornerRadius: ComponentMetrics.searchBarRadius)
                 .fill(theme.bg3))
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, horizontalPadding)
         .padding(.vertical, 4)
         // 容器不再用 accessibilityIdentifier（SwiftUI 会合并子树、吞掉子 TextField 的
         // id → XCUI 查不到输入框）；测试锚点 = TextField 本体的 home_search_field

@@ -222,7 +222,8 @@ private struct ShtContent: View {
         SearchBarCompact(
             text: Binding(get: { vm.queryState }, set: { vm.setQuery($0) }),
             placeholder: "搜索: 空格=且; 纯数字=按帖子ID",
-            onSearch: { Task { await vm.search() } })
+            onSearch: { Task { await vm.search() } },
+            horizontalPadding: ComponentMetrics.pageMargin)
             .accessibilityIdentifier("sht_searchbar")
             .padding(.top, 6)
     }
@@ -230,34 +231,39 @@ private struct ShtContent: View {
     // MARK: 网格（CardGrid 等宽等高；卡片 key = tid；触底加载：倒数 3 项）
 
     /// R6 PHASE3：容器宽由 ContainerWidthReader 在 content 子树内实测后传入。
+    /// R6 SEG-03（方案 A）：cellW/行高改由 GeometryReader 实测宽计算，CardGrid 用
+    /// flexibleColumns 让格子均分实际可用宽 —— 右侧空白由构造消除，不再依赖
+    /// env 容器宽读数与 ScrollView 实际内容宽零漂移。pageWidth 仅决定列数。
     private func grid(pageWidth: CGFloat) -> some View {
         let cols = gridColumns(pageWidth)
-        let cellW = GridMath.cellWidth(pageWidth: pageWidth, columns: cols)
-        let cardH = vm.viewMode == 1
-            ? CardLayout.shtLargeH(cellW: cellW)
-            : CardLayout.shtSmallH(cellW: cellW)
-        return CardGrid(items: items.indices.map { ($0, items[$0]) },
-                        columns: cols, cellWidth: cellW, cellHeight: cardH,
-                        idPrefix: "card_sht") { pair in
-            let (i, t) = pair
-            return ShtCard(
-                t: t,
-                coverUrl: vm.coverUrl(tid: t.s("tid"), row: t),
-                viewMode: vm.viewMode,
-                read: vm.readIds.contains(t.s("tid")),
-                fav: vm.favIds.contains(t.s("tid")),
-                onClick: { router.push(.shtThread(t.s("tid"))) }   // nav("sht/{tid}")
-            )
-            // Button 级 id（article_card 同款模式——XCUI 可靠查询）
-            .accessibilityIdentifier("shtcard_\(i)")
-            .onAppear {
-                if i >= items.count - 3 {
-                    Task { await vm.loadNext() }
+        return GeometryReader { geo in
+            let cellW = GridMath.cellWidth(pageWidth: geo.size.width, columns: cols)
+            let cardH = vm.viewMode == 1
+                ? CardLayout.shtLargeH(cellW: cellW)
+                : CardLayout.shtSmallH(cellW: cellW)
+            CardGrid(items: items.indices.map { ($0, items[$0]) },
+                     columns: cols, cellWidth: cellW, cellHeight: cardH,
+                     idPrefix: "card_sht", flexibleColumns: true) { pair in
+                let (i, t) = pair
+                return ShtCard(
+                    t: t,
+                    coverUrl: vm.coverUrl(tid: t.s("tid"), row: t),
+                    viewMode: vm.viewMode,
+                    read: vm.readIds.contains(t.s("tid")),
+                    fav: vm.favIds.contains(t.s("tid")),
+                    onClick: { router.push(.shtThread(t.s("tid"))) }   // nav("sht/{tid}")
+                )
+                // Button 级 id（article_card 同款模式——XCUI 可靠查询）
+                .accessibilityIdentifier("shtcard_\(i)")
+                .onAppear {
+                    if i >= items.count - 3 {
+                        Task { await vm.loadNext() }
+                    }
                 }
             }
+            .padding(.horizontal, ComponentMetrics.pageMargin)
+            .padding(.vertical, 6)
         }
-        .padding(.horizontal, ComponentMetrics.pageMargin)
-        .padding(.vertical, 6)
         .accessibilityIdentifier("sht_grid")
     }
 
