@@ -53,15 +53,20 @@ struct OfflineIndexCard: View {
             // R5 P3：1s tick 随【展开内容】创建/销毁（SettingsGroupCard 折叠时不求值
             // content → timer 不创建、不触发；旧实现 let 属性在卡片构建即每秒触发）
             settingsBlock(view)
+                .onAppear {
+                    // R6 SEG-02：卡片展开（content 重新构建）时空闲态回填，
+                    // 折叠/退出重进后不再显示 0
+                    refreshStatsIfReady()
+                }
                 .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-                    // R5 P3：仅在【同步任务运行中】每秒写 st（进度可见性所需）；
-                    // 空闲时不写状态 —— 每秒写入使主 runloop 永不空闲，XCUITest
-                    // "App event loop idle notification" 等待超时（run 43453232958）。
-                    // 空闲态的统计由 warmUpAsync/refreshStats/按钮动作刷新。
+                    // R5 P3：仅【值变化】才写 st —— 每秒无条件写入使主 runloop 永不空闲，
+                    // XCUITest "App event loop idle notification" 等待超时（run 43453232958）。
+                    // R6 SEG-02：不再要求 isRunning() —— 运行中照常跟随；完成/空闲态
+                    // 也能收到 finishRun 写入的最终计数（修复完成后一直显示 0）。
                     guard loadedOnce, scenePhase == .active,
-                          let sync = SettingsIndexHub.shared.syncIfReady,
-                          sync.isRunning() else { return }
-                    st = sync.state
+                          let sync = SettingsIndexHub.shared.syncIfReady else { return }
+                    let next = sync.state
+                    if next != st { st = next }
                 }
             tagEstimateNote(view)
             estimateNote(view)
@@ -82,6 +87,13 @@ struct OfflineIndexCard: View {
             usagePending = false
             usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)
             perfNote("offlineCard.task: done")
+            // R6 SEG-02：预热完成（coordinator 已 adopt + refreshStats）后空闲态回填；
+            // syncIfReady 仍为 nil（懒建未完成/失败）时下一帧重试一次，不无限轮询
+            refreshStatsIfReady()
+            if SettingsIndexHub.shared.syncIfReady == nil {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                refreshStatsIfReady()
+            }
         }
         // 重建二次确认 AlertDialog（§11.7 逐字）
         .alert(SettingsCopy.rebuildTitle, isPresented: $rebuildConfirm) {
@@ -105,7 +117,8 @@ struct OfflineIndexCard: View {
                 currentCount: {
                     guard let sync = SettingsIndexHub.shared.sync else { return 0 }
                     let table = target == .jdb ? "idx_movies" : "idx_threads"
-                    return (try? sync.idx.countOf(table: table)) ?? 0
+                    // R6 SEG-02：上限弹窗用精确 COUNT，绕开 1s TTL（打开瞬间不得显示旧 0）
+                    return (try? sync.idx.countOfExact(table: table)) ?? 0
                 },
                 onApply: { nv in applyIndexLimit(target: target, nv: nv) })
         }
@@ -212,6 +225,15 @@ struct OfflineIndexCard: View {
             usagePending = false
             usageText = SettingsCopy.usageText(idxMb: Double(bytes) / 1_048_576.0, detailMb: 0)
         }
+    }
+
+    /// R6 SEG-02：空闲态回填 —— 从 SyncCoordinator 权威 state 同步到卡片本地 st；
+    /// 只读（不触发懒建），值变化才写，避免无意义 body 重算。
+    private func refreshStatsIfReady() {
+        guard let sync = SettingsIndexHub.shared.syncIfReady else { return }
+        sync.refreshStats()
+        let next = sync.state
+        if next != st { st = next }
     }
 
     // MARK: 11.6 进度区

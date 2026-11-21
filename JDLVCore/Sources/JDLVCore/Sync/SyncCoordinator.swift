@@ -790,6 +790,8 @@ public final class SyncCoordinator: @unchecked Sendable {
     // MARK: - refreshStats
 
     public func refreshStats() {
+        // R6 SEG-02：1s TTL 计数缓存在「刚完成」瞬间可能返回旧值 —— 展示刷新前先失效
+        idx.invalidateCountCache()
         let s = settingsProvider()
         let idxMode = s.idxMode
         var movies: Int64 = 0
