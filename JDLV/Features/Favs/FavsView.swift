@@ -89,10 +89,13 @@ struct FavsView: View {
                 // R4 P5：回顶（List 无可靠 offset 源 → 非空即常显；tab 根页 inset = 环境值）
                 ScrollViewReader { proxy in
                 List {
-                    ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                    ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
                         FavRowCard(row: r) {
                             tap(r)
                         }
+                        // R6 SEG-04：List 内零高度锚点行会拿到默认最小行高 + 默认行背景
+                        // （暗色 = 纯黑）→ 列表下方黑框；锚点 id 改挂第一行真实收藏
+                        .id(i == 0 ? "favs_top" : "fav_row_\(i)")
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
                                 Task { await vm.remove(r) }
@@ -104,9 +107,6 @@ struct FavsView: View {
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     }
-                    Color.clear
-                        .frame(height: 0)
-                        .id("favs_top")
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
