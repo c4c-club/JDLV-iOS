@@ -59,12 +59,14 @@ struct OfflineIndexCard: View {
                     refreshStatsIfReady()
                 }
                 .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-                    // R5 P3：仅【值变化】才写 st —— 每秒无条件写入使主 runloop 永不空闲，
-                    // XCUITest "App event loop idle notification" 等待超时（run 43453232958）。
-                    // R6 SEG-02：不再要求 isRunning() —— 运行中照常跟随；完成/空闲态
-                    // 也能收到 finishRun 写入的最终计数（修复完成后一直显示 0）。
+                    // R5 P3：定时器只在【同步进行中】常驻 —— 空转的 1s timer 本身就让主
+                    // runloop 永不空闲，XCUITest "App event loop idle notification" 变慢
+                    // （run 43453232958；R6 实测设置页打开 6.11s 超 5s 预算）。
+                    // R6 SEG-02：条件改为「coordinator 在跑 或 本卡快照仍认为在跑」——
+                    // 完成后多跑一拍即可拿到 finishRun 写入的最终计数，随后自动停摆。
                     guard loadedOnce, scenePhase == .active,
-                          let sync = SettingsIndexHub.shared.syncIfReady else { return }
+                          let sync = SettingsIndexHub.shared.syncIfReady,
+                          sync.isRunning() || st.running else { return }
                     let next = sync.state
                     if next != st { st = next }
                 }

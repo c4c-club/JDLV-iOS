@@ -106,7 +106,9 @@ final class FirstRunSetupGateUITests: XCTestCase {
         XCTAssertFalse(app.buttons["tab_search"].exists, "配置不完整不应进入首页")
     }
 
-    /// 填入并校验（CI 模拟器 typeText 偶发丢字符：值不符则重试，最多 3 轮）
+    /// 填入并校验（CI 模拟器 typeText 偶发丢字符：值不符则重试，最多 3 轮）。
+    /// 注意：port/jdb 等字段带默认值（3306 / javdb），必须先清空再输入，
+    /// 否则会追加成 33063306 → 端口非法 → 门禁正确拒绝进入（run 45685013944 实证）。
     private func fill(_ app: XCUIApplication, _ field: XCUIElement, _ text: String,
                       secure: Bool = false) {
         for _ in 0..<3 {
@@ -116,9 +118,15 @@ final class FirstRunSetupGateUITests: XCTestCase {
                 swipes += 1
             }
             field.tap()
+            let current = (field.value as? String) ?? ""
+            let placeholder = field.placeholderValue ?? ""
+            if !secure && !current.isEmpty && current != placeholder {
+                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue,
+                                      count: current.count))
+            }
             field.typeText(text)
             let v = (field.value as? String) ?? ""
-            if secure ? !v.isEmpty : v.contains(text) { return }
+            if secure ? !v.isEmpty : v == text { return }
         }
         XCTFail("字段 \(field.identifier) 写入失败（期望含 '\(text)'，实际 '\((field.value as? String) ?? "<nil>")'）")
     }
