@@ -22,8 +22,14 @@ packages:
     # 提交者为 ORT 官方维护者 edgchen1（"Update ORT to 1.24.2 (#43)"，2026-02-25），
     # exactVersion 精确 pin 锁定该 commit，不跟随 fork 分支变化。
     # 官方仓库恢复后回滚：URL 改回 microsoft/onnxruntime-swift-package-manager 即可。
-    url: https://github.com/mobilyze-llc/onnxruntime-swift-package-manager
-    exactVersion: 1.24.2
+    # R6 SEG-06 BLOCKED(ENV) 处置：2026-11-21 起 download.onnxruntime.ai 证书失效
+    # （SEC_E_WRONG_PRINCIPAL）且两个 pod 包 404 —— 上游 binaryTarget 无法下载，
+    # iOS job 在依赖解析阶段必挂（run 44929124205 / 44929958858 双次实证）。
+    # 处置：fork 同源 tag 1.24.2 到 c4c-club，仅把两个 binaryTarget URL 指向自有 release
+    # （tag 1.24.2-r6），两个 zip 与原包字节一致（SHA256 已比对官方 pin：
+    # f7100a99… / 346522d1…）。Package.swift 其余内容与 mobilyze-llc 1.24.2 完全相同。
+    url: https://github.com/c4c-club/onnxruntime-swift-package-manager
+    exactVersion: 1.24.2-r6
 targets:
   JDLV:
     type: application
