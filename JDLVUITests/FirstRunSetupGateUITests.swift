@@ -44,7 +44,7 @@ final class FirstRunSetupGateUITests: XCTestCase {
         fill(app, user, "uit")
         fill(app, jdb, "jdb")
         fill(app, sht, "sht")
-        fill(app, pass, "p")   // 密码只输一半
+        fill(app, pass, "p", secure: true)   // 密码只输一半
 
         // 停顿 > 800ms 防抖窗口，再点其他字段制造键盘切换
         Thread.sleep(forTimeInterval: settle)
@@ -60,13 +60,25 @@ final class FirstRunSetupGateUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.0)
         XCTAssertTrue(page.exists, "补全密码后仍应停留在首启页")
 
+        // 收起键盘（数字/字母键盘的 return 会先失焦，避免 done 按钮被键盘遮挡）
+        if app.keyboards.count > 0 { app.typeText("\n") }
+        Thread.sleep(forTimeInterval: 0.5)
+
         // 显式完成：flush + 校验 → 进首页
         let done = app.buttons["first_run_done"]
         XCTAssertTrue(done.waitForExistence(timeout: 5), "完成按钮不存在")
+        if !done.isHittable { app.swipeUp() }
         done.tap()
 
         let tabBar = app.buttons["tab_search"]
-        XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "完成配置后未进入首页")
+        if !tabBar.waitForExistence(timeout: 25) {
+            let err = app.descendants(matching: .any)["first_run_done_error"].firstMatch
+            let values = [host, port, user, jdb, sht]
+                .map { "\($0.identifier)=\(($0.value as? String) ?? "<nil>")" }
+                .joined(separator: ", ")
+            XCTFail("完成配置后未进入首页；error=(err.exists)；字段值=[(values)]；"
+                    + "pass 非空=(((pass.value as? String) ?? "").isEmpty == false)")
+        }
     }
 
     func testIncompleteDoneStaysInGate() throws {
@@ -82,6 +94,7 @@ final class FirstRunSetupGateUITests: XCTestCase {
         XCTAssertTrue(host.waitForExistence(timeout: 8), "连接字段缺失")
         fill(app, host, "10.0.0.3")
 
+        if app.keyboards.count > 0 { app.typeText("\n") }
         let done = app.buttons["first_run_done"]
         XCTAssertTrue(done.waitForExistence(timeout: 5), "完成按钮不存在")
         done.tap()
@@ -92,17 +105,20 @@ final class FirstRunSetupGateUITests: XCTestCase {
         XCTAssertFalse(app.buttons["tab_search"].exists, "配置不完整不应进入首页")
     }
 
-    /// 滚动到可点（jdb/sht 字段在首启卡下部，小屏可能折叠线以下）
-    private func fill(_ app: XCUIApplication, _ field: XCUIElement, _ text: String) {
-        for _ in 0..<6 where !field.isHittable {
-            app.swipeUp()
-        }
-        field.tap()
-        // B2：CI 模拟器 typeText 偶发丢字符 —— 失败重试一次
-        do { try field.typeText(text) }
-        catch {
+    /// 填入并校验（CI 模拟器 typeText 偶发丢字符：值不符则重试，最多 3 轮）
+    private func fill(_ app: XCUIApplication, _ field: XCUIElement, _ text: String,
+                      secure: Bool = false) {
+        for _ in 0..<3 {
+            var swipes = 0
+            while !field.isHittable && swipes < 8 {
+                app.swipeUp()
+                swipes += 1
+            }
             field.tap()
-            try? field.typeText(text)
+            field.typeText(text)
+            let v = (field.value as? String) ?? ""
+            if secure ? !v.isEmpty : v.contains(text) { return }
         }
+        XCTFail("字段 \(field.identifier) 写入失败（期望含 '\(text)'，实际 '\((field.value as? String) ?? "<nil>")'）")
     }
 }

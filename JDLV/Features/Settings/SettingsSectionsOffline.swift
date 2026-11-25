@@ -227,11 +227,12 @@ struct OfflineIndexCard: View {
         }
     }
 
-    /// R6 SEG-02：空闲态回填 —— 从 SyncCoordinator 权威 state 同步到卡片本地 st；
-    /// 只读（不触发懒建），值变化才写，避免无意义 body 重算。
+    /// R6 SEG-02：空闲态回填 —— 从 SyncCoordinator 权威 state 同步到卡片本地 st。
+    /// 只读：不触发懒建、不调 refreshStats（后者含 SQLite COUNT/usageBytes，主线程
+    /// 同步 I/O 会让 AX 快照超时 —— SettingsUITests 组卡点击失败即此风险）。
+    /// coordinator 的 state 由 warmUpAsync（后台 refreshStats）与 finishRun 收尾写入。
     private func refreshStatsIfReady() {
         guard let sync = SettingsIndexHub.shared.syncIfReady else { return }
-        sync.refreshStats()
         let next = sync.state
         if next != st { st = next }
     }
