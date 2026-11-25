@@ -76,8 +76,9 @@ final class FirstRunSetupGateUITests: XCTestCase {
             let values = [host, port, user, jdb, sht]
                 .map { "\($0.identifier)=\(($0.value as? String) ?? "<nil>")" }
                 .joined(separator: ", ")
-            XCTFail("完成配置后未进入首页；error=(err.exists)；字段值=[(values)]；"
-                    + "pass 非空=(((pass.value as? String) ?? "").isEmpty == false)")
+            let passValue = (pass.value as? String) ?? ""
+            XCTFail("完成配置后未进入首页；error=" + String(err.exists)
+                    + "；字段值=[" + values + "]；pass 非空=" + String(!passValue.isEmpty))
         }
     }
 
