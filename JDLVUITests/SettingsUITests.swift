@@ -239,7 +239,17 @@ final class SettingsUITests: XCTestCase {
             // R5 P3：展开内容构建落定（密集 tap+查询在负载 runner 上触发 AX 快照超时）
             usleep(1_200_000)
             XCTAssertEqual(app.state, .runningForeground, "crash after expanding group \(k)")
-            card.tap()   // 收起，保持 AX 树小
+            // R6：展开内容构建会短暂重建 AX 树（run 45694213758 实测 settings_group_cache
+            // 在 tap 瞬间消失）→ 收起前重新查询并等待存在，最多 5s；断言语义不变。
+            let collapse = group(app, k)
+            if !collapse.waitForExistence(timeout: 5) {
+                _ = scrollToElement(app, collapse)
+            }
+            if collapse.exists && collapse.isHittable {
+                collapse.tap()
+            } else if collapse.exists {
+                collapse.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
             usleep(600_000)
         }
         // 锚点已在本用例前段硬断言（testImageModeOn），store 持久化由单测覆盖
